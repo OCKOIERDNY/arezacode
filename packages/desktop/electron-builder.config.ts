@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process"
+import { existsSync } from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
 import type { Configuration } from "electron-builder"
+import { UPDATE_SOURCE } from "./src/update-source"
 
 const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
@@ -36,13 +39,22 @@ const channel = (() => {
 })()
 
 const APP_IDS = {
-  dev: "ai.opencode.desktop.dev",
-  beta: "ai.opencode.desktop.beta",
-  prod: "ai.opencode.desktop",
+  dev: "com.areza.arezacode",
+  beta: "com.areza.arezacode.beta",
+  prod: "com.areza.arezacode",
 } as const
 
+const localSigningIdentity =
+  process.platform === "darwin" &&
+  channel === "dev" &&
+  !process.env.CSC_NAME &&
+  existsSync(path.join(os.homedir(), "Library/Application Support/ArezaCode/signing/local-development.crt"))
+    ? "ArezaCode Local Development"
+    : undefined
+
 const getBase = (appId: string): Configuration => ({
-  artifactName: "opencode-desktop-${os}-${arch}.${ext}",
+  artifactName: "arezacode-desktop-${os}-${arch}.${ext}",
+  publish: UPDATE_SOURCE,
   directories: {
     output: "dist",
     buildResources: "resources",
@@ -53,10 +65,16 @@ const getBase = (appId: string): Configuration => ({
   // https://developer.gnome.org/documentation/guidelines/maintainer/integrating.html
   // https://www.electron.build/docs/linux/
   extraMetadata: {
+    name: "arezacode",
     desktopName: `${appId}.desktop`,
   },
   files: ["out/**/*", "resources/**/*", "!resources/opencode-cli*"],
   extraResources: [
+    {
+      from: "resources/icons",
+      to: "icons",
+      filter: ["dock.png", "icon.png"],
+    },
     ...(channel === "dev"
       ? [
           {
@@ -73,13 +91,14 @@ const getBase = (appId: string): Configuration => ({
     },
   ],
   mac: {
+    identity: localSigningIdentity,
     category: "public.app-category.developer-tools",
     icon: `resources/icons/icon.icns`,
     hardenedRuntime: true,
     gatekeeperAssess: false,
     entitlements: "resources/entitlements.plist",
     entitlementsInherit: "resources/entitlements.plist",
-    notarize: true,
+    notarize: !localSigningIdentity,
     target: ["dmg", "zip"],
   },
   dmg: {
@@ -127,7 +146,7 @@ function getConfig() {
       return {
         ...base,
         appId,
-        productName: "OpenCode Dev",
+        productName: "ArezaCode",
         deb: { fpm: [metainfoFpm(appId)] },
         rpm: { packageName: "opencode-dev", fpm: [metainfoFpm(appId)] },
       }
@@ -136,9 +155,8 @@ function getConfig() {
       return {
         ...base,
         appId,
-        productName: "OpenCode Beta",
-        protocols: { name: "OpenCode Beta", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
+        productName: "ArezaCode Beta",
+        protocols: { name: "ArezaCode Beta", schemes: ["opencode"] },
         deb: { fpm: [metainfoFpm(appId)] },
         rpm: { packageName: "opencode-beta", fpm: [metainfoFpm(appId)] },
       }
@@ -147,9 +165,8 @@ function getConfig() {
       return {
         ...base,
         appId,
-        productName: "OpenCode",
-        protocols: { name: "OpenCode", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
+        productName: "ArezaCode",
+        protocols: { name: "ArezaCode", schemes: ["opencode"] },
         deb: { fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
         rpm: { packageName: "opencode", fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
       }

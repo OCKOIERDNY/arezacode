@@ -105,9 +105,12 @@ export function SessionSidePanel(props: {
       }),
   )
   const open = createMemo(() => reviewOpen() || fileOpen())
+  const contentPresent = createMemo<boolean>((previous) => previous || open(), false)
+  const reviewPresent = createMemo<boolean>((previous) => (open() ? reviewOpen() : previous), false)
   const fileTreeWidth = createMemo(() => Math.max(FILE_TREE_WIDTH_MIN, layout.fileTree.width()))
   const reviewTab = createMemo(() => isDesktop())
   const panelWidth = createMemo(() => {
+    if (settings.general.newLayoutDesigns()) return "100%"
     if (!open()) return "0px"
     if (reviewOpen()) return "auto"
     return `${fileTreeWidth()}px`
@@ -302,20 +305,20 @@ export function SessionSidePanel(props: {
           "h-full min-h-0": props.stacked,
           "pointer-events-none": !open(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-            !props.size.active() && !props.reviewSnap,
+            !settings.general.newLayoutDesigns() && !props.size.active() && !props.reviewSnap,
           "rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": settings.general.newLayoutDesigns(),
           "flex-1": reviewOpen(),
         }}
         style={{ width: panelWidth() }}
       >
-        <Show when={open()}>
+        <Show when={settings.general.newLayoutDesigns() ? contentPresent() : open()}>
           <div
             class="size-full flex"
             classList={{
               "border-l border-border-weaker-base": !settings.general.newLayoutDesigns(),
             }}
           >
-            <Show when={reviewOpen()}>
+            <Show when={settings.general.newLayoutDesigns() ? reviewPresent() : reviewOpen()}>
               <div
                 class="relative min-w-0 h-full flex-1 overflow-hidden"
                 classList={{

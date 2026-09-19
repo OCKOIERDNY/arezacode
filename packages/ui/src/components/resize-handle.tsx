@@ -1,4 +1,5 @@
 import { splitProps, type JSX } from "solid-js"
+import { createStore } from "solid-js/store"
 
 export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElement>, "onResize"> {
   direction: "horizontal" | "vertical"
@@ -7,6 +8,7 @@ export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElemen
   min: number
   max: number
   onResize: (size: number) => void
+  onResizeEnd?: (size: number, startSize: number) => void
   onCollapse?: () => void
   /** Called while dragging when size crosses `collapseThreshold`. */
   onCollapseChange?: (collapsed: boolean) => void
@@ -14,6 +16,7 @@ export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElemen
 }
 
 export function ResizeHandle(props: ResizeHandleProps) {
+  const [state, setState] = createStore({ dragging: false })
   const [local, rest] = splitProps(props, [
     "direction",
     "edge",
@@ -21,6 +24,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
     "min",
     "max",
     "onResize",
+    "onResizeEnd",
     "onCollapse",
     "onCollapseChange",
     "collapseThreshold",
@@ -49,6 +53,9 @@ export function ResizeHandle(props: ResizeHandleProps) {
 
     document.body.style.userSelect = "none"
     document.body.style.overflow = "hidden"
+    setState("dragging", true)
+    const cursor = document.body.style.cursor
+    document.body.style.cursor = local.direction === "horizontal" ? "col-resize" : "row-resize"
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const pos = local.direction === "horizontal" ? moveEvent.clientX : moveEvent.clientY
@@ -61,7 +68,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
             ? start - pos
             : pos - start
       current = startSize + delta
-      const nextCollapsed = threshold > 0 && current < threshold
+      const nextCollapsed = local.collapseThreshold !== undefined && current < threshold
       if (nextCollapsed !== collapsed) {
         collapsed = nextCollapsed
         onCollapseChange?.(collapsed)
@@ -72,8 +79,11 @@ export function ResizeHandle(props: ResizeHandleProps) {
     const onMouseUp = () => {
       document.body.style.userSelect = ""
       document.body.style.overflow = ""
+      document.body.style.cursor = cursor
+      setState("dragging", false)
       document.removeEventListener("mousemove", onMouseMove)
       document.removeEventListener("mouseup", onMouseUp)
+      local.onResizeEnd?.(current, startSize)
 
       if (collapsed) {
         onCollapse?.()
@@ -91,6 +101,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
       {...rest}
       data-component="resize-handle"
       data-direction={local.direction}
+      data-dragging={state.dragging}
       data-edge={local.edge ?? (local.direction === "vertical" ? "start" : "end")}
       classList={{
         ...local.classList,

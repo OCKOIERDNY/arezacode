@@ -10,6 +10,7 @@ import { Location } from "./location"
 import { makeGlobalNode } from "./effect/app-node"
 import { isDeepStrictEqual } from "node:util"
 import { Durable } from "@opencode-ai/schema/durable-event-manifest"
+import type { SqlError } from "effect/unstable/sql/SqlError"
 
 export const ID = Event.ID
 export type ID = import("@opencode-ai/schema/event").ID
@@ -17,6 +18,8 @@ export type { Data, Definition, Payload } from "@opencode-ai/schema/event"
 
 export type Subscriber<D extends Definition = Definition> = (event: Payload<D>) => Effect.Effect<void>
 export type Unsubscribe = Effect.Effect<void>
+
+class Transaction extends Context.Service<Transaction, Effect.Effect<void>[]>()("@opencode/EventTransaction") {}
 
 export const latestSequence = Effect.fn("EventV2.latestSequence")(function* (
   db: Database.Interface["db"],
@@ -118,12 +121,13 @@ export const versionedType = Event.versionedType
 export interface PublishOptions {
   readonly id?: ID
   readonly metadata?: Record<string, unknown>
-  readonly location?: Location.Ref
+  readonly location?: Location.Ref | null
   /** Local operational projection committed atomically with a new durable event. Not replayed or serialized. */
   readonly commit?: (seq: number) => Effect.Effect<void>
 }
 
 export interface Interface {
+  readonly transaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E | SqlError, R>
   readonly publish: <D extends Definition>(
     definition: D,
     data: Data<D>,
@@ -180,6 +184,34 @@ export const layerWith = (options?: LayerOptions) =>
       // TODO: Bind durable projectors to exact type+version before supporting incompatible historical payloads.
       const listeners = new Array<Subscriber>()
       const { db } = yield* Database.Service
+
+      const afterCommit = (effect: Effect.Effect<void>) =>
+        Effect.gen(function* () {
+          const pending = yield* Effect.serviceOption(Transaction)
+          if (Option.isSome(pending)) {
+            pending.value.push(effect)
+            return
+          }
+          yield* effect
+        })
+
+      const transaction: Interface["transaction"] = (effect) =>
+        Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const parent = yield* Effect.serviceOption(Transaction)
+            const pending: Effect.Effect<void>[] = []
+            const result = yield* db.transaction(
+              () => restore(effect).pipe(Effect.provideService(Transaction, pending)),
+              { behavior: "immediate" },
+            )
+            if (Option.isSome(parent)) {
+              parent.value.push(...pending)
+              return result
+            }
+            yield* Effect.forEach(pending, (notification) => notification, { discard: true })
+            return result
+          }),
+        )
 
       const getOrCreate = (definition: Definition) =>
         Effect.gen(function* () {
@@ -352,10 +384,12 @@ export const layerWith = (options?: LayerOptions) =>
                     )
                     .pipe(Effect.orDie)
                   if (committed) {
-                    yield* Effect.forEach(
-                      pubsub.durable.get(committed.aggregateID) ?? [],
-                      (wake) => PubSub.publish(wake, undefined),
-                      { discard: true },
+                    yield* afterCommit(
+                      Effect.forEach(
+                        pubsub.durable.get(committed.aggregateID) ?? [],
+                        (wake) => PubSub.publish(wake, undefined),
+                        { discard: true },
+                      ),
                     )
                   }
                   return committed
@@ -404,26 +438,30 @@ export const layerWith = (options?: LayerOptions) =>
         )
 
       function notify(event: Payload, isolateListeners: boolean) {
-        return Effect.gen(function* () {
-          yield* Effect.forEach(
-            listeners,
-            (listener) => (isolateListeners ? observe(event, listener) : listener(event)),
-            { discard: true },
-          )
-          const typed = pubsub.typed.get(event.type)
-          if (typed) yield* PubSub.publish(typed, event)
-          yield* PubSub.publish(pubsub.all, event)
-        })
+        return afterCommit(
+          Effect.gen(function* () {
+            yield* Effect.forEach(
+              [...listeners],
+              (listener) => (isolateListeners ? observe(event, listener) : listener(event)),
+              { discard: true },
+            )
+            const typed = pubsub.typed.get(event.type)
+            if (typed) yield* PubSub.publish(typed, event)
+            yield* PubSub.publish(pubsub.all, event)
+          }),
+        )
       }
 
       function publish<D extends Definition>(definition: D, data: Data<D>, options?: PublishOptions) {
         return Effect.gen(function* () {
           const serviceLocation = Option.getOrUndefined(yield* Effect.serviceOption(Location.Service))
           const location =
-            options?.location ??
-            (serviceLocation
-              ? { directory: serviceLocation.directory, workspaceID: serviceLocation.workspaceID }
-              : undefined)
+            options?.location === null
+              ? undefined
+              : (options?.location ??
+                (serviceLocation
+                  ? { directory: serviceLocation.directory, workspaceID: serviceLocation.workspaceID }
+                  : undefined))
           return yield* publishEvent(
             definition,
             {
@@ -620,6 +658,7 @@ export const layerWith = (options?: LayerOptions) =>
         })
 
       return Service.of({
+        transaction,
         publish,
         subscribe,
         all: streamAll,

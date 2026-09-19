@@ -92,6 +92,7 @@ const execution = Layer.effect(
       drain: (sessionID, force) => sessionRunner.run({ sessionID, force }),
     })
     return SessionExecution.Service.of({
+      withIdle: coordinator.withIdle,
       active: coordinator.active,
       resume: coordinator.run,
       wake: coordinator.wake,

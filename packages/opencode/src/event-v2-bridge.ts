@@ -18,7 +18,7 @@ const layer = Layer.effect(
 
     const publish: EventV2.Interface["publish"] = (definition, data, options) =>
       Effect.gen(function* () {
-        if (options?.location) return yield* events.publish(definition, data, options)
+        if (options?.location !== undefined) return yield* events.publish(definition, data, options)
         const ctx = yield* InstanceRef
         if (!ctx) return yield* events.publish(definition, data, options)
         const workspaceID = yield* WorkspaceRef

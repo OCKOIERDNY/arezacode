@@ -5,6 +5,8 @@ import { Context, Schema } from "effect"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
+import { rename } from "node:fs/promises"
+import path from "node:path"
 
 const context = Context.empty() as Context.Context<unknown>
 
@@ -78,6 +80,34 @@ afterEach(async () => {
 })
 
 describe("v2 location HttpApi", () => {
+  test.each(["/api/command", "/project/current"])(
+    "recovers a round-trip move through %s without restarting the server",
+    async (entry) => {
+      await using source = await tmpdir({ git: true })
+      await using target = await tmpdir()
+      const destination = path.join(target.path, "moved")
+      const created = await request("/session", source.path, { method: "POST" })
+      const session = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String }))(await created.json())
+      expect((await request("/api/command", source.path)).status).toBe(200)
+      await rename(source.path, destination)
+      expect((await request(entry, destination)).status).toBe(200)
+      expect((await request("/api/command", destination)).status).toBe(200)
+      expect((await request("/project/current", destination)).status).toBe(200)
+      expect(await (await request(`/session/${session.id}`, destination)).json()).toMatchObject({
+        id: session.id,
+        directory: destination,
+      })
+      await rename(destination, source.path)
+      expect((await request(entry, source.path)).status).toBe(200)
+      expect((await request("/api/command", source.path)).status).toBe(200)
+      expect(await (await request("/project/current", source.path)).json()).toMatchObject({ worktree: source.path })
+      expect(await (await request(`/session/${session.id}`, source.path)).json()).toMatchObject({
+        id: session.id,
+        directory: source.path,
+      })
+    },
+  )
+
   test("decodes EventV2 location refs without resolved project metadata", () => {
     expect(
       Schema.decodeUnknownSync(Event)({

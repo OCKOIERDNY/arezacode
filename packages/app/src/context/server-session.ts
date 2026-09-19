@@ -22,6 +22,8 @@ import { compareMessages, messageKey, normalizeSessionMessages } from "@/utils/s
 import { dropSessionCaches, pickSessionCacheEvictions, SESSION_CACHE_LIMIT } from "./global-sync/session-cache"
 import { createV2SessionReducer, type V2SessionReduction } from "./server-session-v2-reducer"
 import type { ServerApi } from "@/utils/server"
+import { SessionEvent } from "@opencode-ai/schema/session-event"
+import { Option, Schema, Struct } from "effect"
 
 type MessageApi = ServerApi["message"]
 
@@ -996,6 +998,21 @@ export function createServerSession(
         void resolve(eventID).catch(() => {})
     }
     switch (event.type) {
+      case SessionEvent.Moved.type: {
+        const moved = Schema.decodeUnknownOption(SessionEvent.Moved.data.mapFields(Struct.omit(["timestamp"])))(
+          event.properties,
+        )
+        if (Option.isNone(moved)) return
+        const info = data.info[moved.value.sessionID]
+        if (!info) return
+        remember({
+          ...info,
+          directory: moved.value.location.directory,
+          workspaceID: moved.value.location.workspaceID,
+          path: moved.value.subdirectory,
+        })
+        return
+      }
       case "session.created":
         remember((event.properties as { info: Session }).info)
         return

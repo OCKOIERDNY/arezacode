@@ -162,6 +162,25 @@ function setup(sessions: Record<string, Session>) {
 }
 
 describe("server session", () => {
+  test("updates cached paths from canonical relocation events without replacing history", () => {
+    const id = "ses_relocation"
+    const ctx = setup({ [id]: session(id) })
+    ctx.store.remember(session(id))
+    ctx.store.set("session_message", id, [
+      { id: "msg_saved", type: "user", text: "Saved history", time: { created: 1 } },
+    ])
+    const event = {
+      type: "session.next.moved",
+      properties: { sessionID: id, location: { directory: "/moved/src" }, subdirectory: "src" },
+    }
+    ctx.store.apply(event)
+    ctx.store.apply(event)
+    expect(ctx.store.data.info[id]).toMatchObject({ id, directory: "/moved/src", path: "src", title: id })
+    expect(ctx.store.data.session_message[id]?.[0]).toMatchObject({ id: "msg_saved", text: "Saved history" })
+    ctx.store.apply({ ...event, properties: { sessionID: id, location: { directory: 42 } } })
+    expect(ctx.store.data.info[id]?.directory).toBe("/moved/src")
+  })
+
   test("projects V2 session events into current and legacy message state", () => {
     const ctx = setup({ child: session("child") })
     ctx.store.remember(session("child"))

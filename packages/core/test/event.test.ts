@@ -84,6 +84,59 @@ const it = testEffect(
 const itWithoutLocation = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node])))
 
 describe("EventV2", () => {
+  it.effect("publishes an atomic group only after every event commits", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const db = (yield* Database.Service).db
+      const seen: number[] = []
+      yield* events.listen(() =>
+        db
+          .select()
+          .from(EventTable)
+          .all()
+          .pipe(
+            Effect.orDie,
+            Effect.tap((rows) => Effect.sync(() => seen.push(rows.length))),
+            Effect.asVoid,
+          ),
+      )
+      yield* events.transaction(
+        Effect.gen(function* () {
+          yield* events.publish(SyncMessage, { id: "one", text: "first" })
+          yield* events.transaction(events.publish(SyncMessage, { id: "two", text: "second" }))
+          expect(seen).toEqual([])
+        }),
+      )
+      expect(seen).toEqual([2, 2])
+    }),
+  )
+
+  it.effect("rolls back an atomic group without publishing notifications", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const db = (yield* Database.Service).db
+      const seen: string[] = []
+      yield* events.listen((event) =>
+        Effect.sync(() => {
+          seen.push(event.type)
+        }),
+      )
+      const result = yield* events
+        .transaction(
+          Effect.gen(function* () {
+            yield* events.publish(SyncMessage, { id: "one", text: "first" })
+            yield* events.publish(Message, { text: "notification" })
+            yield* Effect.fail("rollback")
+          }),
+        )
+        .pipe(Effect.exit)
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(yield* db.select().from(EventTable).all()).toEqual([])
+      expect(yield* db.select().from(EventSequenceTable).all()).toEqual([])
+      expect(seen).toEqual([])
+    }),
+  )
+
   it.effect("publishes events with the current location", () =>
     Effect.gen(function* () {
       const events = yield* EventV2.Service

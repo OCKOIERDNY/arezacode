@@ -8,6 +8,7 @@ import { Git } from "../git"
 import { makeLocationNode } from "../effect/app-node"
 import { Project } from "../project"
 import { ProjectDirectories } from "./directories"
+import { ProjectRelocation } from "./relocation"
 import { makeGitWorktreeStrategy } from "./copy-strategies"
 import { Slug } from "../util/slug"
 import { EventV2 } from "../event"
@@ -288,5 +289,5 @@ export const node = makeLocationNode({
 export const refreshNode = makeLocationNode({
   name: "project-copy-refresh",
   layer: Layer.effectDiscard(refreshAfterBoot),
-  deps: [node, Location.node],
+  deps: [node, Location.node, ProjectRelocation.locationNode],
 })

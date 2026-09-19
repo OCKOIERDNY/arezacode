@@ -20,6 +20,7 @@ const projectLayer = Layer.succeed(
         vcs: { type: "git", store: AbsolutePath.make("/repo/.git") },
       }),
     commit: () => Effect.void,
+    register: () => Effect.void,
   }),
 )
 const it = testEffect(AppNodeBuilder.build(Location.boundNode(ref), [[Project.node, projectLayer]]))

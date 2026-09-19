@@ -12,6 +12,7 @@ export interface Coordinator<Key, E> {
   readonly wake: (key: Key) => Effect.Effect<void>
   /** Stops active execution and waits for its cleanup. */
   readonly interrupt: (key: Key) => Effect.Effect<void>
+  readonly withIdle: <A, E2, R>(keys: readonly Key[], effect: Effect.Effect<A, E2, R>) => Effect.Effect<boolean, E2, R>
 }
 
 type Entry<E> = {
@@ -26,6 +27,7 @@ export const make = <Key, E>(options: {
 }): Effect.Effect<Coordinator<Key, E>, never, Scope.Scope> =>
   Effect.gen(function* () {
     const active = new Map<Key, Entry<E>>()
+    const reserved = new Map<Key, { done: Deferred.Deferred<void>; wakes: Set<Key> }>()
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
 
     const makeEntry = (): Entry<E> => ({
@@ -66,6 +68,8 @@ export const make = <Key, E>(options: {
 
     const run = (key: Key): Effect.Effect<void, E> =>
       Effect.uninterruptibleMask((restore) => {
+        const reservation = reserved.get(key)
+        if (reservation) return restore(Deferred.await(reservation.done).pipe(Effect.andThen(run(key))))
         const entry = active.get(key)
         if (entry !== undefined) {
           if (entry.stopping) return restore(Deferred.await(entry.done).pipe(Effect.andThen(run(key))))
@@ -78,17 +82,23 @@ export const make = <Key, E>(options: {
         return restore(Deferred.await(next.done))
       })
 
-    const wake = (key: Key) =>
-      Effect.sync(() => {
+    const wake = (key: Key): Effect.Effect<void> =>
+      Effect.suspend(() => {
+        const reservation = reserved.get(key)
+        if (reservation) {
+          reservation.wakes.add(key)
+          return Effect.void
+        }
         const entry = active.get(key)
         if (entry !== undefined) {
           entry.pendingWake = true
-          return
+          return Effect.void
         }
 
         const next = makeEntry()
         active.set(key, next)
         start(key, next, false)
+        return Effect.void
       })
 
     const interrupt = (key: Key): Effect.Effect<void> =>
@@ -100,5 +110,25 @@ export const make = <Key, E>(options: {
         return Fiber.interrupt(entry.owner)
       })
 
-    return { active: Effect.sync(() => new Set(active.keys())), run, wake, interrupt }
+    const withIdle: Coordinator<Key, E>["withIdle"] = (keys, effect) =>
+      Effect.uninterruptibleMask((restore) =>
+        Effect.suspend(() => {
+          if (keys.some((key) => active.has(key) || reserved.has(key))) return Effect.succeed(false)
+          const done = Deferred.makeUnsafe<void>()
+          const wakes = new Set<Key>()
+          keys.forEach((key) => reserved.set(key, { done, wakes }))
+          return restore(effect).pipe(
+            Effect.as(true),
+            Effect.ensuring(
+              Effect.gen(function* () {
+                keys.forEach((key) => reserved.delete(key))
+                yield* Effect.forEach(wakes, wake, { discard: true })
+                Deferred.doneUnsafe(done, Effect.void)
+              }),
+            ),
+          )
+        }),
+      )
+
+    return { active: Effect.sync(() => new Set(active.keys())), run, wake, interrupt, withIdle }
   })

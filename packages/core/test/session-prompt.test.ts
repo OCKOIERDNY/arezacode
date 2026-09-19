@@ -27,6 +27,7 @@ const activeSessions = new Set<SessionV2.ID>()
 const execution = Layer.succeed(
   SessionExecution.Service,
   SessionExecution.Service.of({
+    withIdle: (_keys, effect) => effect.pipe(Effect.as(true)),
     active: Effect.sync(() => new Set(activeSessions)),
     resume: (sessionID) =>
       Effect.sync(() => {

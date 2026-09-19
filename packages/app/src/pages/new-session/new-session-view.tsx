@@ -1,5 +1,4 @@
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { WordmarkV2 } from "@opencode-ai/ui/v2/wordmark-v2"
@@ -82,9 +81,9 @@ export function NewSessionStatus(props: { mount: Accessor<HTMLElement | null>; v
       {(mount) => (
         <Portal mount={mount}>
           <Show when={props.visible()}>
-            <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
+            <TooltipV2 placement="bottom" value={language.t("status.popover.trigger")}>
               <StatusPopoverV2 />
-            </Tooltip>
+            </TooltipV2>
           </Show>
         </Portal>
       )}

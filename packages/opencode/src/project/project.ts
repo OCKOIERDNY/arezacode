@@ -1,10 +1,10 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { and, eq, sql } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { Database } from "@opencode-ai/core/database/database"
 import { ProjectDirectoryTable, ProjectTable } from "@opencode-ai/core/project/sql"
 import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { ProjectRelocation } from "@opencode-ai/core/project/relocation"
 import { SessionTable } from "@opencode-ai/core/session/sql"
-import { WorkspaceTable } from "@opencode-ai/core/control-plane/workspace.sql"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { GlobalBus } from "@/bus/global"
 import { which } from "@opencode-ai/core/util/which"
@@ -110,6 +110,7 @@ const layer = Layer.effect(
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const projectV2 = yield* ProjectV2.Service
     const projectDirectories = yield* ProjectDirectories.Service
+    const relocation = yield* ProjectRelocation.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const { db } = yield* Database.Service
@@ -143,55 +144,6 @@ const layer = Layer.effect(
 
     const scope = yield* Scope.Scope
 
-    const migrateProjectId = Effect.fn("Project.migrateProjectId")(function* (
-      oldID: ProjectV2.ID | undefined,
-      newID: ProjectV2.ID,
-    ) {
-      if (!oldID) return
-      if (oldID === ProjectV2.ID.global) return
-      if (oldID === newID) return
-
-      yield* db
-        .transaction(
-          (d) =>
-            Effect.gen(function* () {
-              const oldProject = yield* d.select().from(ProjectTable).where(eq(ProjectTable.id, oldID)).get()
-              const newProject = yield* d.select().from(ProjectTable).where(eq(ProjectTable.id, newID)).get()
-              if (oldProject && !newProject) {
-                yield* d
-                  .insert(ProjectTable)
-                  .values({
-                    ...oldProject,
-                    id: newID,
-                    time_updated: Date.now(),
-                  })
-                  .run()
-              }
-
-              // Project directories may be shared across distinct
-              // checkouts which have diverged. Clear the directory
-              // list and rely on it being re-populated to ensure
-              // accuracy
-              yield* d.delete(ProjectDirectoryTable).where(eq(ProjectDirectoryTable.project_id, oldID)).run()
-
-              yield* d
-                .update(SessionTable)
-                .set({ project_id: newID, time_updated: sql`${SessionTable.time_updated}` })
-                .where(eq(SessionTable.project_id, oldID))
-                .run()
-              yield* d
-                .update(WorkspaceTable)
-                .set({ project_id: newID })
-                .where(eq(WorkspaceTable.project_id, oldID))
-                .run()
-
-              if (oldProject) yield* d.delete(ProjectTable).where(eq(ProjectTable.id, oldID)).run()
-            }),
-          { behavior: "immediate" },
-        )
-        .pipe(Effect.orDie)
-    })
-
     const saveProjectDirectory = Effect.fn("Project.saveProjectDirectory")(function* (input: {
       projectID: ProjectV2.ID
       directory: string
@@ -218,7 +170,16 @@ const layer = Layer.effect(
 
       // Phase 2: upsert
       const projectID = ProjectV2.ID.make(data.id)
-      yield* migrateProjectId(data.previous ? ProjectV2.ID.make(data.previous) : undefined, projectID)
+      if (data.gitDirectory)
+        yield* relocation
+          .open({
+            projectID,
+            previousProjectID: data.previous,
+            directory: data.directory,
+            gitDirectory: data.gitDirectory,
+            store: data.vcs?.store,
+          })
+          .pipe(Effect.orDie)
       const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, projectID)).get().pipe(Effect.orDie)
       const existing = row
         ? fromRow(row)
@@ -474,6 +435,7 @@ export const node = LayerNode.make({
     CrossSpawnSpawner.node,
     ProjectV2.node,
     ProjectDirectories.node,
+    ProjectRelocation.node,
     EventV2Bridge.node,
     RuntimeFlags.node,
     Database.node,

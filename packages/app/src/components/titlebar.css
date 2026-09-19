@@ -75,3 +75,81 @@
     animation-range: calc(100% - 1.1px) calc(100% - 1px);
   }
 }
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  [data-component="sidebar-title"]:hover > span {
+    overflow: visible;
+    transform: translateX(calc(-1 * var(--title-overflow, 0px)));
+    transition: transform var(--title-duration, 0s) linear 300ms;
+  }
+}
+
+[data-component="project-sidebar-slot"] {
+  height: 100%;
+}
+
+[data-component="project-sidebar-slot"],
+[data-component="project-sidebar"],
+[data-component="session-chat-panel"][data-sidebar-motion="true"],
+[data-component="session-right-panel"] {
+  --sidebar-duration: 200ms;
+  --sidebar-easing: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+[data-component="project-sidebar-slot"],
+[data-component="session-chat-panel"][data-sidebar-motion="true"] {
+  transition: width var(--sidebar-duration) var(--sidebar-easing);
+}
+
+[data-component="project-sidebar"] {
+  --sidebar-exit: -100%;
+}
+
+[data-component="session-right-panel"] {
+  --sidebar-exit: 100%;
+}
+
+[data-theme="oc-2"][data-color-scheme="dark"] [data-component="session-right-panel"] {
+  --border-weaker-base: #3b3b3b;
+  --color-border-weaker-base: var(--border-weaker-base);
+}
+
+[data-component="project-sidebar"],
+[data-component="session-right-panel"] {
+  transform: translateX(0);
+  transition:
+    transform var(--sidebar-duration) var(--sidebar-easing),
+    visibility 0s;
+  @starting-style {
+    transform: translateX(var(--sidebar-exit));
+  }
+}
+
+[data-component="project-sidebar-slot"][data-collapsing="true"] [data-component="project-sidebar"],
+[data-component="session-right-panel"][data-opened="false"] {
+  transform: translateX(var(--sidebar-exit));
+  visibility: hidden;
+  transition:
+    transform var(--sidebar-duration) var(--sidebar-easing),
+    visibility 0s linear var(--sidebar-duration);
+}
+
+[data-component="session-chat-panel"][data-snap="true"],
+body:has([data-component="resize-handle"][data-dragging="true"]) [data-component="session-chat-panel"],
+body:has([data-component="resize-handle"][data-dragging="true"])
+  [data-component="project-sidebar-slot"][data-collapsing="false"] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="project-sidebar-slot"],
+  [data-component="session-chat-panel"][data-sidebar-motion="true"],
+  [data-component="project-sidebar-slot"] [data-component="project-sidebar"] {
+    transition: none;
+  }
+
+  [data-component="session-right-panel"],
+  [data-component="session-right-panel"][data-opened="false"],
+  [data-component="project-sidebar-slot"][data-collapsing="true"] [data-component="project-sidebar"] {
+    transition: none;
+  }
+}

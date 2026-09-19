@@ -10,6 +10,36 @@ import {
 } from "./server"
 import { ServerScope } from "@/utils/server-scope"
 
+test("relocates saved project paths without changing other projects or servers", () => {
+  createRoot((dispose) => {
+    const [scope] = createSignal(ServerScope.local)
+    const [store, setStore] = createStore({
+      projects: {
+        local: [
+          { worktree: "/old", expanded: false },
+          { worktree: "/old/src", expanded: true },
+          { worktree: "/old-other", expanded: true },
+        ],
+        remote: [{ worktree: "/old", expanded: true }],
+      },
+      lastProject: { local: "/old/src" },
+      recentlyClosed: { local: ["/old/test", "/elsewhere"] },
+    })
+    const projects = createServerProjects({ scope, store, setStore })
+    projects.relocate("/old", "/new")
+    projects.relocate("/old", "/new")
+    expect(projects.list()).toEqual([
+      { worktree: "/new", expanded: false },
+      { worktree: "/new/src", expanded: true },
+      { worktree: "/old-other", expanded: true },
+    ])
+    expect(projects.last()).toBe("/new/src")
+    expect(projects.recentlyClosed()).toEqual(["/new/test", "/elsewhere"])
+    expect(store.projects.remote[0]?.worktree).toBe("/old")
+    dispose()
+  })
+})
+
 describe("resolveServerList", () => {
   test("lets startup auth_token credentials override a persisted same-url server", () => {
     const list = resolveServerList({

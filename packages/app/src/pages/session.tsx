@@ -480,21 +480,24 @@ export default function Page() {
   const sessionPanelAvailable = createMemo(() => {
     const width = panelRowWidth()
     if (width === undefined) return undefined
-    return width - (settings.general.newLayoutDesigns() ? 8 : 0)
+    return width - (settings.general.newLayoutDesigns() && layout.session.width() > 0 ? 16 : 0)
   })
   const sessionPanelMax = createMemo(() => {
     const available = sessionPanelAvailable()
     if (available === undefined) return 1000
+    if (newSessionDesign()) return available
     return sessionPanelWidthMax({ available, split: splitReview() })
   })
   // Clamp at render time so window or sidebar resizes squeeze the chat panel
   // instead of the review pane, without overwriting the persisted width.
   const sessionPanelResizedWidth = createMemo(() =>
-    clampSessionPanelWidth({
-      width: layout.session.width(),
-      available: sessionPanelAvailable(),
-      split: splitReview(),
-    }),
+    newSessionDesign()
+      ? Math.min(layout.session.width(), sessionPanelAvailable() ?? layout.session.width())
+      : clampSessionPanelWidth({
+          width: layout.session.width(),
+          available: sessionPanelAvailable(),
+          split: splitReview(),
+        }),
   )
   const sessionPanelWidth = createMemo(() => {
     if (!desktopSidePanelOpen()) return "100%"
@@ -508,6 +511,12 @@ export default function Page() {
       terminal: desktopTerminalOpen(),
       files: desktopFileTreeOpen(),
     }),
+  )
+  const rightPanelVisible = () => (isDesktop() ? desktopV2PanelLayout().visible : terminalOpen())
+  const rightPanelPresent = createMemo<boolean>((previous) => previous || rightPanelVisible(), false)
+  const rightPanelReview = createMemo<boolean>(
+    (previous) => (rightPanelVisible() ? isDesktop() && (desktopV2ReviewOpen() || desktopFileTreeOpen()) : previous),
+    false,
   )
 
   function normalizeTab(tab: string) {
@@ -638,6 +647,7 @@ export default function Page() {
 
   createComputed((prev) => {
     const open = desktopReviewOpen()
+    if (settings.general.newLayoutDesigns()) return open
     if (prev === undefined || prev === open) return open
 
     if (reviewFrame !== undefined) cancelAnimationFrame(reviewFrame)
@@ -2253,48 +2263,74 @@ export default function Page() {
         ref={panelRow}
         class="flex-1 min-h-0 flex flex-col md:flex-row"
         classList={{
-          "gap-2 p-2": settings.general.newLayoutDesigns(),
+          "p-2": settings.general.newLayoutDesigns(),
+          "gap-4":
+            settings.general.newLayoutDesigns() && (!desktopSessionResizeOpen() || sessionPanelResizedWidth() > 0),
         }}
       >
         <Show when={!isDesktop() && !!params.id && !settings.general.newLayoutDesigns()}>{mobileTabs()}</Show>
 
         <div
+          data-component="session-chat-panel"
+          data-sidebar-motion={settings.general.newLayoutDesigns()}
+          data-snap={ui.reviewSnap || desktopInlineTerminalOnlyOpen()}
           classList={{
-            "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none transition-[width]": true,
-            "duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-              !size.active() && !ui.reviewSnap && !desktopInlineTerminalOnlyOpen(),
+            "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none": true,
+            "transition-[width] duration-[200ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none":
+              !settings.general.newLayoutDesigns() &&
+              !size.active() &&
+              !ui.reviewSnap &&
+              !desktopInlineTerminalOnlyOpen(),
           }}
           style={{
             width: sessionPanelWidth(),
           }}
         >
-          {settings.general.newLayoutDesigns() ? (
-            <Show when={sessionPanelKey()} keyed>
-              {(_) => (
-                <SessionPanelFrame newLayout raised={!!params.id}>
-                  <ErrorBoundary fallback={sessionErrorFallback}>{sessionPanelContent()}</ErrorBoundary>
-                </SessionPanelFrame>
-              )}
-            </Show>
-          ) : (
-            <SessionPanelFrame newLayout={false} raised={!!params.id}>
-              {sessionPanelContent()}
-            </SessionPanelFrame>
-          )}
-
-          <Show when={desktopSessionResizeOpen()}>
+          <div
+            class="flex flex-1 min-h-0 min-w-0 flex-col"
+            classList={{ "overflow-hidden": !settings.general.newLayoutDesigns() }}
+            style={{
+              visibility: desktopSessionResizeOpen() && sessionPanelResizedWidth() === 0 ? "hidden" : undefined,
+            }}
+          >
+            {settings.general.newLayoutDesigns() ? (
+              <Show when={sessionPanelKey()} keyed>
+                {(_) => (
+                  <SessionPanelFrame newLayout raised={!!params.id}>
+                    <ErrorBoundary fallback={sessionErrorFallback}>{sessionPanelContent()}</ErrorBoundary>
+                  </SessionPanelFrame>
+                )}
+              </Show>
+            ) : (
+              <SessionPanelFrame newLayout={false} raised={!!params.id}>
+                {sessionPanelContent()}
+              </SessionPanelFrame>
+            )}
+          </div>
+          <Show when={desktopSessionResizeOpen() && (sessionPanelResizedWidth() > 0 || size.active())}>
             <div onPointerDown={() => size.start()}>
               <ResizeHandle
+                data-panel-resize="session"
                 classList={{
-                  "-end-1": settings.general.newLayoutDesigns(),
+                  "-end-2": settings.general.newLayoutDesigns(),
                 }}
                 direction="horizontal"
                 size={sessionPanelResizedWidth()}
-                min={SESSION_PANEL_WIDTH_MIN}
+                min={newSessionDesign() ? 0 : SESSION_PANEL_WIDTH_MIN}
                 max={sessionPanelMax()}
+                collapseThreshold={newSessionDesign() && layout.projectSidebar.opened() ? -80 : undefined}
+                onCollapseChange={layout.projectSidebar.previewCollapse}
+                onCollapse={layout.projectSidebar.close}
+                onResizeEnd={(width, startWidth) => {
+                  if (!newSessionDesign() || width < (sessionPanelAvailable() ?? Infinity) - 64) return
+                  view().reviewPanel.close()
+                  view().terminal.close()
+                  layout.fileTree.close()
+                  layout.session.resize(Math.max(SESSION_PANEL_WIDTH_MIN, startWidth))
+                }}
                 onResize={(width) => {
                   size.touch()
-                  layout.session.resize(width)
+                  layout.session.resize(newSessionDesign() && width < 64 ? 0 : width)
                 }}
               />
             </div>
@@ -2320,9 +2356,14 @@ export default function Page() {
           </Suspense>
         </Show>
         <Show when={newSessionDesign()}>
-          <Show when={isDesktop() ? desktopV2PanelLayout().visible : terminalOpen()}>
-            <div class="min-w-0 h-full flex flex-1 flex-col">
-              <Show when={isDesktop() && (desktopV2ReviewOpen() || desktopFileTreeOpen())}>
+          <Show when={rightPanelPresent()}>
+            <div
+              data-component="session-right-panel"
+              data-opened={rightPanelVisible()}
+              inert={!rightPanelVisible()}
+              class="min-w-0 h-full flex flex-1 flex-col"
+            >
+              <Show when={rightPanelReview()}>
                 <div class="min-h-0 flex-1">
                   <Suspense>
                     <SessionSidePanel

@@ -61,7 +61,11 @@ export function useTitlebarRightMount() {
   return mount
 }
 
-export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visible: boolean; toggle: () => void } }) {
+export function Titlebar(props: {
+  update?: TitlebarUpdate
+  debugTools?: { visible: boolean; toggle: () => void }
+  sidebar?: { opened: boolean; toggle: () => void }
+}) {
   const layout = useLayout()
   const platform = usePlatform()
   const command = useCommand()
@@ -311,7 +315,10 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
 
               tabs.newDraft({ server: fallback.server, directory: fallback.project.worktree }, "")
             }
-            const toggleHome = () => tabs.toggleHome({ home: layout.route().type === "home", current: currentTab() })
+            const toggleHome = () =>
+              props.sidebar
+                ? props.sidebar.toggle()
+                : tabs.toggleHome({ home: layout.route().type === "home", current: currentTab() })
 
             command.register("titlebar-home", () => [
               {
@@ -368,7 +375,9 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                   "md:pl-4": !macTrafficLights(),
                 }}
               >
-                <ChannelIndicator debugTools={props.debugTools} />
+                <Show when={!props.sidebar}>
+                  <ChannelIndicator debugTools={props.debugTools} />
+                </Show>
                 <Show when={windows() || linux()}>
                   <WindowsAppMenu command={command} platform={platform} variant="v2" />
                 </Show>
@@ -376,7 +385,7 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                   placement="bottom"
                   value={
                     <>
-                      {language.t("home.title")}
+                      {language.t(props.sidebar ? "command.sidebar.toggle" : "home.title")}
                       <KeybindV2 keys={command.keybindParts("home.toggle")} variant="neutral" />
                     </>
                   }
@@ -387,48 +396,54 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                     variant="ghost-muted"
                     size="large"
                     class="!w-9 shrink-0"
-                    icon={<IconV2 name="grid-plus" />}
-                    state={layout.route().type === "home" ? "pressed" : undefined}
+                    icon={<IconV2 name={props.sidebar ? "sidebar-right" : "grid-plus"} />}
+                    state={
+                      (props.sidebar ? props.sidebar.opened : layout.route().type === "home") ? "pressed" : undefined
+                    }
                     onClick={toggleHome}
-                    aria-label={language.t("home.title")}
-                    aria-pressed={layout.route().type === "home"}
+                    aria-label={language.t(props.sidebar ? "command.sidebar.toggle" : "home.title")}
+                    aria-pressed={props.sidebar?.opened}
+                    aria-controls={props.sidebar ? "project-sidebar" : undefined}
                   />
                 </TooltipV2>
+                <div id="opencode-titlebar-left-actions" class="flex shrink-0 items-center gap-2 empty:hidden" />
 
-                <TitlebarTabStrip
-                  tabs={tabsStore}
-                  currentTab={currentTab}
-                  forceTruncate={tabsAreOverflowing()}
-                  onOverflowChange={setTabsAreOverflowing}
-                  onNavigate={(tab, el) => {
-                    tabs.select(tab)
-                    el?.scrollIntoView({ behavior: "instant" })
-                  }}
-                  onClose={(tab) => {
-                    const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(tab))
-                    if (index !== -1) tabsStoreActions.closeTab(index)
-                  }}
-                  onReorder={(keys) => tabsStoreActions.reorder(keys)}
-                />
-                <TooltipV2
-                  placement="bottom"
-                  value={
-                    <>
-                      {language.t("command.session.new")}
-                      <KeybindV2 keys={newTabTooltipKeybind(command)} variant="neutral" />
-                    </>
-                  }
-                >
-                  <IconButtonV2
-                    type="button"
-                    variant="ghost-muted"
-                    size="large"
-                    class="shrink-0"
-                    icon={<IconV2 name="plus" />}
-                    onClick={openNewTab}
-                    aria-label={language.t("command.session.new")}
+                <Show when={!props.sidebar}>
+                  <TitlebarTabStrip
+                    tabs={tabsStore}
+                    currentTab={currentTab}
+                    forceTruncate={tabsAreOverflowing()}
+                    onOverflowChange={setTabsAreOverflowing}
+                    onNavigate={(tab, el) => {
+                      tabs.select(tab)
+                      el?.scrollIntoView({ behavior: "instant" })
+                    }}
+                    onClose={(tab) => {
+                      const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(tab))
+                      if (index !== -1) tabsStoreActions.closeTab(index)
+                    }}
+                    onReorder={(keys) => tabsStoreActions.reorder(keys)}
                   />
-                </TooltipV2>
+                  <TooltipV2
+                    placement="bottom"
+                    value={
+                      <>
+                        {language.t("command.session.new")}
+                        <KeybindV2 keys={newTabTooltipKeybind(command)} variant="neutral" />
+                      </>
+                    }
+                  >
+                    <IconButtonV2
+                      type="button"
+                      variant="ghost-muted"
+                      size="large"
+                      class="shrink-0"
+                      icon={<IconV2 name="plus" />}
+                      onClick={openNewTab}
+                      aria-label={language.t("command.session.new")}
+                    />
+                  </TooltipV2>
+                </Show>
                 <div class="flex-1" />
                 <TitlebarV2Right state={v2RightState()} />
               </div>
@@ -645,29 +660,27 @@ function TitlebarUpdateIconButton(props: { state: TitlebarUpdatePillState }) {
   )
 }
 
-function ChannelIndicator(props: { debugTools?: { visible: boolean; toggle: () => void } }) {
+export function ChannelIndicator(props: { footer?: boolean; debugTools?: { visible: boolean; toggle: () => void } }) {
   const channel = import.meta.env.VITE_OPENCODE_CHANNEL
-  if (channel === "dev" && props.debugTools) {
+  const platform = usePlatform()
+  const label = () => (props.footer ? `/${channel}  ${platform.version ?? ""}` : channel.toUpperCase())
+  const appearance = () =>
+    props.footer
+      ? "flex h-7 w-full items-center text-left text-v2-text-text-faint"
+      : "bg-icon-interactive-base text-[#FFF] font-medium px-2 rounded-sm uppercase font-mono"
+  if (channel === "dev" && props.debugTools && !props.footer) {
     return (
       <button
         type="button"
-        class="bg-icon-interactive-base text-[#FFF] font-medium px-2 rounded-sm uppercase font-mono cursor-pointer"
+        class={appearance()}
         onClick={props.debugTools.toggle}
         aria-label="Toggle debug tools"
         aria-pressed={props.debugTools.visible}
       >
-        DEV
+        {label()}
       </button>
     )
   }
 
-  return (
-    <>
-      {["beta", "dev"].includes(channel) && (
-        <div class="bg-icon-interactive-base text-[#FFF] font-medium px-2 rounded-sm uppercase font-mono">
-          {channel.toUpperCase()}
-        </div>
-      )}
-    </>
-  )
+  return <>{["beta", "dev"].includes(channel) && <div class={appearance()}>{label()}</div>}</>
 }

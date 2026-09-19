@@ -1,0 +1,2120 @@
+[
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "artifacts/glm52-rise-video/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "sdks/vscode/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/app/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/script/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/llm/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/web/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/effect-drizzle-sqlite/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/session-ui/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/tui/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/desktop/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/codemode/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/ui/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/protocol/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/plugin/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/core/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/enterprise/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/function/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/httpapi-codegen/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/slack/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/http-recorder/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/cli/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/server/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/storybook/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/effect-sqlite-node/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/client/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/opencode/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/schema/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/sdk-next/sst-env.d.ts",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/app/public/oc-theme-preload.js",
+    "line": 1
+   },
+   {
+    "path": "packages/desktop/out/renderer/oc-theme-preload.js",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/enterprise/src/global.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/console/app/src/global.d.ts",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/enterprise/src/entry-client.tsx",
+    "line": 1
+   },
+   {
+    "path": "packages/console/app/src/entry-client.tsx",
+    "line": 1
+   },
+   {
+    "path": "packages/console/support/src/entry-client.tsx",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/sdk/js/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/stats/server/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/console/function/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/stats/app/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/console/resource/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/console/core/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/console/mail/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/stats/core/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/console/support/sst-env.d.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/console/app/sst-env.d.ts",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/app/src/components/dialog-command-palette-v2.css",
+    "line": 1
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/dialog-command-palette-v2-CuBkeDNG.css",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/app/src/components/dialog-select-directory-v2.css",
+    "line": 1
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/dialog-select-directory-v2-DEAodoq0.css",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/ui/src/v2/components/switch-v2.css",
+    "line": 1
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/row-DiBN-KON.css",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/plugin/src/v2/effect/aisdk.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/plugin/src/v2/promise/aisdk.ts",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/plugin/src/v2/effect/context.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/plugin/src/v2/promise/context.ts",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/sdk/js/src/gen/core/auth.gen.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/sdk/js/src/v2/gen/core/auth.gen.ts",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/sdk/js/src/gen/core/queryKeySerializer.gen.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/sdk/js/src/v2/gen/core/queryKeySerializer.gen.ts",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/sdk/js/src/gen/core/pathSerializer.gen.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/sdk/js/src/v2/gen/core/pathSerializer.gen.ts",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/console/app/src/routes/docs/index.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/console/app/src/routes/docs/[...path].ts",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/console/app/src/routes/data/index.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/console/app/src/routes/data/[...path].ts",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-files",
+  "evidence": "Same SHA-256 content hash; intended copies may be valid. No automatic failure.",
+  "members": [
+   {
+    "path": "packages/console/app/src/routes/stats/index.ts",
+    "line": 1
+   },
+   {
+    "path": "packages/console/app/src/routes/stats/[...path].ts",
+    "line": 1
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "artifacts/glm52-rise-video/src/sheep.tsx",
+    "line": 18,
+    "name": "DataWordmark"
+   },
+   {
+    "path": "artifacts/glm52-rise-video/src/novel.tsx",
+    "line": 17,
+    "name": "DataWordmark"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "artifacts/glm52-rise-video/src/flash.tsx",
+    "line": 32,
+    "name": "DataWordmark"
+   },
+   {
+    "path": "artifacts/glm52-rise-video/src/minimax.tsx",
+    "line": 31,
+    "name": "DataWordmark"
+   },
+   {
+    "path": "artifacts/glm52-rise-video/src/june.tsx",
+    "line": 21,
+    "name": "DataWordmark"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/public/oc-theme-preload.js",
+    "line": 1,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/desktop/out/renderer/oc-theme-preload.js",
+    "line": 1,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/core/src/fs-util.ts",
+    "line": 238,
+    "name": "normalizePathPattern"
+   },
+   {
+    "path": "packages/opencode/src/util/filesystem.ts",
+    "line": 125,
+    "name": "normalizePathPattern"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/http-recorder/src/socket.ts",
+    "line": 42,
+    "name": "redactEvent"
+   },
+   {
+    "path": "packages/http-recorder/src/websocket.ts",
+    "line": 79,
+    "name": "redactEvent"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/web/src/middleware.ts",
+    "line": 57,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/console/app/src/lib/language.ts",
+    "line": 301,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/effect-sqlite-node/src/index.ts",
+    "line": 135,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/core/src/database/sqlite.node.ts",
+    "line": 117,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/core/src/database/sqlite.bun.ts",
+    "line": 123,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/core/src/skill/discovery.ts",
+    "line": 182,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/opencode/src/skill/discovery.ts",
+    "line": 107,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/core/src/session/todo.ts",
+    "line": 32,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/opencode/src/session/todo.ts",
+    "line": 29,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/core/src/session/todo.ts",
+    "line": 37,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/opencode/src/session/todo.ts",
+    "line": 31,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/core/src/session/todo.ts",
+    "line": 38,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/opencode/src/session/todo.ts",
+    "line": 32,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/core/src/session/todo.ts",
+    "line": 59,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/opencode/src/session/todo.ts",
+    "line": 53,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/core/src/tool/websearch.ts",
+    "line": 113,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/opencode/src/tool/mcp-websearch.ts",
+    "line": 30,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/e2e/smoke/session-timeline.fixture.ts",
+    "line": 51,
+    "name": "userMessage"
+   },
+   {
+    "path": "packages/app/e2e/performance/timeline/session-timeline-stress.fixture.ts",
+    "line": 51,
+    "name": "userMessage"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/e2e/smoke/session-timeline.fixture.ts",
+    "line": 75,
+    "name": "assistantMessage"
+   },
+   {
+    "path": "packages/app/e2e/performance/timeline/session-timeline-stress.fixture.ts",
+    "line": 75,
+    "name": "assistantMessage"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/e2e/smoke/session-timeline.fixture.ts",
+    "line": 231,
+    "name": "renderable"
+   },
+   {
+    "path": "packages/app/e2e/performance/timeline/session-timeline-stress.fixture.ts",
+    "line": 271,
+    "name": "renderable"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/e2e/smoke/session-timeline.fixture.ts",
+    "line": 302,
+    "name": "pageMessages"
+   },
+   {
+    "path": "packages/app/e2e/performance/timeline/session-timeline-stress.fixture.ts",
+    "line": 356,
+    "name": "pageMessages"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/src/context/local.tsx",
+    "line": 327,
+    "name": "current"
+   },
+   {
+    "path": "packages/app/src/pages/session/composer/prompt-model-selection.ts",
+    "line": 92,
+    "name": "current"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/src/components/settings-models.tsx",
+    "line": 53,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/app/src/components/settings-v2/models.tsx",
+    "line": 37,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/src/components/settings-providers.tsx",
+    "line": 58,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/app/src/components/settings-v2/providers.tsx",
+    "line": 55,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/src/components/settings-providers.tsx",
+    "line": 75,
+    "name": "type"
+   },
+   {
+    "path": "packages/app/src/components/settings-v2/providers.tsx",
+    "line": 72,
+    "name": "type"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/src/components/settings-providers.tsx",
+    "line": 100,
+    "name": "disableProvider"
+   },
+   {
+    "path": "packages/app/src/components/settings-v2/providers.tsx",
+    "line": 97,
+    "name": "disableProvider"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/src/main/index.ts",
+    "line": 95,
+    "name": "ensureLoopbackNoProxy"
+   },
+   {
+    "path": "packages/desktop/src/main/sidecar.ts",
+    "line": 91,
+    "name": "ensureLoopbackNoProxy"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/src/main/index.ts",
+    "line": 97,
+    "name": "upsert"
+   },
+   {
+    "path": "packages/desktop/src/main/sidecar.ts",
+    "line": 93,
+    "name": "upsert"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/server/src/handlers/pty.ts",
+    "line": 167,
+    "name": "closeAccepted"
+   },
+   {
+    "path": "packages/opencode/src/server/routes/instance/httpapi/handlers/pty.ts",
+    "line": 209,
+    "name": "closeAccepted"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/sdk/js/src/server.ts",
+    "line": 22,
+    "name": "createOpencodeServer"
+   },
+   {
+    "path": "packages/sdk/js/src/v2/server.ts",
+    "line": 22,
+    "name": "createOpencodeServer"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/sdk/js/src/server.ts",
+    "line": 43,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/sdk/js/src/v2/server.ts",
+    "line": 43,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/sdk/js/src/server.ts",
+    "line": 51,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/sdk/js/src/v2/server.ts",
+    "line": 51,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/stats/core/src/honeycomb-backfill.ts",
+    "line": 568,
+    "name": "rankModelRows"
+   },
+   {
+    "path": "packages/stats/core/src/domain/model.ts",
+    "line": 241,
+    "name": "rankRows"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/stats/core/src/honeycomb-backfill.ts",
+    "line": 575,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/stats/core/src/domain/model.ts",
+    "line": 248,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/opencode/src/provider/provider.ts",
+    "line": 979,
+    "name": "pull"
+   },
+   {
+    "path": "packages/opencode/src/plugin/snowflake-cortex.ts",
+    "line": 421,
+    "name": "pull"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/console/core/script/lookup-user.ts",
+    "line": 179,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/console/support/src/lib/lookup.ts",
+    "line": 201,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/opencode/src/tool/shell.ts",
+    "line": 533,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/opencode/src/tool/code-mode.ts",
+    "line": 262,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/effect-drizzle-sqlite/src/sqlite-core/effect/delete.ts",
+    "line": 172,
+    "name": "orderBy"
+   },
+   {
+    "path": "packages/effect-drizzle-sqlite/src/sqlite-core/effect/update.ts",
+    "line": 313,
+    "name": "orderBy"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/core/src/database/migration/20260622170816_reset_v2_session_state.ts",
+    "line": 6,
+    "name": "up"
+   },
+   {
+    "path": "packages/core/src/database/migration/20260622202450_simplify_session_input.ts",
+    "line": 6,
+    "name": "up"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/e2e/performance/timeline/first-navigation-probe.ts",
+    "line": 25,
+    "name": "visible"
+   },
+   {
+    "path": "packages/app/e2e/performance/timeline/navigation-milestones.ts",
+    "line": 50,
+    "name": "visible"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/e2e/performance/timeline/session-timeline-benchmark.fixture.ts",
+    "line": 492,
+    "name": "provider"
+   },
+   {
+    "path": "packages/app/e2e/performance/timeline-stability/fixture.ts",
+    "line": 556,
+    "name": "provider"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/src/pages/session/terminal-panel.tsx",
+    "line": 128,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/app/src/pages/session/terminal-panel-v2.tsx",
+    "line": 116,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/src/pages/session/use-session-commands.tsx",
+    "line": 238,
+    "name": "exportSession"
+   },
+   {
+    "path": "packages/app/src/components/session/session-context-tab.tsx",
+    "line": 227,
+    "name": "exportSession"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/src/components/session/open-in-app.tsx",
+    "line": 94,
+    "name": "detectOpenAppOS"
+   },
+   {
+    "path": "packages/app/src/components/session/session-header.tsx",
+    "line": 122,
+    "name": "detectOS"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/src/components/session/open-in-app.tsx",
+    "line": 137,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/app/src/components/session/session-header.tsx",
+    "line": 181,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/src/components/session/open-in-app.tsx",
+    "line": 157,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/app/src/components/session/session-header.tsx",
+    "line": 201,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/app/src/components/session/session-sortable-terminal-tab.tsx",
+    "line": 35,
+    "name": "label"
+   },
+   {
+    "path": "packages/app/src/components/session/session-sortable-terminal-tab-v2.tsx",
+    "line": 48,
+    "name": "label"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 63,
+    "name": "replaceCaptures"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18446,
+    "name": "replaceCaptures"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 64,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18447,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 94,
+    "name": "strArrCmp"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18477,
+    "name": "strArrCmp"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 117,
+    "name": "isValidHexColor"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18500,
+    "name": "isValidHexColor"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 170,
+    "name": "match"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18553,
+    "name": "match"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 242,
+    "name": "_scopePathMatchesParentScopes"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18625,
+    "name": "_scopePathMatchesParentScopes"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 282,
+    "name": "parseTheme"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18665,
+    "name": "parseTheme"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 368,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18751,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 377,
+    "name": "resolveParsedThemeRules"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18760,
+    "name": "resolveParsedThemeRules"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 477,
+    "name": "acceptOverwrite"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18860,
+    "name": "acceptOverwrite"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 501,
+    "name": "_cmpBySpecificity"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18884,
+    "name": "_cmpBySpecificity"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 526,
+    "name": "match"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18909,
+    "name": "match"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 546,
+    "name": "insert"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18929,
+    "name": "insert"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 570,
+    "name": "_doInsertHere"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18953,
+    "name": "_doInsertHere"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 598,
+    "name": "print"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 18981,
+    "name": "print"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 634,
+    "name": "set"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19017,
+    "name": "set"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 668,
+    "name": "createMatchers"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19051,
+    "name": "createMatchers"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 695,
+    "name": "parseOperand"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19078,
+    "name": "parseOperand"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 728,
+    "name": "parseInnerExpression"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19111,
+    "name": "parseInnerExpression"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 748,
+    "name": "newTokenizer"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19131,
+    "name": "newTokenizer"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 810,
+    "name": "processQueue"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19193,
+    "name": "processQueue"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 868,
+    "name": "collectExternalReferencesInTopLevelRule"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19251,
+    "name": "collectExternalReferencesInTopLevelRule"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 884,
+    "name": "collectExternalReferencesInRules"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19267,
+    "name": "collectExternalReferencesInRules"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 955,
+    "name": "parseInclude"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19338,
+    "name": "parseInclude"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1150,
+    "name": "_getCachedCompiledPatterns"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19533,
+    "name": "_getCachedCompiledPatterns"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1239,
+    "name": "_getCachedCompiledWhilePatterns"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19622,
+    "name": "_getCachedCompiledWhilePatterns"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1256,
+    "name": "getCompiledRuleId"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19639,
+    "name": "getCompiledRuleId"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1258,
+    "name": "anonymous"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19641,
+    "name": "anonymous"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1314,
+    "name": "_compileCaptures"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19697,
+    "name": "_compileCaptures"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1344,
+    "name": "_compilePatterns"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19727,
+    "name": "_compilePatterns"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1467,
+    "name": "resolveBackReferences"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19850,
+    "name": "resolveBackReferences"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1479,
+    "name": "_buildAnchorCache"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19862,
+    "name": "_buildAnchorCache"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1524,
+    "name": "resolveAnchors"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19907,
+    "name": "resolveAnchors"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1562,
+    "name": "_disposeCaches"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19945,
+    "name": "_disposeCaches"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1608,
+    "name": "compileAG"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 19991,
+    "name": "compileAG"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1713,
+    "name": "_toStandardTokenType"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20096,
+    "name": "_toStandardTokenType"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1769,
+    "name": "_tokenizeString"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20152,
+    "name": "_tokenizeString"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1798,
+    "name": "scanNext"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20181,
+    "name": "scanNext"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1955,
+    "name": "_checkWhileConditions"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20338,
+    "name": "_checkWhileConditions"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 1993,
+    "name": "matchRuleOrInjections"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20376,
+    "name": "matchRuleOrInjections"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2013,
+    "name": "matchRule"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20396,
+    "name": "matchRule"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2025,
+    "name": "matchInjections"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20408,
+    "name": "matchInjections"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2079,
+    "name": "handleCaptures"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20462,
+    "name": "handleCaptures"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2161,
+    "name": "collectInjections"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20544,
+    "name": "collectInjections"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2174,
+    "name": "nameMatcher"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20557,
+    "name": "nameMatcher"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2256,
+    "name": "_collectInjections"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20639,
+    "name": "_collectInjections"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2321,
+    "name": "getExternalGrammar"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20704,
+    "name": "getExternalGrammar"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2352,
+    "name": "_tokenize"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20735,
+    "name": "_tokenize"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2434,
+    "name": "initGrammar"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20817,
+    "name": "initGrammar"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2471,
+    "name": "createRootAndLookUpScopeName"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20854,
+    "name": "createRootAndLookUpScopeName"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2491,
+    "name": "equals"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20874,
+    "name": "equals"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2509,
+    "name": "mergeAttributes"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20892,
+    "name": "mergeAttributes"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2528,
+    "name": "pushAttributed"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20911,
+    "name": "pushAttributed"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2542,
+    "name": "_pushAttributed"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20925,
+    "name": "_pushAttributed"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2556,
+    "name": "getExtensionIfDefined"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 20939,
+    "name": "getExtensionIfDefined"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2638,
+    "name": "_structuralEquals"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 21021,
+    "name": "_structuralEquals"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2751,
+    "name": "toStateStackFrame"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 21134,
+    "name": "toStateStackFrame"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2760,
+    "name": "pushFrame"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 21143,
+    "name": "pushFrame"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2842,
+    "name": "produceFromScopes"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 21225,
+    "name": "produceFromScopes"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2900,
+    "name": "getResult"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 21283,
+    "name": "getResult"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2911,
+    "name": "getBinaryResult"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 21294,
+    "name": "getBinaryResult"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 2984,
+    "name": "grammarForScopeName"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 21367,
+    "name": "grammarForScopeName"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 3060,
+    "name": "_loadGrammar"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 21443,
+    "name": "_loadGrammar"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 3108,
+    "name": "resolveColorReplacements"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 21491,
+    "name": "resolveColorReplacements"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 3143,
+    "name": "splitLines"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 21526,
+    "name": "splitLines"
+   }
+  ]
+ },
+ {
+  "kind": "identical-function-bodies",
+  "evidence": "At least 60 identical syntax tokens after removing comments and whitespace. Identifiers and literals are preserved. Review candidate only.",
+  "members": [
+   {
+    "path": "packages/desktop/out/renderer/assets/worker-CNe3ZfWd.js",
+    "line": 3165,
+    "name": "normalizeTheme"
+   },
+   {
+    "path": "packages/desktop/out/renderer/assets/markdown.worker-6R4pSnU0.js",
+    "line": 21548,
+    "name": "normalizeTheme"
+   }
+  ]
+ }
+]

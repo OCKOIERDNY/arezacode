@@ -20,6 +20,9 @@ import { ServerRowMenuView, serverMenuLabels } from "@/components/server/server-
 import { ServerHealthIndicator } from "@/components/server/server-row"
 import { type ServerHealth } from "@/utils/server-health"
 import { fileManagerApp } from "@/utils/file-manager"
+import { ChannelIndicator } from "@/components/titlebar"
+import { useGlobal } from "@/context/global"
+import { Spinner } from "@opencode-ai/ui/spinner"
 
 const HOME_PROJECT_NAV_LABEL = "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
 
@@ -28,6 +31,8 @@ const projectContextMenuID = (server: ServerConnection.Any, directory: string) =
   `project:${ServerConnection.key(server)}:${directory}`
 
 export type HomeProjectsViewProps = {
+  renderSessions?: () => JSX.Element
+  projectActive?: (server: string, directory: string) => boolean
   language: ReturnType<typeof useLanguage>
   servers: Accessor<ServerConnection.Any[]>
   projects: Accessor<LocalProject[]>
@@ -68,13 +73,14 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
   }
   return (
     <aside
-      class={`
-        mt-6 flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden
-        lg:sticky lg:top-14 lg:mt-14 lg:h-[calc(100cqh-56px)] lg:self-start lg:pt-[52px]
-      `}
+      class={
+        props.renderSessions
+          ? "flex h-full min-h-0 min-w-0 flex-col gap-1 overflow-hidden pt-5"
+          : "mt-6 flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden lg:sticky lg:top-14 lg:mt-14 lg:h-[calc(100cqh-56px)] lg:self-start lg:pt-[52px]"
+      }
       aria-label={props.language.t("home.projects")}
       onWheel={(event) => {
-        if (event.target === event.currentTarget) return
+        if (props.renderSessions || event.target === event.currentTarget) return
         props.onWheel(event)
       }}
     >
@@ -97,7 +103,10 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
           </TooltipV2>
         </Show>
       </div>
-      <ScrollView data-slot="home-projects-scroll" class="min-h-0 min-w-0 shrink">
+      <ScrollView
+        data-slot="home-projects-scroll"
+        class={props.renderSessions ? "min-h-0 min-w-0 flex-1" : "min-h-0 min-w-0 shrink"}
+      >
         <Show
           when={props.servers().length > 1}
           fallback={
@@ -145,7 +154,8 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
         </Show>
       </ScrollView>
       <HomeUtilityNav
-        class="mb-8 mt-4 hidden shrink-0 lg:flex"
+        class={props.renderSessions ? "mt-auto mb-3 flex shrink-0 pt-3" : "mb-8 mt-4 hidden shrink-0 lg:flex"}
+        version={!!props.renderSessions}
         onOpenSettings={props.onOpenSettings}
         onOpenHelp={props.onOpenHelp}
         language={props.language}
@@ -156,6 +166,7 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
 
 export function HomeUtilityNav(props: {
   class?: string
+  version?: boolean
   onOpenSettings: () => void
   onOpenHelp: () => void
   language: ReturnType<typeof useLanguage>
@@ -178,6 +189,11 @@ export function HomeUtilityNav(props: {
         <IconV2 name="help" size="small" />
         <span class={HOME_PROJECT_NAV_LABEL}>{props.language.t("sidebar.help")}</span>
       </HomeProjectNavButton>
+      <Show when={props.version}>
+        <div data-component="sidebar-footer" class="flex h-7 shrink-0 items-center pl-7">
+          <ChannelIndicator footer />
+        </div>
+      </Show>
     </div>
   )
 }
@@ -368,18 +384,29 @@ function HomeProjectSlot(
   )
 
   return (
-    <HomeProjectRow
-      {...props}
-      project={project()}
-      server={props.server}
-      index={props.index}
-      serverSelected={props.selection().server === ServerConnection.key(props.server)}
-      selected={
-        props.selection().server === ServerConnection.key(props.server) &&
-        props.selection().directory === props.worktree
-      }
-      unseen={props.unseenCount(props.server, project())}
-    />
+    <div class="min-w-0">
+      <HomeProjectRow
+        {...props}
+        project={project()}
+        server={props.server}
+        index={props.index}
+        serverSelected={props.selection().server === ServerConnection.key(props.server)}
+        selected={
+          props.selection().server === ServerConnection.key(props.server) &&
+          props.selection().directory === props.worktree
+        }
+        unseen={props.unseenCount(props.server, project())}
+      />
+      <Show
+        when={
+          props.renderSessions &&
+          props.selection().server === ServerConnection.key(props.server) &&
+          props.selection().directory === props.worktree
+        }
+      >
+        {props.renderSessions?.()}
+      </Show>
+    </div>
   )
 }
 
@@ -399,12 +426,14 @@ function HomeProjectEmpty(
         disabled={unreachable()}
         onClick={() => props.onChooseProject(props.server)}
       >
-        <IconV2 name="folder-add-left" size="small" />
+        <span class="flex size-4 shrink-0 items-center justify-center">
+          <IconV2 name="folder-add-left" size="small" />
+        </span>
         <span class={HOME_PROJECT_NAV_LABEL}>{props.language.t("home.project.add")}</span>
       </HomeProjectNavButton>
       <Show when={props.items.length > 0}>
         <div class="mt-3 flex h-7 min-w-0 shrink-0 items-center pl-1.5 pr-3">
-          <div class="text-v2-text-text-faint [font-weight:530]">{props.language.t("home.recentlyClosed")}</div>
+          <div class="text-v2-text-text-muted [font-weight:530]">{props.language.t("home.recentlyClosed")}</div>
         </div>
         <For each={props.items}>
           {(project) => <HomeRecentlyClosedRow {...props} project={project} server={props.server} />}
@@ -455,6 +484,14 @@ function HomeProjectRow(
     },
 ) {
   const platform = usePlatform()
+  const global = useGlobal()
+  const working = createMemo(() => {
+    const sync = global.ensureServerCtx(props.server).sync
+    const directories = [props.project.worktree, ...(props.project.sandboxes ?? [])]
+    return Object.keys(sync.session.data.session_status).some(
+      (id) => directories.includes(sync.session.get(id)?.directory ?? "") && sync.session.data.session_working(id),
+    )
+  })
   const serverUnreachable = () => props.serverHealth(props.server)?.healthy === false
   const sortable = useSortable({
     get id() {
@@ -473,24 +510,52 @@ function HomeProjectRow(
   return (
     <div
       ref={sortable.ref}
-      class="group/project relative flex h-7 min-w-0 items-center rounded-[6px]"
+      class="group/project relative flex h-7 min-w-0 items-center gap-1 rounded-[6px]"
       classList={{ "z-10": sortable.isDragSource() }}
       onContextMenu={(event) => {
         event.preventDefault()
         props.onSetContextMenuOpen(contextMenuID(), true)
       }}
     >
+      <Show when={props.renderSessions}>
+        <div class="flex size-7 shrink-0 items-center justify-center">
+          <HomeProjectNavButton
+            type="button"
+            data-action="home-project-collapse"
+            class="!w-7 justify-center !p-0 disabled:opacity-60"
+            aria-label={`${props.selected ? "Collapse" : "Expand"} ${displayName(props.project)}`}
+            aria-expanded={props.selected}
+            disabled={serverUnreachable()}
+            onClick={() => props.onSelectProject(props.server, props.project.worktree)}
+          >
+            <IconV2
+              name="chevron-down"
+              size="normal"
+              style={{ transform: props.selected ? undefined : "rotate(-90deg)" }}
+            />
+          </HomeProjectNavButton>
+        </div>
+      </Show>
       <HomeProjectNavButton
         type="button"
         data-component="home-project-row"
-        class="pr-16 disabled:opacity-60"
+        class="!w-auto flex-1 pr-16 disabled:opacity-60"
         classList={{
           "bg-v2-background-bg-layer-01 text-v2-text-text-base": sortable.isDragSource(),
         }}
-        data-selected={props.selected ? "" : undefined}
-        aria-current={props.selected ? "page" : undefined}
+        data-selected={
+          (props.projectActive?.(ServerConnection.key(props.server), props.project.worktree) ?? props.selected)
+            ? ""
+            : undefined
+        }
+        aria-current={
+          (props.projectActive?.(ServerConnection.key(props.server), props.project.worktree) ?? props.selected)
+            ? "page"
+            : undefined
+        }
         disabled={serverUnreachable()}
         onPointerDown={(event) => {
+          if (props.renderSessions) return
           // Same-server mouse selection happens on pointerdown (like tabs),
           // but only ever selects; selectProject toggles, and deselecting here
           // would fire on every drag before the threshold is met. Cross-server
@@ -504,6 +569,7 @@ function HomeProjectRow(
           if (!props.selected) props.onSelectProject(props.server, props.project.worktree)
         }}
         onClick={(event) => {
+          if (props.renderSessions) return
           // The drag sensor calls preventDefault on post-drag clicks; never
           // toggle selection as part of a reorder.
           if (event.defaultPrevented) return
@@ -519,7 +585,12 @@ function HomeProjectRow(
         }}
       >
         <HomeProjectAvatar project={props.project} />
-        <span class={HOME_PROJECT_NAV_LABEL}>{displayName(props.project)}</span>
+        <SidebarTitle>{displayName(props.project)}</SidebarTitle>
+        <Show when={props.renderSessions && !props.selected && working()}>
+          <span data-component="project-working" role="img" aria-label={props.language.t("common.loading")}>
+            <Spinner class="size-4 shrink-0" />
+          </span>
+        </Show>
       </HomeProjectNavButton>
       <div
         class={`
@@ -582,6 +653,25 @@ function HomeProjectRow(
         />
       </div>
     </div>
+  )
+}
+
+export function SidebarTitle(props: { children: JSX.Element }) {
+  return (
+    <span
+      data-component="sidebar-title"
+      class="min-w-0 flex-1 overflow-hidden"
+      onPointerEnter={(event) => {
+        const distance = Math.max(
+          0,
+          (event.currentTarget.firstElementChild?.scrollWidth ?? 0) - event.currentTarget.clientWidth,
+        )
+        event.currentTarget.style.setProperty("--title-overflow", `${distance}px`)
+        event.currentTarget.style.setProperty("--title-duration", `${distance / 24}s`)
+      }}
+    >
+      <span class="block overflow-hidden text-ellipsis whitespace-nowrap">{props.children}</span>
+    </span>
   )
 }
 

@@ -6,12 +6,25 @@
     content: "";
     position: absolute;
     opacity: 0;
+    border-radius: 999px;
+    background: var(--color-v2-text-text-muted, #888);
     transition: opacity 0.15s ease-in-out;
   }
 
-  &:hover::after,
-  &:active::after {
+  &:focus-visible::after,
+  &[data-dragging="true"]::after {
     opacity: 1;
+  }
+
+  &[data-dragging="true"]::after {
+    background: var(--color-v2-text-text-base, #ddd);
+    box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 15%, transparent);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover::after {
+      opacity: 1;
+    }
   }
 
   &:where([data-direction="horizontal"]) {

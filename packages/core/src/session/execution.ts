@@ -5,8 +5,10 @@ import { LayerNode } from "../effect/layer-node"
 import { Node } from "../effect/app-node"
 import { SessionRunner } from "./runner/index"
 import { SessionSchema } from "./schema"
+import type { SessionRunCoordinator } from "./run-coordinator"
 
 export interface Interface {
+  readonly withIdle: SessionRunCoordinator.Coordinator<SessionSchema.ID, never>["withIdle"]
   /** Snapshots active execution owned by this process. */
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
   /** Starts execution while idle or joins the active execution. */
@@ -26,6 +28,7 @@ export const node = LayerNode.unbound(Service, Node.tags.values.global)
 export const noopLayer = Layer.succeed(
   Service,
   Service.of({
+    withIdle: (_keys, effect) => effect.pipe(Effect.as(true)),
     active: Effect.succeed(new Set()),
     resume: () => Effect.void,
     wake: () => Effect.void,

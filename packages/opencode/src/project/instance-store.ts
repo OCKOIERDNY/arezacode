@@ -6,7 +6,9 @@ import { WorkspaceContext } from "@/control-plane/workspace-context"
 import { InstanceRef } from "@/effect/instance-ref"
 import { disposeInstance as runDisposers } from "@/effect/instance-registry"
 import { FSUtil } from "@opencode-ai/core/fs-util"
-import { Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
+import { EventV2 } from "@opencode-ai/core/event"
+import { ProjectDirectories } from "@opencode-ai/schema/project-directories"
+import { Context, Deferred, Duration, Effect, Exit, Layer, Schema, Scope } from "effect"
 import { type InstanceContext } from "./instance-context"
 import { InstanceBootstrap } from "./bootstrap-service"
 import * as Project from "./project"
@@ -32,15 +34,34 @@ export const use = serviceUse(Service)
 
 interface Entry {
   readonly deferred: Deferred.Deferred<InstanceContext>
+  stale?: boolean
 }
 
-const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Service> = Layer.effect(
+const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Service | EventV2.Service> = Layer.effect(
   Service,
   Effect.gen(function* () {
     const project = yield* Project.Service
     const bootstrap = yield* InstanceBootstrap.Service
     const scope = yield* Scope.Scope
     const cache = new Map<string, Entry>()
+    const events = yield* EventV2.Service
+    yield* Effect.acquireRelease(
+      events.listen((event) =>
+        Effect.sync(() => {
+          if (
+            event.type !== ProjectDirectories.Event.Updated.type ||
+            !Schema.is(ProjectDirectories.Event.Updated.data)(event.data) ||
+            !event.data.moved
+          )
+            return
+          const from = event.data.moved.from
+          cache.forEach((entry, directory) => {
+            if (FSUtil.contains(from, directory)) entry.stale = true
+          })
+        }),
+      ),
+      (unsubscribe) => unsubscribe,
+    )
 
     const boot = (input: LoadInput & { directory: string }) =>
       Effect.gen(function* () {
@@ -110,6 +131,7 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
       return Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const existing = cache.get(directory)
+          if (existing?.stale) return yield* reload(input)
           if (existing) return yield* restore(Deferred.await(existing.deferred))
 
           const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
@@ -207,7 +229,7 @@ export const bootstrapNode = LayerNode.unbound(InstanceBootstrap.Service, Node.t
 export const node = makeGlobalNode({
   service: Service,
   layer: layer,
-  deps: [Project.node, bootstrapNode],
+  deps: [Project.node, bootstrapNode, EventV2.node],
 })
 
 export * as InstanceStore from "./instance-store"

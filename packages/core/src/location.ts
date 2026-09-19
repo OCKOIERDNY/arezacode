@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { Info, Ref, response } from "@opencode-ai/schema/location"
 import { Project } from "./project"
+import { AbsolutePath } from "./schema"
 import { LayerNode } from "./effect/layer-node"
 import { makeLocationNode, tags } from "./effect/app-node"
 
@@ -10,6 +11,8 @@ export { Info, Ref, response }
 
 export interface Interface extends Info {
   readonly vcs?: Project.Vcs
+  readonly gitDirectory?: AbsolutePath
+  readonly previousProjectID?: Project.ID
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Location") {}
@@ -27,6 +30,8 @@ const layer = (ref: Ref) =>
         workspaceID: ref.workspaceID,
         project: { id: resolved.id, directory: resolved.directory },
         vcs: resolved.vcs,
+        gitDirectory: resolved.gitDirectory,
+        previousProjectID: resolved.previous,
       })
     }),
   )

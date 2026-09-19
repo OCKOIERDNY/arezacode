@@ -6,6 +6,7 @@ import { getLogger } from "./logging"
 import { getStore } from "./store"
 import { setAppQuitting } from "./windows"
 import { nativeT } from "./native-translations"
+import { UPDATE_SOURCE } from "../update-source"
 
 const { autoUpdater } = pkg
 const key = "ready"
@@ -13,9 +14,10 @@ const key = "ready"
 export function setupAutoUpdater(stop: () => Promise<void>) {
   const logger = getLogger()
   autoUpdater.logger = logger
+  autoUpdater.setFeedURL(UPDATE_SOURCE)
   autoUpdater.channel = "latest"
   autoUpdater.allowPrerelease = false
-  autoUpdater.allowDowngrade = true
+  autoUpdater.allowDowngrade = false
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
   logger.log("auto updater configured", {
@@ -25,7 +27,7 @@ export function setupAutoUpdater(stop: () => Promise<void>) {
     currentVersion: app.getVersion(),
   })
 
-  const store = getStore("opencode.updater")
+  const store = getStore("arezacode.updater")
   return createUpdaterController({
     enabled: UPDATER_ENABLED,
     currentVersion: app.getVersion(),

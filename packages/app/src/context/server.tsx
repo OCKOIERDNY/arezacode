@@ -2,7 +2,7 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { type Accessor, batch, createMemo } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
-import { pathKey } from "@/utils/path-key"
+import { pathKey, relocatePath } from "@/utils/path-key"
 import { ServerScope } from "@/utils/server-scope"
 
 type StoredProject = { worktree: string; expanded: boolean }
@@ -95,6 +95,28 @@ export function createServerProjects<T extends ServerProjectState>(input: {
     list: current,
     recentlyClosed: currentClosed,
     remove,
+    relocate(from: string, to: string) {
+      const scope = input.scope()
+      const projects = current().map((project) => ({
+        ...project,
+        worktree: relocatePath(project.worktree, from, to),
+      }))
+      batch(() => {
+        setStore(
+          "projects",
+          scope,
+          projects.filter(
+            (project, index) =>
+              projects.findIndex((item) => pathKey(item.worktree) === pathKey(project.worktree)) === index,
+          ),
+        )
+        setStore("recentlyClosed", scope, [
+          ...new Set(currentClosed().map((directory) => relocatePath(directory, from, to))),
+        ])
+        const last = input.store.lastProject[scope]
+        if (last) setStore("lastProject", scope, relocatePath(last, from, to))
+      })
+    },
     open(directory: string) {
       const scope = input.scope()
       const key = pathKey(directory)

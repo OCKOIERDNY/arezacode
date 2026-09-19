@@ -242,6 +242,11 @@ export function SessionHeader() {
     reviewVisible: isDesktop(),
     reviewOpened: view().reviewPanel.opened(),
     onReviewToggle: () => view().reviewPanel.toggle(),
+    chatHidden:
+      isDesktop() &&
+      layout.session.width() === 0 &&
+      (view().reviewPanel.opened() || view().terminal.opened() || layout.fileTree.opened()),
+    onChatRestore: () => layout.session.resize(600),
   }))
 
   const selectApp = (app: OpenApp) => {
@@ -281,15 +286,40 @@ export function SessionHeader() {
       .catch((err: unknown) => showRequestError(language, err))
   }
 
-  const [centerMount, setCenterMount] = createSignal<HTMLElement | null>(null)
+  const [mounts, setMounts] = createStore<{ center: HTMLElement | null; left: HTMLElement | null }>({
+    center: null,
+    left: null,
+  })
   const rightMount = useTitlebarRightMount()
   onMount(() => {
-    setCenterMount(document.getElementById("opencode-titlebar-center"))
+    setMounts({
+      center: document.getElementById("opencode-titlebar-center"),
+      left: document.getElementById("opencode-titlebar-left-actions"),
+    })
   })
 
   return (
     <>
-      <Show when={search() && centerMount()} keyed>
+      <Show when={isV2() && mounts.left} keyed>
+        {(mount) => (
+          <Portal mount={mount}>
+            <Show when={v2ActionsState().chatHidden}>
+              <TooltipV2 placement="bottom" value={language.t("session.chat.show")}>
+                <IconButtonV2
+                  type="button"
+                  variant="ghost-muted"
+                  size="large"
+                  class="!w-9 shrink-0"
+                  onClick={v2ActionsState().onChatRestore}
+                  aria-label={language.t("session.chat.show")}
+                  icon={<IconV2 name="expand" style={{ transform: "rotate(90deg)" }} />}
+                />
+              </TooltipV2>
+            </Show>
+          </Portal>
+        )}
+      </Show>
+      <Show when={search() && mounts.center} keyed>
         {(mount) => (
           <Portal mount={mount}>
             <Button
@@ -524,17 +554,17 @@ type SessionHeaderV2ActionsState = {
   reviewVisible: boolean
   reviewOpened: boolean
   onReviewToggle: () => void
+  chatHidden: boolean
+  onChatRestore: () => void
 }
 
 function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
-  const language = useLanguage()
-
   return (
     <div class="flex items-center gap-2">
       <Show when={props.state.statusVisible}>
-        <Tooltip placement="bottom" value={props.state.statusLabel}>
+        <TooltipV2 placement="bottom" value={props.state.statusLabel}>
           <StatusPopoverV2 />
-        </Tooltip>
+        </TooltipV2>
       </Show>
       <Show when={props.state.reviewVisible}>
         <TooltipV2
@@ -557,9 +587,9 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
             state={props.state.reviewOpened ? "pressed" : undefined}
             onClick={props.state.onReviewToggle}
             aria-label={props.state.reviewLabel}
-            aria-expanded={props.state.reviewOpened}
+            aria-pressed={props.state.reviewOpened}
             aria-controls="review-panel"
-            icon={<IconV2 name="sidebar-right" />}
+            icon={<IconV2 name="sidebar-right" class="-scale-x-100" />}
           />
         </TooltipV2>
       </Show>

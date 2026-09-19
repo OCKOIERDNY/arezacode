@@ -45,5 +45,12 @@ export function useSessionTabAvatarState(
     if (needsAttention()) return false
     return serverSync.session.data.session_working(sessionId())
   })
-  return { unread, loading }
+  const status = createMemo(() => {
+    if (needsAttention()) return "waiting"
+    if (loading()) return "working"
+    const latest = notificationState()?.session.all(sessionId()).at(-1)
+    if (latest?.type === "error") return "error"
+    if (latest?.type === "turn-complete" && !latest.viewed) return "complete"
+  })
+  return { unread, loading, status }
 }

@@ -1,10 +1,18 @@
+import type { JSX } from "solid-js"
 import type { HomeProjectsController } from "./home-projects-controller"
 import { HomeProjectsView } from "./home-projects-view"
 import type { HomeScrollController } from "./home-scroll-controller"
 
-export function HomeProjects(props: { projects: HomeProjectsController; scroll: HomeScrollController }) {
+export function HomeProjects(props: {
+  projects: HomeProjectsController
+  scroll: HomeScrollController
+  renderSessions?: () => JSX.Element
+  projectActive?: (server: string, directory: string) => boolean
+}) {
   return (
     <HomeProjectsView
+      renderSessions={props.renderSessions}
+      projectActive={props.projectActive}
       language={props.projects.copy.language}
       servers={props.projects.server.list}
       projects={props.projects.project.list}

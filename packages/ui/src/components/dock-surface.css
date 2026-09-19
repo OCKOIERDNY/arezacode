@@ -21,6 +21,11 @@
   --dock-shell-border-underlay-background: var(--v2-background-bg-base);
 }
 
+[data-theme="oc-2"][data-color-scheme="dark"] [data-component="prompt-input-v2"] {
+  --v2-background-bg-base: #282828;
+  --color-v2-background-bg-base: var(--v2-background-bg-base);
+}
+
 [data-dock-surface="tray"] {
   background-color: var(--background-base);
   border: 1px solid var(--border-weak-base);

@@ -9,14 +9,15 @@ import { eq } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
-import { InvalidRequestError, SessionNotFoundError } from "@opencode-ai/protocol/errors"
+import { ConflictError, InvalidRequestError, SessionNotFoundError } from "@opencode-ai/protocol/errors"
+import { relocationConflict } from "./project-relocation"
 import type { LocationServices } from "../location"
 
 export class SessionLocationMiddleware extends HttpApiMiddleware.Service<
   SessionLocationMiddleware,
   { provides: LocationServices }
 >()("@opencode/HttpApiSessionLocation", {
-  error: [InvalidRequestError, SessionNotFoundError],
+  error: [InvalidRequestError, SessionNotFoundError, ConflictError],
 }) {}
 
 const decodeSessionID = Schema.decodeUnknownEffect(SessionV2.ID)
@@ -61,7 +62,7 @@ export const sessionLocationLayer = Layer.effect(
             ),
           ),
         )
-      }),
+      }).pipe(relocationConflict),
     )
   }),
 )

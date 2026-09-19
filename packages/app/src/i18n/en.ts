@@ -597,7 +597,8 @@ export const dict = {
   "error.page.action.checkUpdates": "Check for updates",
   "error.page.action.updateTo": "Update to {{version}}",
   "error.page.circular": "[Circular]",
-  "error.page.report.prefix": "Please report this error to the OpenCode team",
+  "error.page.report.prefix": "Please report this error to the ArezaCode team",
+  "error.page.report.github": "on GitHub",
   "error.page.report.discord": "on Discord",
   "error.page.version": "Version: {{version}}",
 
@@ -689,6 +690,7 @@ export const dict = {
   "session.review.noUncommittedChanges": "No uncommitted changes yet",
   "session.review.noBranchChanges": "No branch changes yet",
 
+  "session.chat.show": "Show chat",
   "session.files.selectToOpen": "Select a file to open",
   "session.files.all": "All files",
   "session.files.empty": "No files",

@@ -4,13 +4,15 @@ import { Effect, Layer } from "effect"
 import { HttpServerResponse } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
 import { WorkspaceRouteContext } from "./workspace-routing"
+import { ConflictError } from "@opencode-ai/protocol/errors"
+import { relocationConflict } from "@opencode-ai/server/middleware/project-relocation"
 
 export class InstanceContextMiddleware extends HttpApiMiddleware.Service<
   InstanceContextMiddleware,
   {
     requires: WorkspaceRouteContext
   }
->()("@opencode/ExperimentalHttpApiInstanceContext") {}
+>()("@opencode/ExperimentalHttpApiInstanceContext", { error: [ConflictError] }) {}
 
 function decode(input: string): string {
   try {
@@ -38,6 +40,6 @@ export const instanceContextLayer = Layer.effect(
   InstanceContextMiddleware,
   Effect.gen(function* () {
     const store = yield* InstanceStore.Service
-    return InstanceContextMiddleware.of((effect) => provideInstanceContext(effect, store))
+    return InstanceContextMiddleware.of((effect) => provideInstanceContext(effect, store).pipe(relocationConflict))
   }),
 )

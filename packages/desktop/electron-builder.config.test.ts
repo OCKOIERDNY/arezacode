@@ -4,9 +4,9 @@ import type { Configuration } from "electron-builder"
 const legacyDesktopEntry = "resources/linux/opencode-desktop.desktop"
 
 const channels = [
-  { channel: "dev", appId: "ai.opencode.desktop.dev" },
-  { channel: "beta", appId: "ai.opencode.desktop.beta" },
-  { channel: "prod", appId: "ai.opencode.desktop" },
+  { channel: "dev", appId: "com.areza.arezacode" },
+  { channel: "beta", appId: "com.areza.arezacode.beta" },
+  { channel: "prod", appId: "com.areza.arezacode" },
 ] as const
 
 for (const channel of channels) {
@@ -21,6 +21,14 @@ for (const channel of channels) {
     else process.env.OPENCODE_CHANNEL = previous
 
     expect(config.appId).toBe(channel.appId)
+    expect(config.publish).toEqual({
+      provider: "github",
+      owner: "OCKOIERDNY",
+      repo: "arezacode",
+      channel: "latest",
+      updaterCacheDirName: "arezacode-updater",
+    })
+    expect(config.extraMetadata?.name).toBe("arezacode")
     expect(config.extraMetadata?.desktopName).toBe(`${channel.appId}.desktop`)
     expect(config.linux?.executableName).toBe(channel.appId)
     expect(config.linux?.desktop?.entry?.StartupWMClass).toBe(channel.appId)
@@ -51,9 +59,9 @@ test("keeps a hidden prod launcher for old Linux pins", async () => {
   ).toBe(true)
 
   const desktop = await Bun.file(legacyDesktopEntry).text()
-  expect(desktop).toContain("Exec=/opt/OpenCode/ai.opencode.desktop %U")
-  expect(desktop).toContain("Icon=ai.opencode.desktop")
-  expect(desktop).toContain("StartupWMClass=ai.opencode.desktop")
+  expect(desktop).toContain("Exec=/opt/ArezaCode/com.areza.arezacode %U")
+  expect(desktop).toContain("Icon=com.areza.arezacode")
+  expect(desktop).toContain("StartupWMClass=com.areza.arezacode")
   expect(desktop).toContain("NoDisplay=true")
 })
 

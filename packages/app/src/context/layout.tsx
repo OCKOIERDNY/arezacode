@@ -1,6 +1,9 @@
 import { createStore, produce, reconcile } from "solid-js/store"
 import { batch, createEffect, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
-import { useLocation } from "@solidjs/router"
+import { useLocation, useNavigate } from "@solidjs/router"
+import { Option, Schema } from "effect"
+import { ProjectDirectories } from "@opencode-ai/schema/project-directories"
+import { base64Encode } from "@opencode-ai/core/util/encode"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useServerSync } from "./server-sync"
@@ -10,7 +13,7 @@ import { usePlatform } from "./platform"
 import { Project } from "@opencode-ai/sdk/v2"
 import { normalizeProjectInfo } from "./global-sync/utils"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
-import { pathKey } from "@/utils/path-key"
+import { pathKey, relocatePath } from "@/utils/path-key"
 import { decode64 } from "@/utils/base64"
 import { same } from "@/utils/same"
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
@@ -166,6 +169,35 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     const tabs = useTabs()
     const platform = usePlatform()
     const location = useLocation()
+    const navigate = useNavigate()
+    createEffect(() => {
+      const sdk = serverSdk()
+      onCleanup(
+        sdk.event.listen((event) => {
+          const type: string = event.details.type
+          if (type !== "project.directories.updated") return
+          const data = Schema.decodeUnknownOption(ProjectDirectories.Event.Updated.data)(event.details.properties)
+          const moved = Option.isSome(data) ? data.value.moved : undefined
+          if (!moved) return
+          server.projects.forServer(ServerConnection.key(sdk.server)).relocate(moved.from, moved.to)
+          tabs.store.forEach((tab) => {
+            if (tab.type !== "draft" || tab.server !== ServerConnection.key(sdk.server)) return
+            tabs.updateDraft(tab.draftID, {
+              directory: relocatePath(tab.directory, moved.from, moved.to),
+              worktree: tab.worktree ? relocatePath(tab.worktree, moved.from, moved.to) : undefined,
+            })
+          })
+          const parts = location.pathname.split("/")
+          const directory = parts[2] === "session" ? decode64(parts[1]) : undefined
+          if (!directory) return
+          const next = relocatePath(directory, moved.from, moved.to)
+          if (next !== directory)
+            navigate(`/${base64Encode(next)}/${parts.slice(2).join("/")}${location.search}${location.hash}`, {
+              replace: true,
+            })
+        }),
+      )
+    })
     const route = createMemo(() => {
       const value = currentRoute(location.pathname, location.search)
       if (value.type === "home") return value
@@ -306,7 +338,12 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
       }),
     )
+    const [projectSidebar, setProjectSidebar] = persisted(
+      Persist.global("project-sidebar.v1"),
+      createStore({ opened: true }),
+    )
     const [ephemeral, setEphemeral] = createStore({
+      projectSidebarPreview: false,
       reviewPanelSource: "other" as ReviewPanelSource,
       sessionTabPreview: {} as Record<string, string | undefined>,
     })
@@ -658,6 +695,16 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         move(directory: string, toIndex: number) {
           server.projects.move(directory, toIndex)
         },
+      },
+      projectSidebar: {
+        opened: () => projectSidebar.opened,
+        preview: () => ephemeral.projectSidebarPreview,
+        previewCollapse: (value: boolean) => setEphemeral("projectSidebarPreview", value),
+        close() {
+          setProjectSidebar("opened", false)
+          setEphemeral("projectSidebarPreview", false)
+        },
+        toggle: () => setProjectSidebar("opened", (value) => !value),
       },
       sidebar: {
         opened: createMemo(() => store.sidebar.opened),

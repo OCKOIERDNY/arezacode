@@ -29,6 +29,7 @@ const layer = Layer.effect(
     })
 
     return SessionExecution.Service.of({
+      withIdle: coordinator.withIdle,
       active: coordinator.active,
       interrupt: coordinator.interrupt,
       resume: coordinator.run,

@@ -5,11 +5,14 @@ import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { Effect, Layer } from "effect"
 import { HttpServerRequest } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
+import { ConflictError } from "@opencode-ai/protocol/errors"
+import { relocationConflict } from "./middleware/project-relocation"
 
 export type LocationServices = Layer.Success<ReturnType<(typeof LocationServiceMap.Service)["get"]>>
 
 export class LocationMiddleware extends HttpApiMiddleware.Service<LocationMiddleware, { provides: LocationServices }>()(
   "@opencode/HttpApiLocation",
+  { error: [ConflictError] },
 ) {}
 
 export function response<A, E, R>(data: Effect.Effect<A, E, R>) {
@@ -54,7 +57,7 @@ export const layer = Layer.effect(
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
         return yield* effect.pipe(Effect.provide(locations.get(ref(request))))
-      }),
+      }).pipe(relocationConflict),
     )
   }),
 )

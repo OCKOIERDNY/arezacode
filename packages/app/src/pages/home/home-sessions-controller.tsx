@@ -38,7 +38,7 @@ export type HomeSessionGroup = {
 
 export type OpenSessionOptions = { background?: boolean }
 
-export function createHomeSessionsController(home: HomeController) {
+export function createHomeSessionsController(home: HomeController, limit = HOME_SESSION_LIMIT) {
   const tabs = useTabs()
   const command = useCommand()
   const dialog = useDialog()
@@ -82,7 +82,7 @@ export function createHomeSessionsController(home: HomeController) {
   const indexedSessions = createMemo(() =>
     retainHomeSessions(
       homeSessions().sessions(sessionLoad.data, sessionEventLoad.data),
-      HOME_SESSION_LIMIT,
+      limit,
       Date.now(),
     ),
   )
@@ -94,7 +94,7 @@ export function createHomeSessionsController(home: HomeController) {
       projectByID,
     }),
   )
-  const records = createMemo(() => allRecords().slice(0, HOME_SESSION_LIMIT))
+  const records = createMemo(() => allRecords().slice(0, limit))
   const groups = createMemo(() => groupSessions(records(), language))
   const prefetched = new Set<string>()
 

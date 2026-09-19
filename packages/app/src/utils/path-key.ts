@@ -22,3 +22,13 @@ export const pathKey = (path: string) => {
   if (isDrive(trimmed)) return `${trimmed}/` as PathKey
   return trimmed as PathKey
 }
+
+export function relocatePath(value: string, from: string, to: string) {
+  const source = pathKey(from)
+  const current = pathKey(value)
+  if (current === source) return to
+  const prefix = source.endsWith("/") ? source : `${source}/`
+  if (!current.startsWith(prefix)) return value
+  const target = pathKey(to)
+  return `${target.endsWith("/") ? target : `${target}/`}${current.slice(prefix.length)}`
+}

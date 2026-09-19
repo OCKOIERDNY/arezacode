@@ -84,6 +84,7 @@ function projectV2FailureLayer() {
           vcs: { type: "git" as const, store: input },
         }),
       commit: () => Effect.void,
+      register: () => Effect.void,
     }),
   )
 }

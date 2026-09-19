@@ -6,6 +6,63 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(Layer.empty)
 
 describe("SessionRunCoordinator", () => {
+  it.effect("holds wakeups until an idle reservation is released", () =>
+    Effect.gen(function* () {
+      const held = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const started = yield* Deferred.make<void>()
+      const coordinator = yield* SessionRunCoordinator.make<string, never>({
+        drain: () => Deferred.succeed(started, undefined).pipe(Effect.asVoid),
+      })
+      const reservation = yield* coordinator
+        .withIdle(["session"], Deferred.succeed(held, undefined).pipe(Effect.andThen(Deferred.await(release))))
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(held)
+      expect(yield* coordinator.withIdle(["session"], Effect.void)).toBe(false)
+      yield* coordinator.wake("session")
+      yield* coordinator.wake("session")
+      yield* Effect.yieldNow
+      expect(yield* coordinator.active).toEqual(new Set())
+      yield* Deferred.succeed(release, undefined)
+      expect(yield* Fiber.join(reservation)).toBe(true)
+      yield* Deferred.await(started)
+    }),
+  )
+
+  it.effect("releases waiting resumes when a reservation is cancelled", () =>
+    Effect.gen(function* () {
+      const held = yield* Deferred.make<void>()
+      const started = yield* Deferred.make<void>()
+      const coordinator = yield* SessionRunCoordinator.make<string, never>({
+        drain: () => Deferred.succeed(started, undefined).pipe(Effect.asVoid),
+      })
+      const reservation = yield* coordinator
+        .withIdle(["session"], Deferred.succeed(held, undefined).pipe(Effect.andThen(Effect.never)))
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(held)
+      const resume = yield* coordinator.run("session").pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      expect(yield* coordinator.active).toEqual(new Set())
+      yield* Fiber.interrupt(reservation)
+      yield* Fiber.join(resume)
+      yield* Deferred.await(started)
+      expect(yield* coordinator.withIdle(["session"], Effect.void)).toBe(true)
+    }),
+  )
+
+  it.effect("releases an idle reservation when its work fails", () =>
+    Effect.gen(function* () {
+      const coordinator = yield* SessionRunCoordinator.make<string, never>({ drain: () => Effect.never })
+      expect(Exit.isFailure(yield* coordinator.withIdle(["session"], Effect.fail("failed")).pipe(Effect.exit))).toBe(
+        true,
+      )
+      expect(yield* coordinator.withIdle(["session"], Effect.void)).toBe(true)
+      yield* coordinator.wake("session")
+      expect(yield* coordinator.withIdle(["session"], Effect.void)).toBe(false)
+      yield* coordinator.interrupt("session")
+    }),
+  )
+
   it.effect("joins concurrent resumes for one key", () =>
     Effect.scoped(
       Effect.gen(function* () {

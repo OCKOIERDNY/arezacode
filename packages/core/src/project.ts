@@ -10,6 +10,11 @@ import { makeGlobalNode } from "./effect/app-node"
 import { Hash } from "./util/hash"
 import { ProjectDirectories } from "./project/directories"
 import { ProjectSchema } from "./project/schema"
+import { Database } from "./database/database"
+import { ProjectDirectoryTable, ProjectTable } from "./project/sql"
+import { SessionTable } from "./session/sql"
+import { WorkspaceTable } from "./control-plane/workspace.sql"
+import { eq, sql } from "drizzle-orm"
 
 export const ID = ProjectSchema.ID
 export type ID = ProjectSchema.ID
@@ -31,21 +36,14 @@ export interface Resolved {
   readonly previous?: ID
   readonly id: ID
   readonly directory: AbsolutePath
+  readonly gitDirectory?: AbsolutePath
   readonly vcs?: Vcs
 }
 
 export interface Interface {
   readonly directories: (input: DirectoriesInput) => Effect.Effect<Directories>
   readonly resolve: (input: AbsolutePath) => Effect.Effect<Resolved>
-  /**
-   * Temporary bridge method for writing the resolved project ID to the repo-local cache.
-   *
-   * This exists while the old opencode project service and this core project
-   * service work together: core resolves the ID, while the old service still owns
-   * database migration and persistence. The old service should call this after it
-   * finishes migrating from `resolve().previous` to `resolve().id`; once project
-   * persistence moves into core, this separate bridge method can go away.
-   */
+  readonly register: (input: Resolved) => Effect.Effect<void>
   readonly commit: (input: { store: AbsolutePath; id: ID }) => Effect.Effect<void>
 }
 
@@ -57,6 +55,7 @@ const layer = Layer.effect(
     const fs = yield* FSUtil.Service
     const git = yield* Git.Service
     const projectDirectories = yield* ProjectDirectories.Service
+    const db = (yield* Database.Service).db
 
     const directories = Effect.fn("Project.directories")(function* (input: DirectoriesInput) {
       return yield* projectDirectories.list(input.projectID)
@@ -117,20 +116,68 @@ const layer = Layer.effect(
         previous,
         id: id ?? ID.global,
         directory: repo.worktree,
+        gitDirectory: repo.gitDirectory,
         vcs: { type: "git" as const, store: repo.commonDirectory },
       }
+    })
+
+    const register = Effect.fn("Project.register")(function* (input: Resolved) {
+      if (input.id === ID.global) return
+      yield* db
+        .transaction(
+          (tx) =>
+            Effect.gen(function* () {
+              if (input.previous && input.previous !== ID.global && input.previous !== input.id) {
+                const previous = yield* tx.select().from(ProjectTable).where(eq(ProjectTable.id, input.previous)).get()
+                if (previous)
+                  yield* tx
+                    .insert(ProjectTable)
+                    .values({ ...previous, id: input.id })
+                    .onConflictDoNothing()
+                    .run()
+                yield* tx
+                  .delete(ProjectDirectoryTable)
+                  .where(eq(ProjectDirectoryTable.project_id, input.previous))
+                  .run()
+                yield* tx
+                  .update(SessionTable)
+                  .set({ project_id: input.id, time_updated: sql`${SessionTable.time_updated}` })
+                  .where(eq(SessionTable.project_id, input.previous))
+                  .run()
+                yield* tx
+                  .update(WorkspaceTable)
+                  .set({ project_id: input.id })
+                  .where(eq(WorkspaceTable.project_id, input.previous))
+                  .run()
+                if (previous) yield* tx.delete(ProjectTable).where(eq(ProjectTable.id, input.previous)).run()
+              }
+              yield* tx
+                .insert(ProjectTable)
+                .values({
+                  id: input.id,
+                  worktree: input.directory,
+                  vcs: "git",
+                  sandboxes: [],
+                })
+                .onConflictDoNothing()
+                .run()
+            }),
+          { behavior: "immediate" },
+        )
+        .pipe(Effect.orDie)
+      if (input.vcs) yield* fs.writeFileString(path.join(input.vcs.store, "opencode"), input.id).pipe(Effect.ignore)
     })
 
     const commit = Effect.fn("Project.commit")(function* (input: { store: AbsolutePath; id: ID }) {
       yield* fs.writeFileString(path.join(input.store, "opencode"), input.id).pipe(Effect.ignore)
     })
 
-    return Service.of({ directories, resolve, commit })
+    return Service.of({ directories, resolve, register, commit })
   }),
 )
 
 export const node = makeGlobalNode({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, Git.node, ProjectDirectories.node],
+  deps: [FSUtil.node, Git.node, ProjectDirectories.node, Database.node],
 })
