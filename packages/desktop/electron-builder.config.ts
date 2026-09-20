@@ -53,6 +53,7 @@ const localSigningIdentity =
     : undefined
 
 const getBase = (appId: string): Configuration => ({
+  forceCodeSigning: process.platform === "darwin",
   artifactName: "arezacode-desktop-${os}-${arch}.${ext}",
   publish: UPDATE_SOURCE,
   directories: {
@@ -105,7 +106,7 @@ const getBase = (appId: string): Configuration => ({
     sign: true,
   },
   protocols: {
-    name: "OpenCode",
+    name: "ArezaCode",
     schemes: ["opencode"],
   },
   win: {

@@ -286,15 +286,21 @@ export function SessionHeader() {
       .catch((err: unknown) => showRequestError(language, err))
   }
 
-  const [mounts, setMounts] = createStore<{ center: HTMLElement | null; left: HTMLElement | null }>({
+  const [mounts, setMounts] = createStore<{
+    center: HTMLElement | null
+    left: HTMLElement | null
+    swapped: HTMLElement | null
+  }>({
     center: null,
     left: null,
+    swapped: null,
   })
   const rightMount = useTitlebarRightMount()
   onMount(() => {
     setMounts({
       center: document.getElementById("opencode-titlebar-center"),
       left: document.getElementById("opencode-titlebar-left-actions"),
+      swapped: document.getElementById("opencode-titlebar-swapped-actions"),
     })
   })
 
@@ -349,7 +355,7 @@ export function SessionHeader() {
           </Portal>
         )}
       </Show>
-      <Show when={rightMount()} keyed>
+      <Show when={isV2() && settings.general.sidebarPosition() === "right" ? mounts.swapped : rightMount()} keyed>
         {(mount) => (
           <Portal mount={mount}>
             <Show
@@ -559,6 +565,7 @@ type SessionHeaderV2ActionsState = {
 }
 
 function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
+  const settings = useSettings()
   return (
     <div class="flex items-center gap-2">
       <Show when={props.state.statusVisible}>
@@ -589,7 +596,9 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
             aria-label={props.state.reviewLabel}
             aria-pressed={props.state.reviewOpened}
             aria-controls="review-panel"
-            icon={<IconV2 name="sidebar-right" class="-scale-x-100" />}
+            icon={
+              <IconV2 name="sidebar-right" class={settings.general.sidebarPosition() === "left" ? "-scale-x-100" : undefined} />
+            }
           />
         </TooltipV2>
       </Show>

@@ -36,6 +36,7 @@ import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { previewSelectedLines } from "@opencode-ai/session-ui/pierre/selection-bridge"
 import { Button } from "@opencode-ai/ui/button"
+import { finishStartup, LoadingSplash } from "@opencode-ai/ui/logo"
 import { showToast } from "@/utils/toast"
 import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
 import { useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router"
@@ -201,6 +202,7 @@ export function SessionRouteErrorBoundary(
 }
 
 function SessionErrorFallback(props: { error: unknown; sessionID?: string; serverKey?: ServerConnection.Key }) {
+  finishStartup()
   const language = useLanguage()
   const server = useServer()
   const tabs = useTabs()
@@ -255,6 +257,16 @@ function ResolvedTargetSessionRoute() {
   const directory = createMemo(() => current()?.session.directory)
   const targetDirectory = () => directory()!
 
+  createEffect(
+    on(
+      () => params.id,
+      (id) =>
+        void sync()
+          .session.sync(id)
+          .catch(() => undefined),
+    ),
+  )
+
   createEffect(() => {
     const session = current()
     if (!session) return
@@ -269,7 +281,7 @@ function ResolvedTargetSessionRoute() {
     // lineage mid-resolution), which tears down the workspace subtree including
     // the terminal. Same-workspace tab switches keep it open because warm
     // targets resolve synchronously from the sync cache.
-    <Show when={directory()}>
+    <Show when={directory()} fallback={<LoadingSplash />}>
       <SDKProvider directory={targetDirectory}>
         <DirectoryDataProvider directory={targetDirectory} server={serverKey}>
           <TargetSessionPage />
@@ -513,9 +525,12 @@ export default function Page() {
     }),
   )
   const rightPanelVisible = () => (isDesktop() ? desktopV2PanelLayout().visible : terminalOpen())
-  const rightPanelPresent = createMemo<boolean>((previous) => previous || rightPanelVisible(), false)
+  const [warmReview, setWarmReview] = createSignal(false)
+  const [reviewContentReady, setReviewContentReady] = createSignal(false)
+  const rightPanelPresent = createMemo<boolean>((previous) => previous || rightPanelVisible() || warmReview(), false)
   const rightPanelReview = createMemo<boolean>(
-    (previous) => (rightPanelVisible() ? isDesktop() && (desktopV2ReviewOpen() || desktopFileTreeOpen()) : previous),
+    (previous) =>
+      rightPanelVisible() ? isDesktop() && (desktopV2ReviewOpen() || desktopFileTreeOpen()) : previous || warmReview(),
     false,
   )
 
@@ -563,6 +578,12 @@ export default function Page() {
   const sessionSync = timeline.resource
   const userMessages = timeline.userMessages
   const visibleUserMessages = timeline.visibleUserMessages
+
+  createEffect(() => {
+    if (!newSessionDesign() || !isDesktop() || !messagesReady() || warmReview()) return
+    const frame = requestAnimationFrame(() => setWarmReview(true))
+    onCleanup(() => cancelAnimationFrame(frame))
+  })
 
   createEffect(() => {
     const tab = activeFileTab()
@@ -692,7 +713,7 @@ export default function Page() {
   )
   const vcsQuery = createQuery(() => {
     const mode = vcsMode()
-    const enabled = wantsReview() && sync().project?.vcs === "git"
+    const enabled = (wantsReview() || warmReview()) && sync().project?.vcs === "git"
 
     return {
       queryKey: [...vcsKey(), mode] as const,
@@ -881,7 +902,7 @@ export default function Page() {
   let dockHeight = 0
   let scroller: HTMLDivElement | undefined
   let content: HTMLDivElement | undefined
-  let revealMessage = (_id: string) => {}
+  let revealMessage = (_id: string, _behavior: ScrollBehavior): boolean => false
   let scrollToEnd = () => {}
   let scrollMark = 0
   let messageMark = 0
@@ -1361,7 +1382,7 @@ export default function Page() {
   const reviewPanelV2 = () => (
     <div class="flex flex-col h-full overflow-hidden bg-v2-background-bg-base contain-strict">
       <Show when={reviewPanelV2Rendered()}>
-        <ReviewPanelV2 {...reviewPanelV2Props()} />
+        <ReviewPanelV2 {...reviewPanelV2Props()} onReady={setReviewContentReady} />
       </Show>
     </div>
   )
@@ -1994,7 +2015,7 @@ export default function Page() {
     },
     scroller: () => scroller,
     anchor,
-    revealMessage: (id) => revealMessage(id),
+    revealMessage: (id, behavior) => revealMessage(id, behavior),
     scheduleScrollState,
     consumePendingMessage: layout.pendingMessage.consume,
   })
@@ -2117,6 +2138,16 @@ export default function Page() {
                     if (root) scheduleScrollState(root)
                   }}
                   userMessages={visibleUserMessages()}
+                  diffs={reviewDiffs().flatMap((diff) => typeof diff.file === "string" ? [{
+                    file: diff.file,
+                    additions: diff.additions ?? 0,
+                    deletions: diff.deletions ?? 0,
+                  }] : [])}
+                  onOpenDiff={focusReviewDiff}
+                  onNavigateMessage={(message, behavior) => {
+                    autoScroll.pause()
+                    scrollToMessage(message, behavior)
+                  }}
                   setHistoryAnchor={(handlers) => {
                     captureHistoryAnchor = handlers.capture
                     restoreHistoryAnchor = handlers.restore
@@ -2256,6 +2287,32 @@ export default function Page() {
     </>
   )
 
+  const startupFileReady = createMemo(() => {
+    if (!desktopReviewOpen()) return true
+    const tab = activeFileTab()
+    const path = tab && file.pathFromTab(tab)
+    if (!path) return true
+    const state = file.get(path)
+    return !!state && !state.loading && (!!state.loaded || !!state.error)
+  })
+  const startupReady = createMemo<boolean>(
+    (previous) =>
+      previous ||
+      (!store.deferRender &&
+        messagesReady() &&
+        prompt.ready() &&
+        local.session.ready() &&
+        startupFileReady() &&
+        (!wantsReview() ||
+          nogit() ||
+          (reviewReady() && (!newSessionDesign() || activeTab() !== "review" || reviewContentReady())))),
+    false,
+  )
+
+  createEffect(() => {
+    if (startupReady()) finishStartup()
+  })
+
   return (
     <SessionRouteFrame>
       <SessionHeader />
@@ -2265,7 +2322,9 @@ export default function Page() {
         classList={{
           "p-2": settings.general.newLayoutDesigns(),
           "gap-4":
-            settings.general.newLayoutDesigns() && (!desktopSessionResizeOpen() || sessionPanelResizedWidth() > 0),
+            settings.general.newLayoutDesigns() &&
+            rightPanelVisible() &&
+            (!desktopSessionResizeOpen() || sessionPanelResizedWidth() > 0),
         }}
       >
         <Show when={!isDesktop() && !!params.id && !settings.general.newLayoutDesigns()}>{mobileTabs()}</Show>
@@ -2311,8 +2370,10 @@ export default function Page() {
             <div onPointerDown={() => size.start()}>
               <ResizeHandle
                 data-panel-resize="session"
+                edge={settings.general.newLayoutDesigns() && settings.general.sidebarPosition() === "right" ? "start" : "end"}
                 classList={{
-                  "-end-2": settings.general.newLayoutDesigns(),
+                  "-end-2": settings.general.newLayoutDesigns() && settings.general.sidebarPosition() === "left",
+                  "-start-2": settings.general.newLayoutDesigns() && settings.general.sidebarPosition() === "right",
                 }}
                 direction="horizontal"
                 size={sessionPanelResizedWidth()}
@@ -2330,7 +2391,7 @@ export default function Page() {
                 }}
                 onResize={(width) => {
                   size.touch()
-                  layout.session.resize(newSessionDesign() && width < 64 ? 0 : width)
+                  layout.session.resize(newSessionDesign() && width < SESSION_PANEL_WIDTH_MIN ? 0 : width)
                 }}
               />
             </div>
@@ -2358,6 +2419,7 @@ export default function Page() {
         <Show when={newSessionDesign()}>
           <Show when={rightPanelPresent()}>
             <div
+              classList={{ "md:-order-1": settings.general.sidebarPosition() === "right" }}
               data-component="session-right-panel"
               data-opened={rightPanelVisible()}
               inert={!rightPanelVisible()}

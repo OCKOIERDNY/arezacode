@@ -5,7 +5,7 @@ import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { File } from "@opencode-ai/session-ui/file"
 import { Font } from "@opencode-ai/ui/font"
-import { Splash } from "@opencode-ai/ui/logo"
+import { finishStartup, LoadingSplash, Splash } from "@opencode-ai/ui/logo"
 import { ThemeProvider } from "@opencode-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
 import {
@@ -35,6 +35,7 @@ import {
   onCleanup,
   type ParentProps,
   Show,
+  Suspense,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -220,7 +221,9 @@ function ResolvedDraftRoute(props: { draft: DraftTab }) {
             <SDKProvider directory={directory}>
               <DirectoryDataProvider directory={directory} server={serverKey}>
                 <DraftProviders>
-                  <NewSession />
+                  <Suspense fallback={<LoadingSplash />}>
+                    <NewSession />
+                  </Suspense>
                 </DraftProviders>
               </DirectoryDataProvider>
             </SDKProvider>
@@ -468,6 +471,10 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean; start
   )
   const loading = createMemo(() => checking() || startupChecking())
 
+  createEffect(() => {
+    if (!loading() && startupHealthCheck.latest) finishStartup("shell")
+  })
+
   return (
     <>
       <Show when={!checking()}>
@@ -490,15 +497,14 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean; start
         </Show>
       </Show>
       <Show when={loading()}>
-        <div class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background-base">
-          <Splash class="w-16 h-20 opacity-50 animate-pulse" />
-        </div>
+        <LoadingSplash />
       </Show>
     </>
   )
 }
 
 function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key: ServerConnection.Key) => void }) {
+  finishStartup("error")
   const language = useLanguage()
   const server = useServer()
   const others = () => server.list.filter((s) => ServerConnection.key(s) !== server.key)

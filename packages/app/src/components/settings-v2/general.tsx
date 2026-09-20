@@ -329,6 +329,22 @@ export const SettingsGeneralV2: Component<{
       <SettingsListV2>
         <LanguageSetting />
 
+        <SettingsRowV2
+          title={language.t("settings.general.row.sidebarPosition.title")}
+          description={language.t("settings.general.row.sidebarPosition.description")}
+        >
+          <SelectV2
+            appearance="inline"
+            data-action="settings-sidebar-position"
+            options={["left", "right"] as const}
+            current={settings.general.sidebarPosition()}
+            label={(value) => language.t(`settings.general.row.sidebarPosition.${value}`)}
+            onSelect={(value) => value && settings.general.setSidebarPosition(value)}
+            placement="bottom-end"
+            gutter={6}
+          />
+        </SettingsRowV2>
+
         <PermissionScopeSetting controller={permissionScope} />
 
         <ShellSetting controller={shell} />

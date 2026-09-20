@@ -4,6 +4,7 @@ import { ToolFailure } from "@opencode-ai/llm"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { FileSystem } from "../filesystem"
+import { Document } from "../document"
 import { Image } from "../image"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
@@ -79,6 +80,18 @@ const layer = Layer.effectDiscard(
               })
               if (type === "directory")
                 return yield* reader.list(absolute, { offset: input.offset, limit: input.limit })
+              if (Document.documentType(absolute)) {
+                const text = yield* Effect.tryPromise({
+                  try: () => Document.convert({ path: absolute, name: absolute }),
+                  catch: (error) =>
+                    new ToolFailure({ message: error instanceof Error ? error.message : "Document conversion failed" }),
+                })
+                const page = yield* Effect.try({
+                  try: () => Document.page(text, input.offset, input.limit),
+                  catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+                })
+                return new ReadToolFileSystem.TextPage({ type: "text-page", mime: "text/markdown", ...page })
+              }
               const content = yield* reader.read(absolute, resource, {
                 offset: input.offset,
                 limit: input.limit,
@@ -93,6 +106,7 @@ const layer = Layer.effectDiscard(
               return content
             }).pipe(
               Effect.mapError((error) => {
+                if (error instanceof ToolFailure) return error
                 const message =
                   error instanceof ReadToolFileSystem.BinaryFileError ||
                   error instanceof ReadToolFileSystem.MediaIngestLimitError ||

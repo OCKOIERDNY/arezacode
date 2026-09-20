@@ -381,32 +381,38 @@ export function Titlebar(props: {
                 <Show when={windows() || linux()}>
                   <WindowsAppMenu command={command} platform={platform} variant="v2" />
                 </Show>
-                <TooltipV2
-                  placement="bottom"
-                  value={
-                    <>
-                      {language.t(props.sidebar ? "command.sidebar.toggle" : "home.title")}
-                      <KeybindV2 keys={command.keybindParts("home.toggle")} variant="neutral" />
-                    </>
-                  }
-                  class="shrink-0"
+                <div id="opencode-titlebar-swapped-actions" class="flex shrink-0 items-center gap-2 empty:hidden" />
+                <div
+                  class="flex shrink-0 items-center gap-1.5"
+                  classList={{ "order-1": !!props.sidebar && settings.general.sidebarPosition() === "right" }}
                 >
-                  <IconButtonV2
-                    type="button"
-                    variant="ghost-muted"
-                    size="large"
-                    class="!w-9 shrink-0"
-                    icon={<IconV2 name={props.sidebar ? "sidebar-right" : "grid-plus"} />}
-                    state={
-                      (props.sidebar ? props.sidebar.opened : layout.route().type === "home") ? "pressed" : undefined
+                  <TooltipV2
+                    placement="bottom"
+                    value={
+                      <>
+                        {language.t(props.sidebar ? "command.sidebar.toggle" : "home.title")}
+                        <KeybindV2 keys={command.keybindParts("home.toggle")} variant="neutral" />
+                      </>
                     }
-                    onClick={toggleHome}
-                    aria-label={language.t(props.sidebar ? "command.sidebar.toggle" : "home.title")}
-                    aria-pressed={props.sidebar?.opened}
-                    aria-controls={props.sidebar ? "project-sidebar" : undefined}
-                  />
-                </TooltipV2>
-                <div id="opencode-titlebar-left-actions" class="flex shrink-0 items-center gap-2 empty:hidden" />
+                    class="shrink-0"
+                  >
+                    <IconButtonV2
+                      type="button"
+                      variant="ghost-muted"
+                      size="large"
+                      class="!w-9 shrink-0"
+                      icon={<IconV2 name={props.sidebar ? "sidebar-right" : "grid-plus"} />}
+                      state={
+                        (props.sidebar ? props.sidebar.opened : layout.route().type === "home") ? "pressed" : undefined
+                      }
+                      onClick={toggleHome}
+                      aria-label={language.t(props.sidebar ? "command.sidebar.toggle" : "home.title")}
+                      aria-pressed={props.sidebar?.opened}
+                      aria-controls={props.sidebar ? "project-sidebar" : undefined}
+                    />
+                  </TooltipV2>
+                  <div id="opencode-titlebar-left-actions" class="flex shrink-0 items-center gap-2 empty:hidden" />
+                </div>
 
                 <Show when={!props.sidebar}>
                   <TitlebarTabStrip

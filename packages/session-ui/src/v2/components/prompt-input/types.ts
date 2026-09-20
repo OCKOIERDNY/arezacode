@@ -101,6 +101,11 @@ export type PromptInputV2Suggestion = {
   description?: string
   path?: string
   keybind?: string[]
+  commandType?: "builtin" | "command" | "mcp" | "skill"
+  group?: string
+  badge?: string
+  tooltip?: string
+  disabled?: boolean
   recent?: boolean
   mention?: PromptInputV2FilePart | PromptInputV2AgentPart
 }

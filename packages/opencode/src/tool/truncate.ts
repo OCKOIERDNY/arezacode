@@ -8,6 +8,7 @@ import { evaluate } from "@/permission/evaluate"
 import { Config } from "@/config/config"
 import { ToolID } from "./schema"
 import { TRUNCATION_DIR } from "./truncation-dir"
+import { AutomaticChecks } from "@opencode-ai/core/automatic-checks"
 
 const RETENTION = Duration.days(7)
 
@@ -30,6 +31,7 @@ function hasTaskTool(agent?: Agent.Info) {
 }
 
 export interface Interface {
+  readonly compress: (text: string, options?: Options) => Effect.Effect<Result | undefined>
   readonly cleanup: () => Effect.Effect<void>
   readonly write: (text: string) => Effect.Effect<string>
   /**
@@ -69,6 +71,7 @@ const layer = Layer.effect(
       const file = path.join(TRUNCATION_DIR, ToolID.ascending())
       yield* fs.ensureDir(TRUNCATION_DIR).pipe(Effect.orDie)
       yield* fs.writeFileString(file, text).pipe(Effect.orDie)
+      yield* fs.chmod(file, 0o600).pipe(Effect.orDie)
       return file
     })
 
@@ -82,7 +85,26 @@ const layer = Layer.effect(
       }
     })
 
+    const compress = Effect.fn("Truncate.compress")(function* (text: string, options: Options = {}) {
+      const resolved = yield* limits()
+      const maxLines = options.maxLines ?? resolved.maxLines
+      const maxBytes = options.maxBytes ?? resolved.maxBytes
+      const compressed = yield* Effect.tryPromise(() => AutomaticChecks.compress(text)).pipe(
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      if (compressed && Buffer.byteLength(compressed) < maxBytes && compressed.split("\n").length < maxLines) {
+        const file = yield* write(text)
+        return {
+          content: `${compressed}\n\nHeadroom compressed this output. Full original: ${file}. Use Read for omitted detail.`,
+          truncated: true,
+          outputPath: file,
+        } as const
+      }
+    })
+
     const output = Effect.fn("Truncate.output")(function* (text: string, options: Options = {}, agent?: Agent.Info) {
+      const compressed = yield* compress(text, options)
+      if (compressed) return compressed
       const resolved = yield* limits()
       const maxLines = options.maxLines ?? resolved.maxLines
       const maxBytes = options.maxBytes ?? resolved.maxBytes
@@ -147,7 +169,7 @@ const layer = Layer.effect(
       Effect.forkScoped,
     )
 
-    return Service.of({ cleanup, write, output, limits })
+    return Service.of({ cleanup, write, output, limits, compress })
   }),
 )
 

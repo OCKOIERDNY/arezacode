@@ -100,6 +100,95 @@ test.beforeEach(async ({ page }) => {
   )
 })
 
+test("adds a sidebar chat only after sending the first message", async ({ page }) => {
+  const created: unknown[] = []
+  const headers = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "*",
+    "access-control-allow-methods": "GET, POST, OPTIONS",
+  }
+  const sessionID = "ses_first_sent_message"
+  const session = {
+    id: sessionID,
+    projectID: "proj_new_session_panel_corner",
+    title: "First sent message",
+    directory,
+    slug: "first-sent-message",
+    version: "dev",
+    location: { directory },
+    time: { created: 1800000000000, updated: 1800000000000 },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  }
+  await page.route(
+    (url) => url.pathname === "/provider",
+    (route) =>
+      route.fulfill({
+        headers,
+        json: {
+          all: [
+            {
+              id: "opencode",
+              name: "OpenCode",
+              models: {
+                "claude-opus-4-6": { id: "claude-opus-4-6", name: "Claude Opus 4.6", limit: { context: 200000 } },
+              },
+            },
+          ],
+          connected: ["opencode"],
+          default: { providerID: "opencode", modelID: "claude-opus-4-6" },
+        },
+      }),
+  )
+  await page.route(
+    (url) => url.pathname === "/session",
+    async (route) => {
+      if (route.request().method() !== "POST") return route.fallback()
+      created.push(route.request().postDataJSON())
+      return route.fulfill({ headers, json: session })
+    },
+  )
+  await page.route(
+    (url) => url.pathname === "/api/session",
+    (route) => (created.length ? route.fulfill({ headers, json: { data: [session], cursor: {} } }) : route.fallback()),
+  )
+  await page.route(
+    (url) => url.pathname === `/session/${sessionID}`,
+    (route) => route.fulfill({ headers, json: session }),
+  )
+  await page.route(
+    (url) => url.pathname === `/session/${sessionID}/prompt_async`,
+    (route) => route.fulfill({ headers, status: 204 }),
+  )
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`/new-session?draftId=${draftID}`)
+  const sidebar = page.locator('[data-component="project-sidebar"]')
+  const editor = page.locator('[data-component="prompt-input"]')
+  await expectAppVisible(editor)
+  await expect(sidebar.locator('[data-component="home-session-row"]')).toHaveCount(70)
+  await editor.fill("/")
+  await expect(editor).toHaveText("/")
+  await expect(sidebar.locator('[data-component="sidebar-draft-row"]')).toHaveCount(0)
+  await editor.fill("First sent message")
+  await expect(sidebar.locator('[data-component="home-session-row"]')).toHaveCount(70)
+  expect(created).toHaveLength(0)
+  await page.screenshot({ path: "/tmp/areza-unsent-draft.png" })
+  const sent = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" && new URL(request.url()).pathname === `/session/${sessionID}/prompt_async`,
+  )
+  await editor.press("Enter")
+  await expect.poll(() => created.length).toBe(1)
+  await sent
+  expect(created).toHaveLength(1)
+  await expect(page).toHaveURL(new RegExp(`/session/${sessionID}$`))
+  await expect(
+    sidebar.locator('[data-component="home-session-row"]').filter({ hasText: "First sent message" }),
+  ).toBeVisible()
+  await expect(sidebar.locator('[data-component="sidebar-draft-row"]')).toHaveCount(0)
+  await page.screenshot({ path: "/tmp/areza-first-sent-chat.png" })
+})
+
 test("matches the rounded panel corners to the dark new-session background", async ({ page }, testInfo) => {
   await page.goto(`/new-session?draftId=${draftID}`)
   await expectAppVisible(page.locator('[data-component="prompt-input"]'))
@@ -134,8 +223,151 @@ test("matches the rounded panel corners to the dark new-session background", asy
     },
   )
 
-  expect(corners.every(([red, green, blue, alpha]) => red === 24 && green === 24 && blue === 24 && alpha === 255)).toBe(true)
+  expect(corners.every(([red, green, blue, alpha]) => red === 24 && green === 24 && blue === 24 && alpha === 255)).toBe(
+    true,
+  )
   await expect(panel).toHaveCSS("background-color", "rgb(24, 24, 24)")
+})
+
+test("shows ArezaCode branding and keeps version inside settings", async ({ page }, testInfo) => {
+  await page.route("**/pty/shells*", (route) => route.fulfill({ json: [] }))
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`/new-session?draftId=${draftID}`)
+  const sidebar = page.locator('[data-component="project-sidebar"]')
+  await expect(sidebar.locator('[data-component="home-session-row"]')).toHaveCount(70)
+  await expect(sidebar.locator('[data-component="sidebar-footer"]')).toHaveCount(0)
+  await expect(page).toHaveTitle("ArezaCode")
+  await sidebar.getByRole("button", { name: "Settings", exact: true }).click()
+  await expect(page.locator(".settings-v2-nav-footer")).toContainText("ArezaCode Desktop")
+  await expect(page.locator(".settings-v2-nav-footer")).not.toContainText("OpenCode")
+  await page.screenshot({ path: testInfo.outputPath("arezacode-settings.png") })
+  await expect(page.getByRole("heading", { name: "Something went wrong", exact: true })).toHaveCount(0)
+  await page.evaluate(
+    async (url) => {
+      const { Splash } = await import(url)
+      const preview = document.createElement("div")
+      preview.style.cssText = "position:fixed;inset:0;z-index:999999;background:#181818;display:grid;place-items:center"
+      preview.append(Splash({ class: "w-20 h-16 opacity-50" }))
+      document.body.append(preview)
+    },
+    `/@fs${new URL("../../../ui/src/components/logo.tsx", import.meta.url).pathname}`,
+  )
+  await expect(page.locator('[data-component="logo-splash"]')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath("arezacode-startup.png") })
+})
+
+test("scrolls project content between fixed search and footer controls", async ({ page }) => {
+  await page.goto(`/new-session?draftId=${draftID}`)
+  const sidebar = page.locator('[data-component="project-sidebar"]')
+  const search = sidebar.getByRole("searchbox", { name: "Search sessions" })
+  const settings = sidebar.getByRole("button", { name: "Settings", exact: true })
+  const help = sidebar.getByRole("button", { name: "Help", exact: true })
+  const viewport = sidebar.locator('[data-slot="home-projects-scroll"] .scroll-view__viewport')
+  await expect(sidebar.locator('[data-component="home-session-row"]')).toHaveCount(70)
+  await sidebar.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)))
+  const before = { search: await search.boundingBox(), settings: await settings.boundingBox(), help: await help.boundingBox() }
+  expect(await viewport.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+  await viewport.hover()
+  await page.mouse.wheel(0, 700)
+  await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+  expect(await search.boundingBox()).toEqual(before.search)
+  expect(await settings.boundingBox()).toEqual(before.settings)
+  expect(await help.boundingBox()).toEqual(before.help)
+  await expect(settings).toBeInViewport()
+  await expect(help).toBeInViewport()
+  expect(await viewport.evaluate((el) => getComputedStyle(el).maskImage)).toContain("linear-gradient")
+  await page.screenshot({ path: "/tmp/areza-sidebar-scroll.png" })
+})
+
+test("overlays project actions with working status until hover or keyboard focus", async ({ page }) => {
+  await page.goto(`/new-session?draftId=${draftID}`)
+  const sidebar = page.locator('[data-component="project-sidebar"]')
+  const row = sidebar.locator('[data-component="home-project-row"]')
+  const actions = sidebar.locator('[data-component="home-project-actions"]')
+  const spinner = actions.locator('[data-component="project-working"]')
+  const menu = actions.locator('[data-action="home-project-menu"]')
+  const newChat = actions.locator('[data-action="home-project-new-session"]')
+  await sidebar.locator('[data-action="home-project-collapse"]').click()
+  await page.mouse.move(800, 100)
+  await expect(spinner).toBeVisible()
+  await expect(menu).toHaveCSS("opacity", "0")
+  await expect(newChat).toHaveCSS("opacity", "0")
+  const slot = (await actions.boundingBox())!
+  const working = (await spinner.boundingBox())!
+  expect(working.x).toBeCloseTo(slot.x, 0)
+  expect(working.width).toBeCloseTo(slot.width, 0)
+  const width = (await row.boundingBox())!.width
+  await page.screenshot({ path: "/tmp/areza-project-working.png" })
+  await row.hover()
+  await expect(spinner).toBeHidden()
+  await expect(menu).toHaveCSS("opacity", "1")
+  await expect(newChat).toHaveCSS("opacity", "1")
+  expect((await row.boundingBox())!.width).toBe(width)
+  await page.screenshot({ path: "/tmp/areza-project-actions.png" })
+  await menu.click()
+  await page.mouse.move(800, 100)
+  await expect(spinner).toBeHidden()
+  await expect(menu).toHaveCSS("opacity", "1")
+  await page.keyboard.press("Escape")
+  await menu.focus()
+  await page.keyboard.press("Tab")
+  await expect(newChat).toBeFocused()
+  await expect(spinner).toBeHidden()
+  await expect(newChat).toHaveCSS("opacity", "1")
+})
+
+test("animates project disclosure and reverses without losing chats", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`/new-session?draftId=${draftID}`)
+  const sidebar = page.locator('[data-component="project-sidebar"]')
+  const disclosure = sidebar.locator('[data-action="home-project-collapse"]')
+  const accordion = sidebar.locator('[data-component="project-accordion"]')
+  const chats = sidebar.locator('[data-component="home-session-row"]')
+  await expect(chats).toHaveCount(70)
+  await expect(accordion.locator(":scope > div")).toHaveCSS("transform", "none")
+  await expect(accordion).toHaveCSS("opacity", "1")
+  await sidebar.getByRole("searchbox", { name: "Search sessions" }).fill("Project chat 70")
+  await expect(chats).toHaveCount(1)
+  await sidebar.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)))
+  await accordion.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)))
+  await page.screenshot({ path: testInfo.outputPath("project-open.png") })
+  const motion = await disclosure.evaluate((button) => {
+    const content = button
+      .closest('[data-component="project-sidebar"]')!
+      .querySelector<HTMLElement>('[data-component="project-accordion"]')!
+    const full = content.getBoundingClientRect().height
+    ;(button as HTMLButtonElement).click()
+    const transitions = content.getAnimations()
+    transitions.forEach((animation) => {
+      animation.pause()
+      animation.currentTime = 70
+    })
+    const middle = content.getBoundingClientRect().height
+    const hidden = content.inert
+    ;(button as HTMLButtonElement).click()
+    const reversed = content.getBoundingClientRect().height
+    return { full, middle, reversed, hidden, count: transitions.length }
+  })
+  expect(motion.count).toBe(1)
+  expect(motion.middle).toBeGreaterThan(0)
+  expect(motion.middle).toBeLessThan(motion.full)
+  expect(motion.reversed).toBeCloseTo(motion.middle, 1)
+  expect(motion.hidden).toBe(true)
+  await expect(accordion).toHaveAttribute("data-expanded", "true")
+  await expect(accordion).toHaveCSS("height", `${motion.full}px`)
+  await expect(chats).toHaveCount(1)
+  await disclosure.click()
+  await expect(chats.first()).not.toBeInViewport()
+  await expect(accordion).toHaveCSS("height", "0px")
+  await page.screenshot({ path: testInfo.outputPath("project-closed.png") })
+  await disclosure.click()
+  await expect(chats).toHaveCount(1)
+  await expect(accordion).toHaveCSS("height", `${motion.full}px`)
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await expect(accordion).toHaveCSS("transition-duration", "0s")
+  await disclosure.click()
+  await expect(accordion).toHaveCSS("height", "0px")
+  await expect(chats.first()).not.toBeInViewport()
 })
 
 test("keeps all project chats under the project and preserves the composer when collapsed", async ({
@@ -171,12 +403,13 @@ test("keeps all project chats under the project and preserves the composer when 
   await expect(chats).toHaveCount(70)
   await disclosure.click()
   await expect(disclosure).toHaveAttribute("aria-expanded", "false")
-  await expect(project.locator('[data-component="project-working"]')).toBeVisible()
-  await expect(chats).toHaveCount(0)
+  await page.mouse.move(800, 100)
+  await expect(sidebar.locator('[data-component="project-working"]')).toBeVisible()
+  await expect(chats.first()).not.toBeInViewport()
   await project.click()
-  await expect(chats).toHaveCount(0)
+  await expect(chats.first()).not.toBeInViewport()
   await disclosure.click()
-  await expect(project.locator('[data-component="project-working"]')).toHaveCount(0)
+  await expect(sidebar.locator('[data-component="project-working"]')).toHaveCount(0)
   await expect(chats).toHaveCount(70)
   await sidebar.getByRole("searchbox", { name: "Search sessions" }).fill("Project chat 1")
   await expect(chats).toHaveCount(11)
@@ -204,12 +437,11 @@ test("keeps all project chats under the project and preserves the composer when 
   await expect(separator).toHaveAttribute("data-dragging", "false")
   const editor = composer
   await editor.fill("Keep this draft")
-  await expect(project).not.toHaveAttribute("aria-current", "page")
-  await expect(sidebar.locator('[data-component="sidebar-draft-row"]')).toHaveText("Keep this draft")
-  await expect(sidebar.locator('[data-component="sidebar-draft-row"]')).toHaveAttribute("aria-current", "page")
+  await expect(project).toHaveAttribute("aria-current", "page")
+  await expect(sidebar.locator('[data-component="sidebar-draft-row"]')).toHaveCount(0)
   await chats.filter({ hasText: /^Project chat 70$/ }).click()
   await expect(page).toHaveURL(/\/session\/ses_sidebar_069$/)
-  await expect(page.locator('main div.bg-v2-background-bg-base.rounded-\\[10px\\]')).toHaveCSS(
+  await expect(page.locator("main div.bg-v2-background-bg-base.rounded-\\[10px\\]")).toHaveCSS(
     "background-color",
     "rgb(32, 32, 32)",
   )
@@ -222,9 +454,9 @@ test("keeps all project chats under the project and preserves the composer when 
   await disclosure.hover()
   await expect(disclosure).toHaveCSS("background-color", projectHover)
   await expect(project).not.toHaveAttribute("aria-current", "page")
-  await expect(sidebar.locator('[data-component="sidebar-draft-row"]')).not.toHaveAttribute("aria-current", "page")
+  await expect(sidebar.locator('[data-component="sidebar-draft-row"]')).toHaveCount(0)
   await expect(page.locator('[data-slot="titlebar-tabs"]')).toHaveCount(0)
-  await sidebar.locator('[data-component="sidebar-draft-row"]').click()
+  await page.goBack()
   await expect(editor).toHaveText("Keep this draft")
   await toggle.click()
   await expect(sidebar).toBeHidden()
@@ -264,14 +496,7 @@ test("keeps all project chats under the project and preserves the composer when 
   const leftDivider = (await sidebar.getByRole("separator").boundingBox())!
   expect(Math.abs(leftDivider.y - split.y)).toBeLessThanOrEqual(1)
   expect(Math.abs(leftDivider.height - split.height)).toBeLessThanOrEqual(1)
-  const version = sidebar.locator('[data-component="sidebar-footer"] > div')
-  const settingsLabel = (await sidebar.getByText("Settings", { exact: true }).boundingBox())!
-  expect(Math.abs((await version.boundingBox())!.x - settingsLabel.x)).toBeLessThanOrEqual(1)
-  const helpRow = (await sidebar.getByRole("button", { name: "Help", exact: true }).boundingBox())!
-  const settingsRow = (await sidebar.getByRole("button", { name: "Settings", exact: true }).boundingBox())!
-  expect(Math.abs((await version.boundingBox())!.y - helpRow.y - (helpRow.y - settingsRow.y))).toBeLessThanOrEqual(1)
-  await version.hover()
-  await expect(version).toHaveCSS("background-color", "rgba(0, 0, 0, 0)")
+  await expect(sidebar.locator('[data-component="sidebar-footer"]')).toHaveCount(0)
   const chatPanel = page.locator('[data-component="session-chat-panel"]')
   const rightPanel = page.locator('[data-component="session-right-panel"]')
   const reviewContent = await page.locator("#review-panel > div").elementHandle()
@@ -282,7 +507,9 @@ test("keeps all project chats under the project and preserves the composer when 
       const before = panel.getBoundingClientRect().width
       button.click()
       await new Promise(requestAnimationFrame)
-      const animation = panel.getAnimations().find((item) => item instanceof CSSTransition && item.transitionProperty === "width")
+      const animation = panel
+        .getAnimations()
+        .find((item) => item instanceof CSSTransition && item.transitionProperty === "width")
       if (!animation) throw new Error("Sidebar toggle snapped instead of animating")
       animation.pause()
       animation.currentTime = 80
@@ -327,9 +554,10 @@ test("keeps all project chats under the project and preserves the composer when 
     )
   }
   const panel = (await chatPanel.boundingBox())!
-  await page.mouse.move(split.x + split.width / 2, split.y + 100)
+  const dragHandle = (await divider.boundingBox())!
+  await page.mouse.move(dragHandle.x + dragHandle.width / 2, dragHandle.y + 100)
   await page.mouse.down()
-  await page.mouse.move(panel.x + 20, split.y + 100, { steps: 10 })
+  await page.mouse.move(panel.x + 20, dragHandle.y + 100, { steps: 10 })
   await expect(chatPanel).toHaveCSS("width", "0px")
   await page.mouse.up()
   await expect(sidebar).toBeVisible()
@@ -394,7 +622,9 @@ test("keeps project items close to their section headings", async ({ page }, tes
     ["Projects", '[data-action="home-add-project-row"]'],
     ["Recently closed", '[data-component="home-recently-closed-row"]'],
   ]) {
-    const bottom = await sidebar.getByText(heading, { exact: true }).evaluate((el) => el.parentElement!.getBoundingClientRect().bottom)
+    const bottom = await sidebar
+      .getByText(heading, { exact: true })
+      .evaluate((el) => el.parentElement!.getBoundingClientRect().bottom)
     expect((await sidebar.locator(row).boundingBox())!.y - bottom).toBeCloseTo(4, 0)
   }
   await page.screenshot({ path: testInfo.outputPath("sidebar-section-spacing.png") })
@@ -425,10 +655,12 @@ test("uses matching tooltips for the sidebar toggle and status", async ({ page }
   await expect(tooltip).toContainText("Toggle sidebar")
   await page.getByRole("button", { name: "Status", exact: true }).hover()
   await expect(tooltip).toHaveText("Status")
-  expect(await tooltip.evaluate((el) => {
-    const css = getComputedStyle(el)
-    return [css.fontSize, css.backgroundColor, css.borderRadius]
-  })).toEqual(style)
+  expect(
+    await tooltip.evaluate((el) => {
+      const css = getComputedStyle(el)
+      return [css.fontSize, css.backgroundColor, css.borderRadius]
+    }),
+  ).toEqual(style)
   await page.screenshot({ path: testInfo.outputPath("status-tooltip.png") })
   await page.getByRole("button", { name: "Status", exact: true }).click()
   await expect(tooltip).toBeHidden()

@@ -13,7 +13,6 @@ import type {
   AgentListInput,
   AgentListOutput,
   CatalogApi,
-  CommandInfo,
   CommandListInput,
   CommandListOutput,
   ProjectCurrentInput,
@@ -28,7 +27,7 @@ import { getFilename } from "@opencode-ai/core/util/path"
 import { retry } from "@opencode-ai/core/util/retry"
 import { batch } from "solid-js"
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
-import type { State, VcsCache } from "./types"
+import type { SlashCommandInfo, State, VcsCache } from "./types"
 import type { ServerSession } from "../server-session"
 import {
   cmp,
@@ -276,7 +275,7 @@ export const loadCommands = (
   api: CommandListApi,
   legacy?: OpencodeClient,
   protocol?: Promise<ServerProtocol>,
-): Promise<CommandInfo[]> =>
+): Promise<SlashCommandInfo[]> =>
   retry(async () => {
     if ((await protocol) === "v1" && legacy) {
       return ((await legacy.command.list()).data ?? []).map((command) => {
@@ -288,7 +287,7 @@ export const loadCommands = (
           agent: command.agent,
           model: providerID && id ? { providerID, id } : undefined,
           subtask: command.subtask,
-          // source: command.source === "skill" ? undefined : command.source,
+          source: command.source,
         }
       })
     }

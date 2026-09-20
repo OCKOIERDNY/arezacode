@@ -1,5 +1,7 @@
 import { onMount, type ComponentProps, splitProps } from "solid-js"
 
+import { chevronDown } from "../../components/icon"
+
 const icons = {
   edit: {
     viewBox: "0 0 16 16",
@@ -55,7 +57,7 @@ const icons = {
   },
   "chevron-down": {
     viewBox: "0 0 16 16",
-    body: `<path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/>`,
+    body: chevronDown,
   },
   collapse: {
     viewBox: "0 0 16 16",
@@ -95,7 +97,7 @@ const icons = {
   },
   "outline-chevron-down": {
     viewBox: "0 0 16 16",
-    body: `<path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/>`,
+    body: chevronDown,
   },
   "outline-dots": {
     viewBox: "0 0 16 16",

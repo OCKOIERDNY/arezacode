@@ -1,7 +1,9 @@
+import { DOCUMENT_TYPES } from "@opencode-ai/schema/document"
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 
 export const ACCEPTED_FILE_TYPES = [
   ...ACCEPTED_IMAGE_TYPES,
+  ...Object.keys(DOCUMENT_TYPES).map((extension) => `.${extension}`),
   "application/pdf",
   "text/*",
   "application/json",

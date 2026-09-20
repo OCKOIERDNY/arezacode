@@ -5,12 +5,14 @@ import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
 import { usePlatform } from "@/context/platform"
 import { setV2Toast, ToastRegion } from "@/utils/toast"
 import { useLayout } from "@/context/layout"
+import { useSettings } from "@/context/settings"
 import { HomeSidebar } from "./home"
 
 export default function NewLayout(props: ParentProps) {
   const platform = usePlatform()
   const [state, setState] = createStore({ debugTools: true })
   const layout = useLayout()
+  const settings = useSettings()
   const sidebarPresent = createMemo<boolean>((previous) => previous || layout.projectSidebar.opened(), false)
 
   createEffect(() => setV2Toast(true))
@@ -27,6 +29,7 @@ export default function NewLayout(props: ParentProps) {
 
   return (
     <div
+      data-sidebars-swapped={settings.general.sidebarPosition() === "right"}
       class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text"
       style={{
         "padding-top": "env(safe-area-inset-top, 0px)",
@@ -45,6 +48,7 @@ export default function NewLayout(props: ParentProps) {
       <div class="relative flex flex-1 min-h-0 min-w-0">
         <div
           data-component="project-sidebar-slot"
+          classList={{ "md:order-1": settings.general.sidebarPosition() === "right" }}
           data-collapsing={!layout.projectSidebar.opened() || layout.projectSidebar.preview()}
           inert={!layout.projectSidebar.opened() || layout.projectSidebar.preview()}
           class="shrink-0 min-h-0 min-w-0 py-2 data-[collapsing=true]:overflow-clip max-md:contents"

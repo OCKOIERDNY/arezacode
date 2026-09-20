@@ -31,6 +31,7 @@ import "./session-review-v2.css"
 type ReviewDiff = (SnapshotFileDiff & { file: string }) | FileDiffInfo | VcsFileDiff
 
 export type SessionReviewFilePreviewV2Props = {
+  onRendered?: () => void
   file: string
   diff: ReviewDiff
   diffStyle: SessionReviewDiffStyle
@@ -216,6 +217,7 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
   const diffViewer = () => (
     <Dynamic
       component={fileComponent}
+      onRendered={props.onRendered}
       mode="diff"
       fileDiff={view().fileDiff}
       preloadedDiff={view().preloaded}
@@ -243,6 +245,7 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
       selectedLines={store.selection}
       commentedLines={commentedLines()}
       media={{
+        onLoad: props.onRendered,
         mode: "auto",
         path: props.file,
         deleted: view().status === "deleted",

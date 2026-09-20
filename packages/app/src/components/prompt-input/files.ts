@@ -1,3 +1,4 @@
+import { documentType } from "@opencode-ai/schema/document"
 import { ACCEPTED_FILE_TYPES, ACCEPTED_IMAGE_TYPES } from "@/constants/file-picker"
 
 export { ACCEPTED_FILE_TYPES }
@@ -83,6 +84,8 @@ function textBytes(bytes: Uint8Array) {
 }
 
 export async function attachmentMime(file: File) {
+  const document = documentType(file.name, file.type)
+  if (document) return document.mime
   const type = kind(file.type)
   if (IMAGE_MIMES.has(type)) return type
   if (type === "application/pdf") return type

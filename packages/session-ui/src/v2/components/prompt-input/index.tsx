@@ -22,6 +22,7 @@ import type {
   PromptInputV2Suggestion,
 } from "./types"
 import type { PromptInputV2Interaction, PromptInputV2SelectControl } from "./interaction"
+import { ACCEPTED_FILE_TYPES } from "./attachments"
 import "./attachments.css"
 
 export type {
@@ -79,7 +80,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
         ref={props.controller.setFileInput}
         type="file"
         multiple
-        accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/*,application/json,application/ld+json,application/toml,application/x-toml,application/x-yaml,application/xml,application/yaml,.c,.cc,.cjs,.conf,.cpp,.css,.csv,.cts,.env,.go,.gql,.graphql,.h,.hh,.hpp,.htm,.html,.ini,.java,.js,.json,.jsx,.log,.md,.mdx,.mjs,.mts,.py,.rb,.rs,.sass,.scss,.sh,.sql,.toml,.ts,.tsx,.txt,.xml,.yaml,.yml,.zsh"
+        accept={ACCEPTED_FILE_TYPES.join(",")}
         class="hidden"
         onChange={(event) => {
           const list = event.currentTarget.files
@@ -642,26 +643,49 @@ export function PromptInputV2Popover(props: {
         fallback={<div class="px-2 py-1 text-v2-text-text-muted">{props.emptyLabel}</div>}
       >
         <For each={props.items}>
-          {(item) => (
-            <button
-              type="button"
-              data-suggestion-id={item.id}
-              class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-start hover:bg-v2-overlay-simple-overlay-hover"
-              classList={{ "bg-v2-overlay-simple-overlay-hover": props.activeID === item.id }}
-              onPointerMove={() => props.onActiveChange(item)}
-              onClick={() => props.onSelect(item)}
-            >
-              <div class="flex min-w-0 flex-1 items-center gap-2">
-                <PromptInputV2SuggestionIcon item={item} />
-                <span class="shrink-0 text-v2-text-text-base">{item.label}</span>
-                <Show when={item.description}>
-                  <span class="min-w-0 truncate text-v2-text-text-muted">{item.description}</span>
-                </Show>
-              </div>
-              <Show when={item.keybind?.length}>
-                <span class="shrink-0 text-v2-text-text-muted">{item.keybind?.join("+")}</span>
+          {(item, index) => (
+            <>
+              <Show when={item.group && (index() === 0 || props.items[index() - 1]?.group !== item.group)}>
+                <div
+                  data-suggestion-group={item.commandType}
+                  class="px-2 pb-1 pt-3 text-xs font-medium text-v2-text-text-muted first:pt-1"
+                >
+                  {item.group}
+                </div>
               </Show>
-            </button>
+              <TooltipV2
+                value={item.tooltip}
+                inactive={!item.tooltip}
+                placement="top"
+                contentClass="max-w-64 text-wrap"
+              >
+                <button
+                  type="button"
+                  data-suggestion-id={item.id}
+                  disabled={item.disabled}
+                  class="flex w-full items-center gap-2 rounded-md px-2 py-1 text-start hover:bg-v2-overlay-simple-overlay-hover disabled:opacity-50 disabled:cursor-not-allowed"
+                  classList={{ "bg-v2-overlay-simple-overlay-hover": props.activeID === item.id }}
+                  onPointerMove={() => props.onActiveChange(item)}
+                  onClick={() => props.onSelect(item)}
+                >
+                  <div class="flex min-w-0 flex-1 items-center gap-2">
+                    <PromptInputV2SuggestionIcon item={item} />
+                    <span class="max-w-[calc(100%_-_2rem)] shrink-0 [overflow-wrap:anywhere] text-v2-text-text-base">
+                      {item.label}
+                    </span>
+                    <Show when={item.description}>
+                      <span class="min-w-0 flex-1 truncate text-v2-text-text-muted">{item.description}</span>
+                    </Show>
+                  </div>
+                  <Show when={item.badge}>
+                    <span class="shrink-0 text-xs text-v2-text-text-muted">{item.badge}</span>
+                  </Show>
+                  <Show when={item.keybind?.length}>
+                    <span class="shrink-0 text-v2-text-text-muted">{item.keybind?.join("+")}</span>
+                  </Show>
+                </button>
+              </TooltipV2>
+            </>
           )}
         </For>
       </Show>
@@ -713,7 +737,22 @@ export function PromptInputV2SubmitButton(props: {
 
 function PromptInputV2SuggestionIcon(props: { item: PromptInputV2Suggestion }) {
   if (props.item.kind === "agent") return <Icon name="brain" size="small" class="shrink-0 text-icon-info-active" />
-  if (props.item.kind === "command") return null
+  if (props.item.kind === "command")
+    return (
+      <Icon
+        name={
+          props.item.commandType === "skill"
+            ? "brain"
+            : props.item.commandType === "mcp"
+              ? "mcp"
+              : props.item.commandType === "command"
+                ? "code"
+                : "terminal"
+        }
+        size="small"
+        class="shrink-0 text-v2-text-text-muted"
+      />
+    )
   return (
     <FileIcon
       node={{ path: props.item.path ?? props.item.label, type: props.item.kind === "reference" ? "directory" : "file" }}

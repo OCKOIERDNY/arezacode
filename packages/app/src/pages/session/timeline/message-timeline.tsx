@@ -31,6 +31,8 @@ import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Spinner } from "@opencode-ai/ui/spinner"
+import { HoverCard } from "@kobalte/core/hover-card"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -62,6 +64,7 @@ import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
+import { MessageNavigator } from "./message-navigator"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { useServerSDK } from "@/context/server-sdk"
@@ -251,8 +254,11 @@ export function MessageTimeline(props: {
   centered: boolean
   setContentRef: (el: HTMLDivElement) => void
   userMessages: UserMessage[]
+  diffs: { file: string; additions: number; deletions: number }[]
+  onOpenDiff: (file: string) => void
+  onNavigateMessage: (message: UserMessage, behavior: ScrollBehavior) => void
   anchor: (id: string) => string
-  setRevealMessage?: (fn: (id: string) => void) => void
+  setRevealMessage?: (fn: (id: string, behavior: ScrollBehavior) => boolean) => void
   setScrollToEnd?: (fn: () => void) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => void }) => void
 }) {
@@ -281,6 +287,7 @@ export function MessageTimeline(props: {
     return sync().data.session_status[id] ?? idle
   })
   const sessionMessages = createMemo(() => (sessionID() ? (sync().data.message[sessionID()!] ?? []) : []))
+  const [activity, setActivity] = createStore({ preview: false })
   const projectedMessages = createMemo(() => {
     const id = sessionID()
     if (!id) return []
@@ -442,8 +449,13 @@ export function MessageTimeline(props: {
     get scrollMargin() {
       return showHeader() ? 64 : 0
     },
+    get scrollPaddingStart() {
+      return showHeader() ? 64 : 0
+    },
     overscan: 50,
-    paddingEnd: 64,
+    get paddingEnd() {
+      return settings.general.newLayoutDesigns() ? 128 : 64
+    },
     rangeExtractor: (range) => {
       const id = activeMessageID()
       const active = id ? (messageLastRowIndex().get(id) ?? -1) : -1
@@ -497,11 +509,20 @@ export function MessageTimeline(props: {
     () => new Map(virtualizer.getVirtualItems().map((item) => [item.key, item] as const)),
   )
   const virtualRowKeys = createMemo(() => virtualizer.getVirtualItems().map((item) => item.key as string))
+  const jumpToLatest = () => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      props.onResumeScroll()
+      return
+    }
+    props.onMarkScrollGesture(listRoot())
+    virtualizer.scrollToEnd({ behavior: "smooth" })
+  }
   createEffect(() => {
-    props.setRevealMessage?.((id) => {
+    props.setRevealMessage?.((id, behavior) => {
       const index = messageRowIndex().get(id)
-      if (index === undefined) return
-      virtualizer.scrollToIndex(index, { align: "center" })
+      if (index === undefined) return false
+      virtualizer.scrollToIndex(index, { align: "start", behavior })
+      return true
     })
     props.setScrollToEnd?.(() => virtualizer.scrollToEnd())
     props.setHistoryAnchor?.({ capture: capturePrependAnchor, restore: restorePrependAnchor })
@@ -546,7 +567,7 @@ export function MessageTimeline(props: {
     while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
     if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
     if (overscanFrame !== undefined) cancelAnimationFrame(overscanFrame)
-    props.setRevealMessage?.(() => {})
+    props.setRevealMessage?.(() => false)
     props.setScrollToEnd?.(() => {})
     props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
   })
@@ -1052,7 +1073,7 @@ export function MessageTimeline(props: {
 
     return (
       <div
-        id={anchor() ? props.anchor(input.row().userMessageID) : undefined}
+        data-message-anchor={anchor() ? props.anchor(input.row().userMessageID) : undefined}
         data-message-id={input.row().userMessageID}
         data-timeline-row={input.row()._tag}
         classList={{
@@ -1297,15 +1318,37 @@ export function MessageTimeline(props: {
   }
 
   return (
-    <div class="relative w-full h-full min-w-0">
+    <div class="relative w-full h-full min-w-0" data-message-navigation={props.userMessages.length > 1 || undefined}>
+      <Show when={props.userMessages.length > 1}>
+        <MessageNavigator
+          messages={props.userMessages}
+          active={
+            props.scroll.bottom
+              ? props.userMessages.at(-1)?.id
+              : timelineRows()[
+                  virtualizer.getVirtualItems().find((item) => item.end > (virtualizer.scrollOffset ?? 0) + 80)
+                    ?.index ?? 0
+                ]?.userMessageID
+          }
+          parts={getMsgParts}
+          reply={(id) =>
+            (assistantMessagesByParent().get(id) ?? [])
+              .flatMap((message) => getMsgParts(message.id))
+              .filter((part) => part.type === "text" && !part.synthetic)
+              .map((part) => (part.type === "text" ? part.text : ""))
+              .join(" ")
+              .slice(0, 600)
+          }
+          onNavigate={props.onNavigateMessage}
+        />
+      </Show>
       <div
         class="absolute left-1/2 -translate-x-1/2 z-[60] pointer-events-none transition-all duration-200 ease-out"
         classList={{
-          "bottom-8": settings.general.newLayoutDesigns(),
+          "bottom-2": settings.general.newLayoutDesigns(),
           "bottom-6": !settings.general.newLayoutDesigns(),
-          "opacity-100 translate-y-0 scale-100": props.scroll.overflow && props.scroll.jump,
-          "opacity-0 translate-y-2 pointer-events-none": !props.scroll.overflow || !props.scroll.jump,
-          "scale-[0.8]": (!props.scroll.overflow || !props.scroll.jump) && settings.general.newLayoutDesigns(),
+          "opacity-100 translate-y-0 scale-100": settings.general.newLayoutDesigns() || (props.scroll.overflow && props.scroll.jump),
+          "opacity-0 translate-y-2 pointer-events-none": !settings.general.newLayoutDesigns() && (!props.scroll.overflow || !props.scroll.jump),
           "scale-95": (!props.scroll.overflow || !props.scroll.jump) && !settings.general.newLayoutDesigns(),
         }}
       >
@@ -1316,7 +1359,7 @@ export function MessageTimeline(props: {
               type="button"
               aria-label={language.t("session.messages.jumpToLatest")}
               class="pointer-events-auto flex items-center justify-center w-10 h-8 bg-transparent border-none cursor-pointer p-0 group"
-              onClick={props.onResumeScroll}
+              onClick={jumpToLatest}
             >
               <div
                 class="flex items-center justify-center w-8 h-6 rounded-[6px] border border-border-weaker-base bg-[color-mix(in_srgb,var(--surface-raised-stronger-non-alpha)_80%,transparent)] backdrop-blur-[0.75px] transition-colors group-hover:border-[var(--border-weak-base)] group-hover:[--icon-base:var(--icon-hover)]"
@@ -1330,24 +1373,62 @@ export function MessageTimeline(props: {
             </button>
           }
         >
-          <button
-            type="button"
-            aria-label={language.t("session.messages.jumpToLatest")}
-            class="pointer-events-auto flex items-center justify-center w-8 h-7 px-2 py-1.5 rounded-lg border-none cursor-pointer text-v2-text-text-base backdrop-blur-[2px]"
-            style={{
-              background: "color-mix(in srgb, var(--v2-background-bg-base) 92%, transparent)",
-              "box-shadow": "var(--v2-elevation-raised), 0px 2px 8px var(--v2-background-bg-base)",
-            }}
-            onClick={props.onResumeScroll}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M12.3333 8.66665L8 13L3.66667 8.66665M8 12.6667V2.83332"
-                stroke="currentColor"
-                stroke-linecap="square"
-              />
-            </svg>
-          </button>
+          <div data-component="chat-activity">
+            <Show when={props.scroll.overflow && !props.scroll.bottom}>
+              <button
+                type="button"
+                data-slot="chat-latest"
+                data-working={sessionStatus().type !== "idle" || undefined}
+                aria-label={language.t("session.messages.jumpToLatest")}
+                onClick={jumpToLatest}
+              >
+                <Show when={sessionStatus().type !== "idle"} fallback={<Icon name="arrow-down-to-line" />}>
+                  <Spinner class="size-4" />
+                </Show>
+              </button>
+            </Show>
+            <Show when={props.diffs.length > 0}>
+              <HoverCard
+                open={activity.preview}
+                onOpenChange={(preview) => setActivity("preview", preview)}
+                openDelay={150}
+                closeDelay={120}
+                placement="top"
+                gutter={8}
+              >
+                <HoverCard.Trigger
+                  as="button"
+                  type="button"
+                  role="button"
+                  data-slot="chat-changes"
+                  aria-expanded={activity.preview}
+                  onClick={() => setActivity("preview", !activity.preview)}
+                >
+                  <span>{language.plural("ui.sessionTurn.diffs.changed", props.diffs.length)}</span>
+                  <DiffChanges changes={props.diffs} />
+                </HoverCard.Trigger>
+                <HoverCard.Portal>
+                  <HoverCard.Content data-component="chat-changes-preview">
+                    <ul aria-label={language.t("session.review.filesChanged", { count: props.diffs.length })}>
+                      <For each={props.diffs}>
+                        {(diff) => (
+                          <li>
+                            <button type="button" onClick={() => {
+                              setActivity("preview", false)
+                              props.onOpenDiff(diff.file)
+                            }}>
+                              <span title={diff.file}>{diff.file}</span>
+                              <DiffChanges changes={diff} />
+                            </button>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </HoverCard.Content>
+                </HoverCard.Portal>
+              </HoverCard>
+            </Show>
+          </div>
         </Show>
       </div>
       <ScrollView
@@ -1362,7 +1443,7 @@ export function MessageTimeline(props: {
         onKeyDown={handleListKeyDown}
         onScroll={handleListScroll}
         onClick={props.onAutoScrollInteraction}
-        class="relative min-w-0 w-full h-full"
+        class="message-timeline-scroll relative min-w-0 w-full h-full"
         style={{
           "--sticky-accordion-top": showHeader() ? "48px" : "0px",
         }}
@@ -1836,8 +1917,11 @@ export function MessageTimeline(props: {
             <div
               data-timeline-row="bottom-spacer"
               aria-hidden="true"
-              class="h-16 absolute top-0 left-0 w-full"
-              style={{ transform: `translateY(${virtualizer.getTotalSize() - 64}px)` }}
+              class="absolute top-0 left-0 w-full"
+              style={{
+                height: `${virtualizer.options.paddingEnd}px`,
+                transform: `translateY(${virtualizer.getTotalSize() - virtualizer.options.paddingEnd}px)`,
+              }}
             />
           </Show>
         </div>

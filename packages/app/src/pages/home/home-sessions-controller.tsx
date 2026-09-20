@@ -52,39 +52,42 @@ export function createHomeSessionsController(home: HomeController, limit = HOME_
     () => new Map(home.project.list().flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
   )
   const homeSessions = () => home.server.focusedSync().homeSessions
-  const sessionEventLoad = useQuery(() => ({
-    queryKey: homeSessions().eventsKey,
-    queryFn: async (): Promise<HomeSessionEvents> => ({ sequence: 0, entries: [] }),
-    initialData: { sequence: 0, entries: [] } satisfies HomeSessionEvents,
-    enabled: false,
-  }))
-  const sessionLoad = useQuery(() => ({
-    queryKey: homeSessions().indexKey,
-    enabled: !!home.server.focusedContext(),
-    queryFn: async ({ signal }) => {
-      const ctx = home.server.focusedContext()
-      if (!ctx) return { sessions: [], eventSequence: 0 }
-      const cache = homeSessions()
-      const eventSequence = cache.eventSequence()
-      const index = await loadHomeSessionIndex(
-        (input, options) => ctx.sdk.client.v2.session.list(input, options),
-        eventSequence,
-        signal,
-      )
-      cache.complete(eventSequence)
-      return index
-    },
-    retry: false,
-    staleTime: 30_000,
-    refetchOnMount: true,
-    refetchOnReconnect: true,
-  }))
+  const queryClient = () => homeSessions().client
+  const sessionEventLoad = useQuery(
+    () => ({
+      queryKey: homeSessions().eventsKey,
+      queryFn: async (): Promise<HomeSessionEvents> => ({ sequence: 0, entries: [] }),
+      initialData: { sequence: 0, entries: [] } satisfies HomeSessionEvents,
+      enabled: false,
+    }),
+    queryClient,
+  )
+  const sessionLoad = useQuery(
+    () => ({
+      queryKey: homeSessions().indexKey,
+      enabled: !!home.server.focusedContext(),
+      queryFn: async ({ signal }) => {
+        const ctx = home.server.focusedContext()
+        if (!ctx) return { sessions: [], eventSequence: 0 }
+        const cache = homeSessions()
+        const eventSequence = cache.eventSequence()
+        const index = await loadHomeSessionIndex(
+          (input, options) => ctx.sdk.client.v2.session.list(input, options),
+          eventSequence,
+          signal,
+        )
+        cache.complete(eventSequence)
+        return index
+      },
+      retry: false,
+      staleTime: 30_000,
+      refetchOnMount: true,
+      refetchOnReconnect: true,
+    }),
+    queryClient,
+  )
   const indexedSessions = createMemo(() =>
-    retainHomeSessions(
-      homeSessions().sessions(sessionLoad.data, sessionEventLoad.data),
-      limit,
-      Date.now(),
-    ),
+    retainHomeSessions(homeSessions().sessions(sessionLoad.data, sessionEventLoad.data), limit, Date.now()),
   )
   const allRecords = createMemo(() =>
     buildHomeSessionRecords({

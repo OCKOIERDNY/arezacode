@@ -81,11 +81,12 @@
   width: 14px;
   height: 14px;
   color: var(--accordion-v2-icon);
-  transition: transform 150ms ease;
+  transform: rotate(-90deg);
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 [data-component="accordion-v2-trigger"][data-expanded] [data-slot="accordion-v2-chevron"] {
-  transform: rotate(180deg);
+  transform: rotate(0deg);
 }
 
 [data-component="accordion-v2-item"][data-expanded] [data-component="accordion-v2-trigger"] {
@@ -135,5 +136,11 @@
   }
   to {
     height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="accordion-v2-trigger"] [data-slot="accordion-v2-chevron"] {
+    transition: none;
   }
 }

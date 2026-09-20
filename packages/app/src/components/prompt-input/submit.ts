@@ -302,6 +302,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
   const seed = (dir: string, info: Session) => {
     serverSync().session.remember(info)
+    serverSync().homeSessions.apply({ type: "session.created", properties: { sessionID: info.id, info } })
     const [, setStore] = serverSync().child(dir)
     setStore("session", (list: Session[]) => {
       const result = Binary.search(list, info.id, (item) => item.id)

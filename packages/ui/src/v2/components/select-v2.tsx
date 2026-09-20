@@ -1,5 +1,6 @@
 import { Select as Kobalte } from "@kobalte/core/select"
 import { Show, createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from "solid-js"
+import { Icon } from "./icon"
 import "./select-v2.css"
 
 function groupOptions<T>(options: T[], groupBy?: (x: T) => string): { category: string; options: T[] }[] {
@@ -15,18 +16,6 @@ function groupOptions<T>(options: T[], groupBy?: (x: T) => string): { category: 
   }
   return [...map.entries()].map(([category, opts]) => ({ category, options: opts }))
 }
-
-const ChevronDown = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <path
-      d="M11 9.5L8 6.5L5 9.5"
-      stroke="currentColor"
-      stroke-width="1"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
-  </svg>
-)
 
 const CheckSmall = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -196,7 +185,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
           </Kobalte.Value>
         </div>
         <span data-slot="select-v2-chevron" aria-hidden="true">
-          <ChevronDown />
+          <Icon name="chevron-down" />
         </span>
       </Kobalte.Trigger>
       <Kobalte.Portal>

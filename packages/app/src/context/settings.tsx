@@ -33,6 +33,7 @@ export interface Settings {
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
     showCustomAgents: boolean
+    sidebarPosition: "left" | "right"
     mobileTitlebarPosition: "top" | "bottom"
     newLayoutDesigns?: boolean
     layoutTransitionEligible?: boolean
@@ -194,6 +195,7 @@ const defaultSettings: Settings = {
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
     showCustomAgents: false,
+    sidebarPosition: "left",
     mobileTitlebarPosition: "top",
   },
   appearance: {
@@ -361,6 +363,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         return store
       },
       general: {
+        sidebarPosition: withFallback(() => store.general?.sidebarPosition, defaultSettings.general.sidebarPosition),
+        setSidebarPosition(value: "left" | "right") {
+          setStore("general", "sidebarPosition", value)
+        },
         autoSave: withFallback(() => store.general?.autoSave, defaultSettings.general.autoSave),
         setAutoSave(value: boolean) {
           setStore("general", "autoSave", value)

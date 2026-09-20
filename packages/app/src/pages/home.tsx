@@ -1,15 +1,15 @@
-import { createEffect, For, Show, untrack } from "solid-js"
+import { createEffect, createMemo, For, Show, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Spinner } from "@opencode-ai/ui/spinner"
+import { finishStartup } from "@opencode-ai/ui/logo"
 import { useSessionTabAvatarState } from "./layout/project-avatar-state"
 import { SidebarTitle } from "./home/home-projects-view"
 import { useLayout } from "@/context/layout"
+import { useSettings } from "@/context/settings"
 import { useNotification } from "@/context/notification"
 import { useTabs, tabKey } from "@/context/tabs"
-import { createDraftPromptSession } from "@/context/prompt-state"
-import type { DraftTab } from "@/context/tabs"
 import { useLanguage } from "@/context/language"
 import { ServerConnection } from "@/context/server"
 import { sessionTitle } from "@/utils/session-title"
@@ -25,13 +25,10 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
   const projects = createHomeProjectsController(home)
   const sessions = createHomeSessionsController(home, Infinity)
   const layout = useLayout()
+  const settings = useSettings()
   const notification = useNotification()
   const tabs = useTabs()
   const [state, setState] = createStore({ search: "" })
-  const draftContent = (tab: DraftTab) =>
-    tabs.state(tab, "prompt", () => createDraftPromptSession(tab.draftID)).current()
-  const hasDraftContent = (tab: DraftTab) =>
-    draftContent(tab).some((part) => part.type !== "text" || part.content.trim().length > 0)
   const selectedDraft = () => {
     const route = layout.route()
     return route.type === "draft" ? route.draftID : undefined
@@ -82,100 +79,75 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
         scroll={scroll}
         projectActive={(server, directory) => {
           const tab = tabs.store.find((tab) => tab.type === "draft" && tab.draftID === selectedDraft())
-          return tab?.type === "draft" && tab.server === server && tab.directory === directory && !hasDraftContent(tab)
+          return tab?.type === "draft" && tab.server === server && tab.directory === directory
         }}
-        renderSessions={() => (
-          <div class="mt-1 mb-3 flex flex-col gap-0.5">
-            <For
-              each={tabs.store.filter(
-                (tab) =>
-                  tab.type === "draft" &&
-                  hasDraftContent(tab) &&
-                  tab.server === home.selection.value().server &&
-                  tab.directory === home.selection.value().directory &&
-                  projects.copy.language.t("command.session.new").toLowerCase().includes(state.search.toLowerCase()),
-              )}
-            >
-              {(tab) => (
-                <button
-                  type="button"
-                  data-component="sidebar-draft-row"
-                  class="flex h-8 w-full shrink-0 items-center rounded-md px-2 text-left text-v2-text-text-muted focus-visible:outline focus-visible:outline-1 focus-visible:outline-v2-border-border-muted"
-                  classList={{
-                    "bg-v2-background-bg-layer-03 text-v2-text-text-base":
-                      tab.type === "draft" && selectedDraft() === tab.draftID,
-                  }}
-                  aria-current={tab.type === "draft" && selectedDraft() === tab.draftID ? "page" : undefined}
-                  onClick={() => tabs.select(tab)}
-                >
-                  <SidebarTitle>
-                    {(tab.type === "draft" &&
-                      draftContent(tab)
-                        .flatMap((part) => (part.type === "text" ? [part.content] : []))
-                        .join(" ")
-                        .trim()
-                        .slice(0, 80)) ||
-                      projects.copy.language.t("command.session.new")}
-                  </SidebarTitle>
-                </button>
-              )}
-            </For>
-            <Show
-              when={!sessions.data.loading()}
-              fallback={
-                <span class="px-2 py-2 text-v2-text-text-muted">{projects.copy.language.t("common.loading")}</span>
-              }
-            >
-              <For
-                each={sessions.data
-                  .searchRecords()
-                  .filter((record) => record.session.title.toLowerCase().includes(state.search.toLowerCase()))}
+        renderSessions={(expanded) => {
+          const records = createMemo<ReturnType<typeof sessions.data.searchRecords>>(
+            (previous) =>
+              expanded()
+                ? sessions.data
+                    .searchRecords()
+                    .filter((record) => record.session.title.toLowerCase().includes(state.search.toLowerCase()))
+                : previous,
+            [],
+          )
+          return (
+            <div class="mt-1 mb-3 flex flex-col gap-0.5">
+              <Show
+                when={!sessions.data.loading()}
                 fallback={
-                  <span class="px-2 py-2 text-v2-text-text-faint">
-                    {projects.copy.language.t("home.sessions.empty")}
-                  </span>
+                  <span class="px-2 py-2 text-v2-text-text-muted">{projects.copy.language.t("common.loading")}</span>
                 }
               >
-                {(record) => (
-                  <button
-                    type="button"
-                    data-component="home-session-row"
-                    class="flex h-8 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-v2-text-text-muted focus-visible:outline focus-visible:outline-1 focus-visible:outline-v2-border-border-muted"
-                    classList={{ "bg-v2-background-bg-layer-03 text-v2-text-text-base": selected(record.session.id) }}
-                    aria-current={selected(record.session.id) ? "page" : undefined}
-                    onClick={(event) => {
-                      notification
-                        .ensureServerState(home.selection.value().server)
-                        .session.markViewed(record.session.id)
-                      if (layout.session.width() === 0) layout.session.resize(600)
-                      sessions.session.open(record.session, {
-                        background: shouldOpenSessionInBackground({
-                          button: event.button,
-                          mac: /Mac|iPod|iPhone|iPad/.test(navigator.platform),
-                          meta: event.metaKey,
-                          ctrl: event.ctrlKey,
-                          shift: event.shiftKey,
-                          alt: event.altKey,
-                        }),
-                      })
-                    }}
-                  >
-                    <SidebarTitle>{sessionTitle(record.session.title) || record.session.id}</SidebarTitle>
-                    <SidebarSessionStatus
-                      server={home.selection.value().server}
-                      directory={record.session.directory}
-                      sessionID={record.session.id}
-                    />
-                  </button>
-                )}
-              </For>
-            </Show>
-          </div>
-        )}
+                <For
+                  each={records()}
+                  fallback={
+                    <span class="px-2 py-2 text-v2-text-text-faint">
+                      {projects.copy.language.t("home.sessions.empty")}
+                    </span>
+                  }
+                >
+                  {(record) => (
+                    <button
+                      type="button"
+                      data-component="home-session-row"
+                      class="flex h-8 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-v2-text-text-muted focus-visible:outline focus-visible:outline-1 focus-visible:outline-v2-border-border-muted"
+                      classList={{ "bg-v2-background-bg-layer-03 text-v2-text-text-base": selected(record.session.id) }}
+                      aria-current={selected(record.session.id) ? "page" : undefined}
+                      onClick={(event) => {
+                        notification
+                          .ensureServerState(home.selection.value().server)
+                          .session.markViewed(record.session.id)
+                        if (layout.session.width() === 0) layout.session.resize(600)
+                        sessions.session.open(record.session, {
+                          background: shouldOpenSessionInBackground({
+                            button: event.button,
+                            mac: /Mac|iPod|iPhone|iPad/.test(navigator.platform),
+                            meta: event.metaKey,
+                            ctrl: event.ctrlKey,
+                            shift: event.shiftKey,
+                            alt: event.altKey,
+                          }),
+                        })
+                      }}
+                    >
+                      <SidebarTitle>{sessionTitle(record.session.title) || record.session.id}</SidebarTitle>
+                      <SidebarSessionStatus
+                        server={home.selection.value().server}
+                        directory={record.session.directory}
+                        sessionID={record.session.id}
+                      />
+                    </button>
+                  )}
+                </For>
+              </Show>
+            </div>
+          )
+        }}
       />
       <ResizeHandle
         direction="horizontal"
-        edge="end"
+        edge={settings.general.sidebarPosition() === "right" ? "start" : "end"}
         class="max-md:hidden"
         size={Math.min(480, Math.max(220, layout.sidebar.width()))}
         min={220}
@@ -195,7 +167,7 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
           if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
           event.preventDefault()
           layout.sidebar.resize(
-            Math.min(480, Math.max(220, layout.sidebar.width() + (event.key === "ArrowLeft" ? -16 : 16))),
+            Math.min(480, Math.max(220, layout.sidebar.width() + (event.key === "ArrowLeft" ? -16 : 16) * (settings.general.sidebarPosition() === "right" ? -1 : 1))),
           )
         }}
       />
@@ -254,6 +226,9 @@ export function NewHome() {
   const projects = createHomeProjectsController(home)
   const language = useLanguage()
   let opening = false
+  createEffect(() => {
+    if (home.server.focusedSync().ready && !home.project.newSession()) finishStartup()
+  })
   createEffect(() => {
     if (opening || !home.project.newSession() || !home.server.focused()) return
     opening = true

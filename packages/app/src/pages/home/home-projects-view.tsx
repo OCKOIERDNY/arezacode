@@ -20,7 +20,6 @@ import { ServerRowMenuView, serverMenuLabels } from "@/components/server/server-
 import { ServerHealthIndicator } from "@/components/server/server-row"
 import { type ServerHealth } from "@/utils/server-health"
 import { fileManagerApp } from "@/utils/file-manager"
-import { ChannelIndicator } from "@/components/titlebar"
 import { useGlobal } from "@/context/global"
 import { Spinner } from "@opencode-ai/ui/spinner"
 
@@ -31,7 +30,7 @@ const projectContextMenuID = (server: ServerConnection.Any, directory: string) =
   `project:${ServerConnection.key(server)}:${directory}`
 
 export type HomeProjectsViewProps = {
-  renderSessions?: () => JSX.Element
+  renderSessions?: (expanded: Accessor<boolean>) => JSX.Element
   projectActive?: (server: string, directory: string) => boolean
   language: ReturnType<typeof useLanguage>
   servers: Accessor<ServerConnection.Any[]>
@@ -75,7 +74,7 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
     <aside
       class={
         props.renderSessions
-          ? "flex h-full min-h-0 min-w-0 flex-col gap-1 overflow-hidden pt-5"
+          ? "flex flex-1 min-h-0 min-w-0 flex-col gap-1 overflow-hidden pt-5"
           : "mt-6 flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden lg:sticky lg:top-14 lg:mt-14 lg:h-[calc(100cqh-56px)] lg:self-start lg:pt-[52px]"
       }
       aria-label={props.language.t("home.projects")}
@@ -155,7 +154,6 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
       </ScrollView>
       <HomeUtilityNav
         class={props.renderSessions ? "mt-auto mb-3 flex shrink-0 pt-3" : "mb-8 mt-4 hidden shrink-0 lg:flex"}
-        version={!!props.renderSessions}
         onOpenSettings={props.onOpenSettings}
         onOpenHelp={props.onOpenHelp}
         language={props.language}
@@ -166,7 +164,6 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
 
 export function HomeUtilityNav(props: {
   class?: string
-  version?: boolean
   onOpenSettings: () => void
   onOpenHelp: () => void
   language: ReturnType<typeof useLanguage>
@@ -189,11 +186,6 @@ export function HomeUtilityNav(props: {
         <IconV2 name="help" size="small" />
         <span class={HOME_PROJECT_NAV_LABEL}>{props.language.t("sidebar.help")}</span>
       </HomeProjectNavButton>
-      <Show when={props.version}>
-        <div data-component="sidebar-footer" class="flex h-7 shrink-0 items-center pl-7">
-          <ChannelIndicator footer />
-        </div>
-      </Show>
     </div>
   )
 }
@@ -255,12 +247,7 @@ function HomeServerRow(props: {
           }}
           onPointerDown={(event) => event.preventDefault()}
         >
-          <IconV2
-            name="chevron-down"
-            size="small"
-            class="transition-transform duration-150 ease-in-out"
-            style={{ transform: `rotate(${props.collapsed ? -90 : 0}deg)` }}
-          />
+          <IconV2 name="chevron-down" size="small" style={{ transform: `rotate(${props.collapsed ? -90 : 0}deg)` }} />
         </span>
         <div class="flex size-4 shrink-0 items-center justify-center -mr-0.5">
           <ServerHealthIndicator health={props.health} />
@@ -382,6 +369,10 @@ function HomeProjectSlot(
     (previous) => props.items.find((item) => item.worktree === props.worktree) ?? previous,
     initial,
   )
+  const expanded = createMemo(
+    () =>
+      props.selection().server === ServerConnection.key(props.server) && props.selection().directory === props.worktree,
+  )
 
   return (
     <div class="min-w-0">
@@ -391,20 +382,20 @@ function HomeProjectSlot(
         server={props.server}
         index={props.index}
         serverSelected={props.selection().server === ServerConnection.key(props.server)}
-        selected={
-          props.selection().server === ServerConnection.key(props.server) &&
-          props.selection().directory === props.worktree
-        }
+        selected={expanded()}
         unseen={props.unseenCount(props.server, project())}
       />
-      <Show
-        when={
-          props.renderSessions &&
-          props.selection().server === ServerConnection.key(props.server) &&
-          props.selection().directory === props.worktree
-        }
-      >
-        {props.renderSessions?.()}
+      <Show when={props.renderSessions}>
+        <div
+          data-component="project-accordion"
+          data-expanded={expanded()}
+          aria-hidden={!expanded()}
+          inert={!expanded()}
+        >
+          <div class="min-h-0 overflow-hidden">
+            {props.renderSessions?.(expanded)}
+          </div>
+        </div>
       </Show>
     </div>
   )
@@ -510,6 +501,7 @@ function HomeProjectRow(
   return (
     <div
       ref={sortable.ref}
+      data-component="home-project-group"
       class="group/project relative flex h-7 min-w-0 items-center gap-1 rounded-[6px]"
       classList={{ "z-10": sortable.isDragSource() }}
       onContextMenu={(event) => {
@@ -586,13 +578,10 @@ function HomeProjectRow(
       >
         <HomeProjectAvatar project={props.project} />
         <SidebarTitle>{displayName(props.project)}</SidebarTitle>
-        <Show when={props.renderSessions && !props.selected && working()}>
-          <span data-component="project-working" role="img" aria-label={props.language.t("common.loading")}>
-            <Spinner class="size-4 shrink-0" />
-          </span>
-        </Show>
       </HomeProjectNavButton>
       <div
+        data-component="home-project-actions"
+        data-working={!!props.renderSessions && !props.selected && working()}
         class={`
           hover-reveal absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1
           group-hover/project:opacity-100 focus-within:opacity-100 data-[menu=true]:opacity-100
@@ -651,6 +640,11 @@ function HomeProjectRow(
           aria-label={props.language.t("command.session.new")}
           onClick={() => props.onOpenProjectNewSession(props.server, props.project.worktree)}
         />
+        <Show when={props.renderSessions && !props.selected && working()}>
+          <span data-component="project-working" role="img" aria-label={props.language.t("common.loading")}>
+            <Spinner class="size-4 shrink-0" />
+          </span>
+        </Show>
       </div>
     </div>
   )

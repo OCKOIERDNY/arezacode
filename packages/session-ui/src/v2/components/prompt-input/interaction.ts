@@ -134,6 +134,11 @@ export function createPromptInputV2Controller(input: {
     items: () => input.commands(),
     key: (item) => item.id,
     filterKeys: ["trigger", "title"],
+    groupBy: (item) => item.commandType ?? "builtin",
+    sortGroupsBy: (a, b) => {
+      const order = ["builtin", "command", "mcp", "skill"]
+      return order.indexOf(a.category) - order.indexOf(b.category)
+    },
   })
   const list = () => (state.popover.type === "context" ? contextList : commandList)
   const suggestions = () => list().flat()
@@ -160,6 +165,7 @@ export function createPromptInputV2Controller(input: {
   }
 
   function dispatch(event: PromptInputV2InteractionEvent) {
+    if (event.type === "popover.select" && event.item.disabled) return false
     const mode = state.mode
     const result = transitionPromptInputV2(state, event, draft.state)
     const action = event.type === "popover.select" ? input.onSuggestionSelect?.(event.item) : undefined

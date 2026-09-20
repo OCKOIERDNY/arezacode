@@ -30,10 +30,12 @@ export type ProjectMeta = {
   }
 }
 
+export type SlashCommandInfo = CommandInfo & { source?: "command" | "mcp" | "skill" }
+
 export type State = {
   status: "loading" | "partial" | "complete"
   agent: Agent[]
-  command: CommandInfo[]
+  command: SlashCommandInfo[]
   reference: ReferenceInfo[]
   project: string
   projectMeta: ProjectMeta | undefined

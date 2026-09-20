@@ -1,5 +1,8 @@
 #!/bin/sh
 set -e
+if command -v entire >/dev/null 2>&1; then
+  entire hooks git pre-push "$@"
+fi
 # Check if bun version matches package.json
 # keep in sync with packages/script/src/index.ts semver qualifier
 bun -e '

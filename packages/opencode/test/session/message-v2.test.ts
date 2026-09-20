@@ -319,6 +319,35 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("sends extracted document text without sending the original binary twice", async () => {
+    const id = "m-document"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(id),
+        parts: [
+          {
+            ...basePart(id, "document"),
+            type: "file",
+            mime: "application/pdf",
+            filename: "document.pdf",
+            url: "data:application/pdf;base64,JVBERi0=",
+          },
+          {
+            ...basePart(id, "converted"),
+            type: "text",
+            text: "Extracted document text",
+            synthetic: true,
+            metadata: { convertedDocument: basePart(id, "document").id },
+          },
+        ],
+      },
+    ]
+    const result = await MessageV2.toModelMessages(input, model)
+    expect(JSON.stringify(result)).toContain("Extracted document text")
+    expect(JSON.stringify(result)).not.toContain("base64")
+    expect(input[0].parts[0].type).toBe("file")
+  })
+
   test("converts assistant tool completion into tool-call + tool-result messages with attachments", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"

@@ -55,6 +55,7 @@ const fakePermission = Permission.Service.of({
 } satisfies Permission.Interface)
 
 const fakeTruncate = Truncate.Service.of({
+  compress: () => Effect.succeed(undefined),
   cleanup: () => Effect.void,
   write: () => Effect.succeed("output.txt"),
   output: (text: string) => Effect.succeed({ content: text, truncated: false }),

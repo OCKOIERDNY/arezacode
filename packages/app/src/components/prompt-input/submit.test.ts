@@ -132,7 +132,7 @@ beforeAll(async () => {
     },
   }))
 
-  mock.module("@opencode-ai/ui/toast", () => ({
+  mock.module("@/utils/toast", () => ({
     Toast: { Region: () => null },
     showToast: () => 0,
   }))
@@ -234,6 +234,7 @@ beforeAll(async () => {
 
   mock.module("@/context/server-sync", () => ({
     useServerSync: () => () => ({
+      homeSessions: { apply: () => undefined },
       session: {
         remember: () => undefined,
         set: () => undefined,

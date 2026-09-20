@@ -8,13 +8,16 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
-import { Logo } from "@opencode-ai/ui/logo"
+import { finishStartup, Logo } from "@opencode-ai/ui/logo"
 import { useNavigate } from "@solidjs/router"
 import { DateTime } from "luxon"
-import { createMemo, For, Match, Switch } from "solid-js"
+import { createEffect, createMemo, For, Match, Switch } from "solid-js"
 
 export function LegacyHome() {
   const sync = useServerSync()
+  createEffect(() => {
+    if (sync().ready) finishStartup()
+  })
   const pickDirectory = useDirectoryPicker()
   const dialog = useDialog()
   const navigate = useNavigate()

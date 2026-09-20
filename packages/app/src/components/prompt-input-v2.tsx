@@ -6,7 +6,8 @@ import { Icon } from "@opencode-ai/ui/v2/icon"
 import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import type { ReferenceInfo } from "@opencode-ai/sdk/v2/client"
-import { createEffect, createMemo, on, Show } from "solid-js"
+import { createEffect, createMemo, createResource, on, Show } from "solid-js"
+import { Token } from "@opencode-ai/core/util/token"
 import { ModelSelectorPopoverV2 } from "@/components/dialog-select-model"
 import { DialogSelectModelUnpaidV2 } from "@/components/dialog-select-model-unpaid-v2"
 import type { PromptInputProps } from "@/components/prompt-input/contracts"
@@ -289,6 +290,13 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
       mention: { type: "file" as const, path, content: `@${path}`, start: 0, end: 0 },
     })),
   ])
+  const [skills] = createResource(sdk, async (context) => {
+    const result = await (async () => {
+      if ((await context.protocol) === "v1") return (await context.client.app.skills()).data ?? []
+      return (await context.api.skill.list({ location: { directory: context.directory } })).data
+    })().catch(() => [])
+    return Array.isArray(result) ? result : []
+  })
   const slashCommands = createMemo(() => [
     ...sync().data.command.map((item) => ({
       id: `custom.${item.name}`,
@@ -296,27 +304,70 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
       title: item.name,
       description: item.description,
       type: "custom" as const,
+      source: item.source ?? "command",
+      template: item.template,
     })),
+    ...(skills.loading ? [] : (skills() ?? []))
+      .filter((item) => !sync().data.command.some((command) => command.name === item.name))
+      .map((item) => ({
+        id: `skill.${item.name}`,
+        trigger: item.name,
+        title: item.name,
+        description: item.description,
+        type: "custom" as const,
+        source: "skill" as const,
+        template: item.content,
+      })),
     ...command.options
-      .filter((item) => !item.disabled && !item.id.startsWith("suggested.") && item.slash)
+      .filter(
+        (item) => (!item.disabled || item.id === "session.compact") && !item.id.startsWith("suggested.") && item.slash,
+      )
       .map((item) => ({
         id: item.id,
         trigger: item.slash!,
         title: item.title,
         description: item.description,
         type: "builtin" as const,
+        disabled: item.disabled,
+        source: "builtin" as const,
+        template: "",
       })),
   ])
   const commands = createMemo<PromptInputV2Suggestion[]>(() =>
-    slashCommands().map((item) => ({
-      id: item.id,
-      kind: "command",
-      label: `/${item.trigger}`,
-      trigger: item.trigger,
-      title: item.title,
-      description: item.description,
-      keybind: command.keybindParts(item.id),
-    })),
+    slashCommands().map((item) => {
+      const skill = item.source === "skill" ? skills()?.find((skill) => skill.name === item.trigger) : undefined
+      const location = skill?.location.replaceAll("\\", "/")
+      const directory = sdk().directory.replaceAll("\\", "/").replace(/\/$/, "")
+      const home = sync().data.path.home.replaceAll("\\", "/").replace(/\/$/, "")
+      const origin = !location
+        ? undefined
+        : location === "<built-in>" || location.startsWith("/builtin/") || location.includes("/.system/")
+          ? "system"
+          : location.startsWith(`${directory}/`)
+            ? "project"
+            : home && location.startsWith(`${home}/`)
+              ? "personal"
+              : "system"
+      return {
+        id: item.id,
+        kind: "command",
+        label: `/${item.trigger}`,
+        trigger: item.trigger,
+        title: item.title,
+        description: item.description,
+        keybind: command.keybindParts(item.id),
+        commandType: item.source,
+        disabled: item.type === "builtin" && item.disabled,
+        group: language.t(`prompt.slash.group.${item.source}`),
+        badge: origin ? language.t(`prompt.slash.origin.${origin}`) : undefined,
+        tooltip:
+          item.source === "skill"
+            ? language.t("prompt.slash.skillTokens", { count: Token.estimate(item.template) })
+            : item.type === "builtin" && item.id === "session.compact" && item.disabled
+              ? language.t("prompt.slash.compactUnavailable")
+              : undefined,
+      }
+    }),
   )
   const variants = createMemo(() => ["default", ...props.controls.model.selection.variant.list()])
   const controller = createPromptInputV2Controller({

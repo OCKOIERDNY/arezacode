@@ -1,14 +1,15 @@
 import { makeDefaultApi } from "@opencode-ai/protocol/api"
-import { InvalidRequestError, SessionNotFoundError } from "@opencode-ai/protocol/errors"
+import { ConflictError, InvalidRequestError, SessionNotFoundError } from "@opencode-ai/protocol/errors"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
 
 class LocationMiddleware extends HttpApiMiddleware.Service<LocationMiddleware>()(
   "@opencode-ai/client/LocationMiddleware",
+  { error: [ConflictError] },
 ) {}
 
 class SessionLocationMiddleware extends HttpApiMiddleware.Service<SessionLocationMiddleware>()(
   "@opencode-ai/client/SessionLocationMiddleware",
-  { error: [InvalidRequestError, SessionNotFoundError] },
+  { error: [InvalidRequestError, SessionNotFoundError, ConflictError] },
 ) {}
 
 export const ClientApi = makeDefaultApi({

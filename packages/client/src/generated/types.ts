@@ -21,6 +21,14 @@ export type InvalidRequestError = {
 export const isInvalidRequestError = (value: unknown): value is InvalidRequestError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "InvalidRequestError"
 
+export type ConflictError = {
+  readonly _tag: "ConflictError"
+  readonly message: string
+  readonly resource?: string | undefined
+}
+export const isConflictError = (value: unknown): value is ConflictError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ConflictError"
+
 export type InvalidCursorError = { readonly _tag: "InvalidCursorError"; readonly message: string }
 export const isInvalidCursorError = (value: unknown): value is InvalidCursorError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "InvalidCursorError"
@@ -32,14 +40,6 @@ export type SessionNotFoundError = {
 }
 export const isSessionNotFoundError = (value: unknown): value is SessionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "SessionNotFoundError"
-
-export type ConflictError = {
-  readonly _tag: "ConflictError"
-  readonly message: string
-  readonly resource?: string | undefined
-}
-export const isConflictError = (value: unknown): value is ConflictError =>
-  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ConflictError"
 
 export type ServiceUnavailableError = {
   readonly _tag: "ServiceUnavailableError"

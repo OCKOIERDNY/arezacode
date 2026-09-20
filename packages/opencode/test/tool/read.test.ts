@@ -1,7 +1,7 @@
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { afterEach, describe, expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Cause, Effect, Exit, Layer, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Schema, Stream } from "effect"
 import path from "path"
 import { Agent } from "../../src/agent/agent"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -149,6 +149,36 @@ const asks = () => {
 }
 
 describe("tool.read external_directory permission", () => {
+  it.live("compresses tool output with an existing truncation flag and preserves the original", () =>
+    Effect.gen(function* () {
+      const directory = yield* tmpdirScoped()
+      const original = JSON.stringify(
+        Array.from({ length: 300 }, (_, id) => ({ id, status: "healthy", details: "normal operation" })),
+      )
+      const result = yield* provideInstance(directory)(
+        Effect.gen(function* () {
+          const definition = yield* Tool.define(
+            "compression-test",
+            Effect.succeed({
+              description: "Compression regression fixture",
+              parameters: Schema.Struct({}),
+              execute: () => Effect.succeed({ title: "Output", output: original, metadata: { truncated: false } }),
+            }),
+          )
+          const tool = yield* definition.init()
+          return yield* tool.execute({}, ctx)
+        }),
+      )
+      expect(result.output).toContain("Headroom compressed this output")
+      expect(result.output.length).toBeLessThan(original.length)
+      const file = "outputPath" in result.metadata ? result.metadata.outputPath : undefined
+      expect(typeof file).toBe("string")
+      if (typeof file !== "string") throw new Error("Missing preserved output")
+      const fs = yield* FSUtil.Service
+      expect(yield* fs.readFileString(file)).toBe(original)
+    }),
+  )
+
   it.live("allows reading absolute path inside project directory", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped()

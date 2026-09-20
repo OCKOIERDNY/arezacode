@@ -1,6 +1,7 @@
 import { createPromptProjectController } from "@/components/prompt-project-selector"
 import { useTitlebarRightMount } from "@/components/titlebar"
 import { useSettings } from "@/context/settings"
+import { finishStartup } from "@opencode-ai/ui/logo"
 import { createEffect, createResource } from "solid-js"
 import { createNewSessionDraftController } from "./new-session/new-session-draft-controller"
 import { NewSessionStatus, NewSessionView } from "./new-session/new-session-view"
@@ -29,6 +30,7 @@ export default function NewSessionPage() {
   })
   createEffect(() => {
     if (!draft.prompt.ready()) return
+    finishStartup()
     draft.input.restoreFocus()
   })
   const ready = Promise.resolve()

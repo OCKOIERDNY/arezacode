@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>OpenCode</title>
+    <title>ArezaCode</title>
     <link rel="icon" type="image/png" href="./favicon-96x96-v3.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="./favicon-v3.svg" />
     <link rel="shortcut icon" href="./favicon-v3.ico" />
@@ -15,7 +15,23 @@
   </head>
   <body class="antialiased overscroll-none text-12-regular overflow-hidden">
     <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root" class="flex flex-col h-dvh"></div>
+    <div id="root" class="flex flex-col h-dvh" inert></div>
+    <div
+      id="startup-splash"
+      data-component="startup-splash"
+      style="
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background: var(--v2-background-bg-deep, var(--background-base, #181818));
+      "
+    >
+      <div role="progressbar" aria-label="ArezaCode">
+        <img src="./areza-flower.svg" width="72" height="72" alt="" />
+      </div>
+    </div>
     <script src="./index.tsx" type="module"></script>
   </body>
 </html>

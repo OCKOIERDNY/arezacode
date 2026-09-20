@@ -178,12 +178,12 @@
 [data-component="select-v2"] [data-slot="select-v2-chevron"] svg {
   display: block;
   flex: none;
-  transform: rotate(180deg);
+  transform: rotate(0deg);
   transform-origin: 50% 50%;
 }
 
 [data-component="select-v2"][data-expanded] [data-slot="select-v2-chevron"] svg {
-  transform: rotate(0deg);
+  transform: rotate(180deg);
 }
 
 /* Compact trigger for settings rows and similar inline contexts. */

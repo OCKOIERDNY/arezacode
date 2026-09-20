@@ -1,21 +1,8 @@
 import { DropdownMenu } from "@kobalte/core/dropdown-menu"
 import { ContextMenu } from "@kobalte/core/context-menu"
 import { Show, splitProps, type Component, type ComponentProps, type JSX, type ParentProps } from "solid-js"
+import { Icon } from "./icon"
 import "./menu-v2.css"
-
-const ChevronRight: Component = () => (
-  <svg
-    data-slot="menu-v2-item-chevron"
-    width="16"
-    height="16"
-    viewBox="0 0 16 16"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    aria-hidden="true"
-  >
-    <path d="M6 4L10 8L6 12V4Z" fill="currentColor" />
-  </svg>
-)
 
 const CheckMark: Component = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -131,7 +118,15 @@ function MenuV2SubTrigger(props: ParentProps<MenuV2SubTriggerProps>) {
       data-component="menu-v2-item"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     >
-      <ItemBody shortcut={s.shortcut} badge={s.badge} trailing={<ChevronRight />}>
+      <ItemBody
+        shortcut={s.shortcut}
+        badge={s.badge}
+        trailing={
+          <span data-slot="menu-v2-item-chevron">
+            <Icon name="chevron-down" style={{ transform: "rotate(-90deg)" }} />
+          </span>
+        }
+      >
         {s.children}
       </ItemBody>
     </DropdownMenu.SubTrigger>

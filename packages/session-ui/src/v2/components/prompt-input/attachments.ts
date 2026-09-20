@@ -1,12 +1,14 @@
+import { DOCUMENT_TYPES, documentType } from "@opencode-ai/schema/document"
 import { onMount } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import type { PromptInputV2Attachment, PromptInputV2Prompt } from "./types"
 
-const accepted = [
+export const ACCEPTED_FILE_TYPES = [
   "image/png",
   "image/jpeg",
   "image/gif",
   "image/webp",
+  ...Object.keys(DOCUMENT_TYPES).map((extension) => `.${extension}`),
   "application/pdf",
   "text/*",
   "application/json",
@@ -213,7 +215,7 @@ export function createPromptInputV2Attachments(
         return
       }
       void input
-        .picker({ defaultPath: input.directory(), multiple: true, accept: accepted }, (file) => add(file))
+        .picker({ defaultPath: input.directory(), multiple: true, accept: ACCEPTED_FILE_TYPES }, (file) => add(file))
         .catch(input.onError)
     },
   }
@@ -245,6 +247,8 @@ const textMimes = new Set([
 ])
 
 async function attachmentMime(file: File) {
+  const document = documentType(file.name, file.type)
+  if (document) return document.mime
   const type = file.type.split(";", 1)[0]?.trim().toLowerCase() ?? ""
   if (imageMimes.has(type) || type === "application/pdf") return type
   const index = file.name.lastIndexOf(".")

@@ -1,6 +1,6 @@
 import { TextField } from "@opencode-ai/ui/text-field"
 import * as Sentry from "@sentry/solid"
-import { Logo } from "@opencode-ai/ui/logo"
+import { finishStartup, Logo } from "@opencode-ai/ui/logo"
 import { Button } from "@opencode-ai/ui/button"
 import { Component, createSignal, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -220,6 +220,7 @@ interface ErrorPageProps {
 }
 
 export const ErrorPage: Component<ErrorPageProps> = (props) => {
+  finishStartup("error")
   const platform = usePlatform()
   const language = useLanguage()
   const formattedError = () => formatError(props.error, language.t)

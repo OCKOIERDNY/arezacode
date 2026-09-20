@@ -8,6 +8,7 @@ import DESCRIPTION from "./read.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { Instruction } from "../session/instruction"
+import { Document } from "@opencode-ai/core/document"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
 
 const DEFAULT_READ_LIMIT = 2000
@@ -298,6 +299,24 @@ export const ReadTool = Tool.define<
       }
 
       const loaded = yield* instruction.resolve(ctx.messages, filepath, ctx.messageID)
+      if (Document.documentType(filepath)) {
+        const text = yield* Effect.tryPromise(() =>
+          Document.convert({ path: filepath, name: filepath, signal: ctx.abort }),
+        )
+        const page = yield* Effect.try({
+          try: () => Document.page(text, params.offset || 1, params.limit),
+          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+        })
+        return {
+          title,
+          output: `<path>${filepath}</path>\n<type>converted-document</type>\n${page.content}${page.truncated ? `\nMore document text available at offset ${page.next}.` : ""}`,
+          metadata: {
+            preview: page.content.slice(0, 1000),
+            truncated: page.truncated,
+            loaded: loaded.map((item) => item.filepath),
+          },
+        }
+      }
       const sample = yield* readSample(filepath, Number(stat.size), SAMPLE_BYTES)
 
       const mime = sniffAttachmentMime(sample, FSUtil.mimeType(filepath))

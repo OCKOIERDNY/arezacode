@@ -1,0 +1,43 @@
+[data-component="startup-splash"] {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  background: var(--v2-background-bg-deep, var(--background-base, #181818));
+  opacity: 1;
+  transition:
+    opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 180ms;
+}
+
+[data-component="startup-splash"] img {
+  display: block;
+  width: 72px;
+  height: 72px;
+  animation: startup-flower 1.6s ease-in-out infinite alternate;
+}
+
+[data-component="startup-splash"][data-ready] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@keyframes startup-flower {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="startup-splash"] {
+    transition: none;
+  }
+  [data-component="startup-splash"] img {
+    animation: none;
+  }
+}

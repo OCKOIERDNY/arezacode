@@ -1,5 +1,7 @@
 import { onMount, splitProps, type ComponentProps } from "solid-js"
 
+export const chevronDown = `<path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/>`
+
 const icons = {
   "align-right": `<path d="M12.292 6.04167L16.2503 9.99998L12.292 13.9583M2.91699 9.99998H15.6253M17.0837 3.75V16.25" stroke="currentColor" stroke-linecap="square"/>`,
   "arrow-up": `<path fill-rule="evenodd" clip-rule="evenodd" d="M9.99991 2.24121L16.0921 8.33343L15.2083 9.21731L10.6249 4.63397V17.5001H9.37492V4.63398L4.7916 9.21731L3.90771 8.33343L9.99991 2.24121Z" fill="currentColor"/>`,
@@ -12,9 +14,9 @@ const icons = {
   fork: `<path d="M2.91602 7.91406L2.91602 2.91406H7.91602M12.0827 2.91406H17.0827L17.0827 7.91406M9.99935 9.9974L9.99935 17.0807M9.99935 9.9974L3.33268 3.33073M9.99935 9.9974L16.666 3.33073" stroke="currentColor" stroke-linecap="square"/>`,
   "bullet-list": `<path d="M9.58329 13.7497H17.0833M9.58329 6.24967H17.0833M6.24996 6.24967C6.24996 7.17015 5.50377 7.91634 4.58329 7.91634C3.66282 7.91634 2.91663 7.17015 2.91663 6.24967C2.91663 5.3292 3.66282 4.58301 4.58329 4.58301C5.50377 4.58301 6.24996 5.3292 6.24996 6.24967ZM6.24996 13.7497C6.24996 14.6701 5.50377 15.4163 4.58329 15.4163C3.66282 15.4163 2.91663 14.6701 2.91663 13.7497C2.91663 12.8292 3.66282 12.083 4.58329 12.083C5.50377 12.083 6.24996 12.8292 6.24996 13.7497Z" stroke="currentColor" stroke-linecap="square"/>`,
   "check-small": `<path d="M6.5 11.4412L8.97059 13.5L13.5 6.5" stroke="currentColor" stroke-linecap="square"/>`,
-  "chevron-down": `<path d="M6.6665 8.33325L9.99984 11.6666L13.3332 8.33325" stroke="currentColor" stroke-linecap="square"/>`,
-  "chevron-left": `<path d="M12 15L7 10L12 5" stroke="currentColor" stroke-linecap="square"/>`,
-  "chevron-right": `<path d="M8 15L13 10L8 5" stroke="currentColor" stroke-linecap="square"/>`,
+  "chevron-down": chevronDown,
+  "chevron-left": `<g transform="rotate(90 8 8)">${chevronDown}</g>`,
+  "chevron-right": `<g transform="rotate(-90 8 8)">${chevronDown}</g>`,
   "chevron-grabber-vertical": `<path d="M6.66675 12.4998L10.0001 15.8332L13.3334 12.4998M6.66675 7.49984L10.0001 4.1665L13.3334 7.49984" stroke="currentColor" stroke-linecap="square"/>`,
   "chevron-double-right": `<path d="M11.6654 13.3346L14.9987 10.0013L11.6654 6.66797M5.83203 13.3346L9.16536 10.0013L5.83203 6.66797" stroke="currentColor" stroke-linecap="square"/>`,
   "circle-x": `<path fill-rule="evenodd" clip-rule="evenodd" d="M1.6665 10.0003C1.6665 5.39795 5.39746 1.66699 9.99984 1.66699C14.6022 1.66699 18.3332 5.39795 18.3332 10.0003C18.3332 14.6027 14.6022 18.3337 9.99984 18.3337C5.39746 18.3337 1.6665 14.6027 1.6665 10.0003ZM7.49984 6.91107L6.91058 7.50033L9.41058 10.0003L6.91058 12.5003L7.49984 13.0896L9.99984 10.5896L12.4998 13.0896L13.0891 12.5003L10.5891 10.0003L13.0891 7.50033L12.4998 6.91107L9.99984 9.41107L7.49984 6.91107Z" fill="currentColor"/>`,
@@ -111,7 +113,14 @@ const symbol = (name: keyof typeof icons) => `opencode-icon-${name}`
 let spriteInserted = false
 
 function viewBox(name: keyof typeof icons) {
-  return name === "magnifying-glass" || name === "arrow-undo-down" || name === "subagent" ? "0 0 16 16" : "0 0 20 20"
+  return name === "chevron-down" ||
+    name === "chevron-right" ||
+    name === "chevron-left" ||
+    name === "magnifying-glass" ||
+    name === "arrow-undo-down" ||
+    name === "subagent"
+    ? "0 0 16 16"
+    : "0 0 20 20"
 }
 
 function ensureSprite() {

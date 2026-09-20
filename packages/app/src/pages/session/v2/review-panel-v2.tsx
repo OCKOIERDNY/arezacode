@@ -1,4 +1,4 @@
-import { createMemo, createResource, createSignal, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, Show, type JSX } from "solid-js"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import {
@@ -38,6 +38,7 @@ export type ReviewPanelV2Props = {
   empty?: JSX.Element
   diffs: () => ReviewDiff[]
   diffsReady: () => boolean
+  onReady?: (ready: boolean) => void
   diffVersion?: number
   loadDiff?: (path: string, version?: number) => Promise<RenderDiff | undefined>
   activeFile?: string
@@ -100,6 +101,16 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
     return source
   })
 
+  const [renderedItem, setRenderedItem] = createSignal<RenderDiff>()
+  createEffect(() => {
+    const item = activeItem()
+    props.onReady?.(
+      props.diffsReady() &&
+        !loadedDiff.loading &&
+        (!item || (!item.additions && !item.deletions) || renderedItem() === item || loadedDiff.state === "errored"),
+    )
+  })
+
   const readFile = async (path: string) =>
     sdk()
       .client.file.read({ path })
@@ -146,6 +157,7 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
             <Show when={activeItem()}>
               {(diff) => (
                 <SessionReviewFilePreviewV2
+                  onRendered={() => setRenderedItem(diff())}
                   file={file}
                   diff={diff()}
                   diffStyle={props.diffStyle}

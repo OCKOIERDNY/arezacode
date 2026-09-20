@@ -1,5 +1,7 @@
 export * as ToolOutputStore from "./tool-output-store"
 
+import { AutomaticChecks } from "./automatic-checks"
+
 import path from "path"
 import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
 import { Config } from "./config"
@@ -132,6 +134,7 @@ const layer = Layer.effect(
       yield* fs
         .writeFileString(file, content, { flag: "wx" })
         .pipe(Effect.mapError((cause) => new StorageError({ operation: "write", cause })))
+      yield* fs.chmod(file, 0o600).pipe(Effect.mapError((cause) => new StorageError({ operation: "write", cause })))
       return file
     })
 
@@ -146,6 +149,29 @@ const layer = Layer.effect(
               catch: (cause) => new StorageError({ operation: "encode", cause }),
             })
           : text.map((item) => item.text).join("")
+      const compressed = yield* Effect.tryPromise(() => AutomaticChecks.compress(contextual)).pipe(
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      if (
+        compressed &&
+        Buffer.byteLength(compressed) < outputLimits.maxBytes &&
+        lineCount(compressed) < outputLimits.maxLines
+      ) {
+        const outputPath = yield* write(contextual)
+        return {
+          output: {
+            structured: input.output.structured,
+            content: [
+              {
+                type: "text" as const,
+                text: `${compressed}\n\nHeadroom compressed this output. Full original: ${outputPath}. Use Read for omitted detail.`,
+              },
+              ...media,
+            ],
+          },
+          outputPaths: [outputPath],
+        }
+      }
       if (
         lineCount(contextual) <= outputLimits.maxLines &&
         Buffer.byteLength(contextual, "utf-8") <= outputLimits.maxBytes
