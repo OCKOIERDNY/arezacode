@@ -252,6 +252,7 @@
     text-align: end;
     flex: 1 1 auto;
     min-width: 0;
+    max-width: 320px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -317,6 +318,9 @@
 
   [data-slot="text-part-meta"] {
     user-select: none;
+    min-width: 0;
+    max-width: 480px;
+    overflow: hidden;
   }
 
   [data-slot="text-part-copy-wrapper"][data-interrupted] {
@@ -721,21 +725,6 @@
 
 [data-component="tool-group-scroll"] {
   max-height: min(320px, 50vh);
-  --tool-fade-top: 0px;
-  --tool-fade-bottom: 0px;
-
-  &[data-scroll-above] {
-    --tool-fade-top: 16px;
-  }
-
-  &[data-scroll-below] {
-    --tool-fade-bottom: 16px;
-  }
-
-  > .scroll-view__viewport {
-    overscroll-behavior: contain;
-    mask-image: linear-gradient(to bottom, transparent, black var(--tool-fade-top), black calc(100% - var(--tool-fade-bottom)), transparent);
-  }
 }
 
 [data-component="context-tool-group-list"] {

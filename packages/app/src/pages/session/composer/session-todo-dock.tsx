@@ -218,61 +218,47 @@ export function SessionTodoDock(props: {
 }
 
 function TodoList(props: { todos: Todo[] }) {
-  const [store, setStore] = createStore({
-    stuck: false,
-  })
-
   return (
-    <div class="relative">
-      <ScrollView viewportClass="px-3 pb-11 flex flex-col gap-1.5"
-        class="max-h-42"
-        style={{ "overflow-anchor": "none" }}
-        onScroll={(e) => {
-          setStore("stuck", e.currentTarget.scrollTop > 0)
-        }}
-      >
-        <Index each={props.todos}>
-          {(todo) => (
-            <Checkbox
-              readOnly
-              checked={todo().status === "completed"}
-              indeterminate={todo().status === "in_progress"}
-              data-in-progress={todo().status === "in_progress" ? "" : undefined}
-              data-state={todo().status}
-              icon={dot(todo().status)}
+    <ScrollView
+      viewportClass="px-3 pb-11 flex flex-col gap-1.5"
+      class="max-h-42 scroll-view--fade"
+      orientation="vertical"
+      style={{ "overflow-anchor": "none" }}
+    >
+      <Index each={props.todos}>
+        {(todo) => (
+          <Checkbox
+            readOnly
+            checked={todo().status === "completed"}
+            indeterminate={todo().status === "in_progress"}
+            data-in-progress={todo().status === "in_progress" ? "" : undefined}
+            data-state={todo().status}
+            icon={dot(todo().status)}
+            style={{
+              "--checkbox-align": "flex-start",
+              "--checkbox-offset": "1px",
+              transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
+              opacity: todo().status === "pending" ? "0.94" : "1",
+            }}
+          >
+            <TextStrikethrough
+              active={todo().status === "completed" || todo().status === "cancelled"}
+              text={todo().content}
+              class="text-14-regular min-w-0 break-words"
               style={{
-                "--checkbox-align": "flex-start",
-                "--checkbox-offset": "1px",
-                transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
-                opacity: todo().status === "pending" ? "0.94" : "1",
+                "line-height": "var(--line-height-normal)",
+                transition:
+                  "color 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
+                color:
+                  todo().status === "completed" || todo().status === "cancelled"
+                    ? "var(--text-weak)"
+                    : "var(--text-strong)",
+                opacity: todo().status === "pending" ? "0.92" : "1",
               }}
-            >
-              <TextStrikethrough
-                active={todo().status === "completed" || todo().status === "cancelled"}
-                text={todo().content}
-                class="text-14-regular min-w-0 break-words"
-                style={{
-                  "line-height": "var(--line-height-normal)",
-                  transition:
-                    "color 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
-                  color:
-                    todo().status === "completed" || todo().status === "cancelled"
-                      ? "var(--text-weak)"
-                      : "var(--text-strong)",
-                  opacity: todo().status === "pending" ? "0.92" : "1",
-                }}
-              />
-            </Checkbox>
-          )}
-        </Index>
-      </ScrollView>
-      <div
-        class="pointer-events-none absolute top-0 left-0 right-0 h-4 transition-opacity duration-150"
-        style={{
-          background: "linear-gradient(to bottom, var(--background-base), transparent)",
-          opacity: store.stuck ? 1 : 0,
-        }}
-      />
-    </div>
+            />
+          </Checkbox>
+        )}
+      </Index>
+    </ScrollView>
   )
 }

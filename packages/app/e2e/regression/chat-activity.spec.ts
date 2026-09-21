@@ -3,6 +3,44 @@ import { buildInitialStreamEvent, buildStreamDeltaEvents, setupTimelineBenchmark
 
 test.use({ colorScheme: "dark" })
 
+test("todo overflow uses the shared content fade at both scroll edges", async ({ page }) => {
+  const fixture = await setupTimelineBenchmark(page, { historyTurns: 1, eventBatch: 1, newLayoutDesigns: true })
+  const directory = "C:/OpenCode/TimelineStateRegression"
+  const sessionID = "ses_timeline_state_regression"
+  const todos = [
+    { content: "Fix read-only link handling, protected redemption, isolated throttles, and asynchronous delivery", status: "completed", priority: "high" },
+    { content: "Split auth screens and hooks and fix the frontend response handling and cross-tab handoff", status: "completed", priority: "high" },
+    { content: "Add regression coverage for account switching and the token expiry boundary", status: "completed", priority: "high" },
+    { content: "Verify the shared UI components and run the production build", status: "in_progress", priority: "high" },
+    { content: "Review the final changes and summarize the remaining findings", status: "pending", priority: "high" },
+    { content: "Check the questionnaire keyboard submission", status: "pending", priority: "high" },
+    { content: "Confirm the draft survives the questionnaire", status: "pending", priority: "high" },
+    { content: "Verify the viewport remains visible throughout submission", status: "pending", priority: "high" },
+    { content: "Inspect the final rendered interface", status: "pending", priority: "high" },
+  ]
+  await page.route(`**/session/${sessionID}/todo**`, (route) => route.fulfill({ json: todos, headers: { "access-control-allow-origin": "*" } }))
+  await page.route("**/session/status**", (route) => route.fulfill({ json: { [sessionID]: { type: "busy" } }, headers: { "access-control-allow-origin": "*" } }))
+  fixture.transport.enqueue({ directory, payload: {
+    type: "session.status", properties: { sessionID, status: { type: "busy" } },
+  } })
+  fixture.transport.enqueue({ directory, payload: { type: "todo.updated", properties: { sessionID, todos } } })
+  const dock = page.locator('[data-component="session-todo-dock"]')
+  const scroll = dock.locator('.scroll-view--fade')
+  const viewport = scroll.locator('.scroll-view__viewport')
+  await expect(dock).toBeVisible()
+  await expect(scroll).toHaveAttribute("data-scroll-below", "true")
+  await expect(scroll).not.toHaveAttribute("data-scroll-above")
+  expect(await viewport.evaluate((element) => getComputedStyle(element).maskImage)).toContain("linear-gradient")
+  await page.screenshot({ path: "/tmp/areza-todo-fade-top.png" })
+  await viewport.evaluate((element) => { element.scrollTop = (element.scrollHeight - element.clientHeight) / 2 })
+  await expect(scroll).toHaveAttribute("data-scroll-above", "true")
+  await expect(scroll).toHaveAttribute("data-scroll-below", "true")
+  await page.screenshot({ path: "/tmp/areza-todo-fade-middle.png" })
+  await viewport.evaluate((element) => { element.scrollTop = element.scrollHeight })
+  await expect(scroll).not.toHaveAttribute("data-scroll-below")
+  await page.screenshot({ path: "/tmp/areza-todo-fade-bottom.png" })
+})
+
 test("tool rows use compact spacing, distinct icons and hover contrast", async ({ page }) => {
   const fixture = await setupTimelineBenchmark(page, { historyTurns: 2, eventBatch: 1, newLayoutDesigns: true })
   for (const [index, tool] of ["shell", "read", "grep", ...Array.from({ length: 12 }, () => "shell")].entries()) {

@@ -5,7 +5,7 @@ import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { finishStartup } from "@opencode-ai/ui/logo"
 import { useSessionTabAvatarState } from "./layout/project-avatar-state"
-import { SidebarTitle } from "./home/home-projects-view"
+import { OverflowText } from "@opencode-ai/ui/overflow-text"
 import { useLayout } from "@/context/layout"
 import { useSettings } from "@/context/settings"
 import { useNotification } from "@/context/notification"
@@ -93,6 +93,7 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
                 : previous,
             [],
           )
+          const recordsByID = createMemo(() => new Map(records().map((record) => [record.session.id, record])))
           return (
             <div class="mt-1 mb-3 flex flex-col gap-0.5">
               <Show
@@ -102,45 +103,48 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
                 }
               >
                 <For
-                  each={records()}
+                  each={[...recordsByID().keys()]}
                   fallback={
                     <span class="px-2 py-2 text-v2-text-text-faint">
                       {projects.copy.language.t("home.sessions.empty")}
                     </span>
                   }
                 >
-                  {(record) => (
-                    <button
-                      type="button"
-                      data-component="home-session-row"
-                      class="flex h-8 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-v2-border-border-muted"
-                      classList={{ "bg-v2-background-bg-layer-03 text-v2-text-text-base": selected(record.session.id, sessions.session.server()) }}
-                      aria-current={selected(record.session.id, sessions.session.server()) ? "page" : undefined}
-                      onClick={(event) => {
-                        notification
-                          .ensureServerState(sessions.session.server())
-                          .session.markViewed(record.session.id)
-                        if (layout.session.width() === 0) layout.session.resize(600)
-                        sessions.session.open(record.session, {
-                          background: shouldOpenSessionInBackground({
-                            button: event.button,
-                            mac: /Mac|iPod|iPhone|iPad/.test(navigator.platform),
-                            meta: event.metaKey,
-                            ctrl: event.ctrlKey,
-                            shift: event.shiftKey,
-                            alt: event.altKey,
-                          }),
-                        })
-                      }}
-                    >
-                      <SidebarTitle>{sessionTitle(record.session.title) || record.session.id}</SidebarTitle>
-                      <SidebarSessionStatus
-                        server={sessions.session.server()}
-                        directory={record.session.directory}
-                        sessionID={record.session.id}
-                      />
-                    </button>
-                  )}
+                  {(id) => {
+                    const record = () => recordsByID().get(id)!
+                    return (
+                      <button
+                        type="button"
+                        data-component="home-session-row"
+                        class="flex h-8 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-v2-border-border-muted"
+                        classList={{ "bg-v2-background-bg-layer-03 text-v2-text-text-base": selected(record().session.id, sessions.session.server()) }}
+                        aria-current={selected(record().session.id, sessions.session.server()) ? "page" : undefined}
+                        onClick={(event) => {
+                          notification
+                            .ensureServerState(sessions.session.server())
+                            .session.markViewed(record().session.id)
+                          if (layout.session.width() === 0) layout.session.resize(600)
+                          sessions.session.open(record().session, {
+                            background: shouldOpenSessionInBackground({
+                              button: event.button,
+                              mac: /Mac|iPod|iPhone|iPad/.test(navigator.platform),
+                              meta: event.metaKey,
+                              ctrl: event.ctrlKey,
+                              shift: event.shiftKey,
+                              alt: event.altKey,
+                            }),
+                          })
+                        }}
+                      >
+                        <OverflowText>{sessionTitle(record().session.title) || record().session.id}</OverflowText>
+                        <SidebarSessionStatus
+                          server={sessions.session.server()}
+                          directory={record().session.directory}
+                          sessionID={record().session.id}
+                        />
+                      </button>
+                    )
+                  }}
                 </For>
               </Show>
             </div>

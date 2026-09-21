@@ -5,6 +5,7 @@ import { isSortable, useSortable } from "@dnd-kit/solid/sortable"
 import { AutoScroller, Feedback, PointerActivationConstraints } from "@dnd-kit/dom"
 import { RestrictToVerticalAxis } from "@dnd-kit/abstract/modifiers"
 import { RestrictToElement } from "@dnd-kit/dom/modifiers"
+import { OverflowText } from "@opencode-ai/ui/overflow-text"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
@@ -586,7 +587,7 @@ function HomeProjectRow(
         }}
       >
         <HomeProjectAvatar project={props.project} />
-        <SidebarTitle>{displayName(props.project)}</SidebarTitle>
+        <OverflowText>{displayName(props.project)}</OverflowText>
       </HomeProjectNavButton>
       <div
         data-component="home-project-actions"
@@ -654,25 +655,6 @@ function HomeProjectRow(
           </span>
       </div>
     </div>
-  )
-}
-
-export function SidebarTitle(props: { children: JSX.Element }) {
-  return (
-    <span
-      data-component="sidebar-title"
-      class="min-w-0 flex-1 overflow-hidden"
-      onPointerEnter={(event) => {
-        const distance = Math.max(
-          0,
-          (event.currentTarget.firstElementChild?.scrollWidth ?? 0) - event.currentTarget.clientWidth,
-        )
-        event.currentTarget.style.setProperty("--title-overflow", `${distance}px`)
-        event.currentTarget.style.setProperty("--title-duration", `${distance / 24}s`)
-      }}
-    >
-      <span class="block overflow-hidden text-ellipsis whitespace-nowrap">{props.children}</span>
-    </span>
   )
 }
 

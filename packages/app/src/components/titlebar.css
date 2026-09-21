@@ -75,13 +75,6 @@
     animation-range: calc(100% - 1.1px) calc(100% - 1px);
   }
 }
-@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  [data-component="sidebar-title"]:hover > span {
-    overflow: visible;
-    transform: translateX(calc(-1 * var(--title-overflow, 0px)));
-    transition: transform var(--title-duration, 0s) linear 300ms;
-  }
-}
 
 [data-component="project-sidebar-slot"] {
   height: 100%;

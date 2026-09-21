@@ -59,6 +59,7 @@ import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import { OverflowText } from "@opencode-ai/ui/overflow-text"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
@@ -1121,7 +1122,7 @@ export function ContextToolGroup(props: {
         </div>
       </Collapsible.Trigger>
       <Collapsible.Content>
-        <ScrollView data-component="tool-group-scroll" orientation="vertical">
+        <ScrollView data-component="tool-group-scroll" class="scroll-view--fade" orientation="vertical">
         <div data-component="context-tool-group-list">
           <Index each={props.parts}>
             {(partAccessor) => {
@@ -1267,7 +1268,10 @@ export function UserMessageDisplay(props: {
 
   const metaHead = createMemo(() => {
     const agent = props.message.agent
-    const items = [agent ? agent[0]?.toUpperCase() + agent.slice(1) : ""]
+    const items = [
+      agent ? agent[0]?.toUpperCase() + agent.slice(1) : "",
+      model() || (props.message.model?.modelID === "" ? i18n.t("ui.message.routing") : ""),
+    ]
     return items.filter((x) => !!x).join("\u00A0\u00B7\u00A0")
   })
 
@@ -1398,15 +1402,12 @@ export function UserMessageDisplay(props: {
         </div>
       </Show>
       <Show when={text() || (props.useV2Actions && messageComments().length > 0)}>
-        <div data-slot="user-message-model" class="text-12-regular text-text-weak text-right">
-          {model() || (props.message.model?.modelID === "" ? i18n.t("ui.message.routing") : "")}
-        </div>
         <div data-slot="user-message-copy-wrapper">
           <Show when={metaHead() || metaTail()}>
             <span data-slot="user-message-meta-wrap">
               <Show when={metaHead()}>
                 <span data-slot="user-message-meta" class="text-12-regular text-text-weak cursor-default">
-                  {metaHead()}
+                  <OverflowText>{metaHead()}</OverflowText>
                 </span>
               </Show>
               <Show when={metaHead() && metaTail()}>
@@ -1755,17 +1756,6 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     })
   })
 
-  const meta = createMemo(() => {
-    if (props.message.role !== "assistant") return ""
-    const agent = (props.message as AssistantMessage).agent
-    const items = [
-      agent ? agent[0]?.toUpperCase() + agent.slice(1) : "",
-      duration(),
-      interrupted() ? i18n.t("ui.message.interrupted") : "",
-    ]
-    return items.filter((x) => !!x).join(" \u00B7 ")
-  })
-
   const streaming = createMemo(
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
@@ -1786,6 +1776,19 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
         })
       })))]
   })
+  const meta = createMemo(() => {
+    if (props.message.role !== "assistant") return ""
+    const agent = (props.message as AssistantMessage).agent
+    const items = [
+      agent ? agent[0]?.toUpperCase() + agent.slice(1) : "",
+      model() ? i18n.t("ui.message.orchestrator", { model: model() }) : "",
+      subagents().length ? i18n.t("ui.message.subagents", { models: subagents().join(", ") }) : "",
+      duration(),
+      interrupted() ? i18n.t("ui.message.interrupted") : "",
+    ]
+    return items.filter((x) => !!x).join(" \u00B7 ")
+  })
+
   const text = () => readPartText(data.store.part_text_accum_delta, part())
   const isLastTextPart = createMemo(() => {
     const last = (data.store.part?.[props.message.id] ?? [])
@@ -1817,12 +1820,6 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
           <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
         </div>
         <Show when={showCopy()}>
-          <Show when={props.message.role === "assistant"}>
-            <div data-slot="text-part-models" class="text-12-regular text-text-weak">
-              <div>{i18n.t("ui.message.orchestrator", { model: model() })}</div>
-              <Show when={subagents().length}><div>{i18n.t("ui.message.subagents", { models: subagents().join(", ") })}</div></Show>
-            </div>
-          </Show>
           <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
             <MessageActionButton
               icon={copied() ? "check" : "copy"}
@@ -1834,7 +1831,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
             />
             <Show when={meta()}>
               <span data-slot="text-part-meta" class="text-12-regular text-text-weak cursor-default">
-                {meta()}
+                <OverflowText>{meta()}</OverflowText>
               </span>
             </Show>
           </div>

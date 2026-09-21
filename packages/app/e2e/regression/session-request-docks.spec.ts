@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { installSseTransport } from "../utils/sse-transport"
 import { expectSessionTitle } from "../utils/waits"
+import { setupTimelineBenchmark } from "../performance/timeline/session-timeline-benchmark.fixture"
 
 const directory = "C:/OpenCode/RequestDocks"
 const projectID = "proj_request_docks"
@@ -71,6 +72,52 @@ test("shows a pending question dock", async ({ page }) => {
   )
   await question.getByRole("button", { name: "Submit" }).click()
   expect((await reply).postDataJSON()).toEqual({ answers: [["Minimal"]] })
+})
+
+test("keeps the session visible when submitting a custom question answer", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" })
+  const fixture = await setupTimelineBenchmark(page, { historyTurns: 12, eventBatch: 1, newLayoutDesigns: true })
+  const directory = "C:/OpenCode/TimelineStateRegression"
+  const sessionID = "ses_timeline_state_regression"
+  const questions = [{ id: "question-custom", sessionID, questions: [{
+    header: "Implementation", question: "How should this be built?",
+    options: [{ label: "Minimal", description: "Use the existing components" }],
+  }] }]
+  await page.route("**/question/question-custom/reply", async (route) => {
+    questions.splice(0)
+    await route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
+    fixture.transport.enqueue({ directory, payload: { type: "question.replied", properties: {
+      sessionID, requestID: "question-custom", answers: [["Reuse the shared components"]],
+    } } })
+  })
+  await expect(page.locator('[data-component="prompt-input"][contenteditable="true"]')).toBeVisible()
+  fixture.transport.enqueue({ directory, payload: { type: "question.asked", properties: questions[0] } })
+  const question = page.locator('[data-component="session-question-dock"]')
+  await question.getByRole("radio", { name: /Type your own answer/ }).click()
+  await question.locator("textarea").fill("Reuse the shared components")
+  const panel = page.locator('[data-component="session-chat-panel"]')
+  await panel.evaluate((element) => {
+    element.setAttribute("data-mount-probe", "original")
+    document.documentElement.setAttribute("data-session-detaches", "0")
+    const ancestors = new Set<Node>()
+    for (let node: Node | null = element; node; node = node.parentNode) ancestors.add(node)
+    const observer = new MutationObserver((records) => {
+      const removed = records.some((record) => [...record.removedNodes].some((node) => ancestors.has(node)))
+      if (removed) document.documentElement.setAttribute("data-session-detaches", String(Number(document.documentElement.getAttribute("data-session-detaches")) + 1))
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+  })
+  await page.screenshot({ path: "/tmp/areza-question-before-submit.png" })
+  await question.locator("textarea").press("Enter")
+  await expect(page.locator("html")).toHaveAttribute("data-session-detaches", "0")
+  const reply = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/question/question-custom/reply"))
+  await question.getByRole("button", { name: "Submit", exact: true }).click()
+  expect((await reply).postDataJSON()).toEqual({ answers: [["Reuse the shared components"]] })
+  await expect(question).toHaveCount(0)
+  await expect(page.locator('[data-component="prompt-input"][contenteditable="true"]')).toBeVisible()
+  await expect(panel).toHaveAttribute("data-mount-probe", "original")
+  await expect(page.locator("html")).toHaveAttribute("data-session-detaches", "0")
+  await page.screenshot({ path: "/tmp/areza-question-after-submit.png" })
 })
 
 test("shows a pending permission dock", async ({ page }) => {

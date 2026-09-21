@@ -20,6 +20,24 @@
   display: none;
 }
 
+.scroll-view--fade {
+  --scroll-fade-top: 0px;
+  --scroll-fade-bottom: 0px;
+
+  &[data-scroll-above] {
+    --scroll-fade-top: 16px;
+  }
+
+  &[data-scroll-below] {
+    --scroll-fade-bottom: 16px;
+  }
+
+  > .scroll-view__viewport {
+    overscroll-behavior: contain;
+    mask-image: linear-gradient(to bottom, transparent, black var(--scroll-fade-top), black calc(100% - var(--scroll-fade-bottom)), transparent);
+  }
+}
+
 .scroll-view__content {
   flex: 1;
   min-height: 0;

@@ -811,7 +811,7 @@ test("scrolls overflowing sidebar titles to the end and resets them on leave", a
     sidebar.locator('[data-component="home-project-row"]'),
     sidebar.locator('[data-component="home-session-row"]').filter({ hasText: "Project chat 65 with" }),
   ]) {
-    const title = row.locator('[data-component="sidebar-title"]')
+    const title = row.locator('[data-component="overflow-text"]')
     await title.hover()
     const overflow = await title.evaluate((el) => Number.parseFloat(el.style.getPropertyValue("--title-overflow")))
     expect(overflow).toBeGreaterThan(0)
@@ -824,7 +824,7 @@ test("scrolls overflowing sidebar titles to the end and resets them on leave", a
     await expect(text).toHaveCSS("transform", "none")
   }
   await page.emulateMedia({ reducedMotion: "reduce" })
-  const title = sidebar.locator('[data-component="home-project-row"] [data-component="sidebar-title"]')
+  const title = sidebar.locator('[data-component="home-project-row"] [data-component="overflow-text"]')
   await title.hover()
   await expect(title.locator("span")).toHaveCSS("transform", "none")
 })
