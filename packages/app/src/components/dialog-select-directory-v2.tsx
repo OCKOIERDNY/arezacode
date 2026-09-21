@@ -1,5 +1,7 @@
 import "@pierre/trees/web-components"
 import { FileTree } from "@pierre/trees"
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
+import { createStore } from "solid-js/store"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@opencode-ai/ui/v2/dialog-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
@@ -58,6 +60,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal(false)
   const [rootValid, setRootValid] = createSignal(false)
+  const [scroll, setScroll] = createStore<{ element?: HTMLDivElement }>({})
   const listings = new Map<string, Promise<Array<{ name: string; type: "file" | "directory" }> | undefined>>()
   const loads = createPriorityTaskQueue<Array<{ name: string; type: "file" | "directory" }> | undefined>(3)
   const advanced = new Set<string>()
@@ -259,7 +262,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
         }
         [data-file-tree-virtualized-scroll] {
           overscroll-behavior: contain;
-          scrollbar-width: thin;
+          scrollbar-width: none;
         }
       `,
       onExpansionChange(change) {
@@ -273,6 +276,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
     if (!container) return
     tree.render({ containerWrapper: container })
     tree.getFileTreeContainer()?.classList.add("directory-picker-v2-tree")
+    setScroll("element", tree.getFileTreeContainer()?.shadowRoot?.querySelector<HTMLDivElement>("[data-file-tree-virtualized-scroll]") ?? undefined)
   })
 
   createEffect(() => {
@@ -344,9 +348,8 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
             </div>
           </Show>
         </div>
-        <div
+        <ScrollView scrollElement={() => scroll.element}
           class="directory-picker-v2-browser"
-          ref={container}
           onWheel={(event) => {
             const scroller = tree
               ?.getFileTreeContainer()
@@ -364,13 +367,15 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
             scroller.dispatchEvent(new Event("scroll"))
           }}
         >
+          <div ref={container} class="h-full">
           <Show when={loading()}>
             <div class="directory-picker-v2-state">{language.t("common.loading")}</div>
           </Show>
           <Show when={!loading() && error()}>
             <div class="directory-picker-v2-state">{language.t("dialog.directory.readError")}</div>
           </Show>
-        </div>
+          </div>
+        </ScrollView>
         <div class="directory-picker-v2-selection">{policy.result(root(), selected(), rootValid())}</div>
       </DialogBody>
       <DialogFooter>

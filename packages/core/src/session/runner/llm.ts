@@ -11,6 +11,7 @@ import {
 import { Cause, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
+import { Catalog } from "../../catalog"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
 import { Location } from "../../location"
@@ -37,6 +38,12 @@ import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { Snapshot } from "../../snapshot"
+import { AutomaticChecks } from "../../automatic-checks"
+import { Document } from "../../document"
+import { fileURLToPath } from "node:url"
+import path from "node:path"
+import { createHash } from "node:crypto"
+import { realpath } from "node:fs/promises"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
 
@@ -105,6 +112,8 @@ const layer = Layer.effect(
     const referenceGuidance = yield* ReferenceGuidance.Service
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
+    const permissions = yield* PermissionV2.Service
+    const automations = new Map<string, Awaited<ReturnType<typeof AutomaticChecks.session>>>()
     const db = (yield* Database.Service).db
     const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
@@ -198,24 +207,43 @@ const layer = Layer.effect(
         initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
       const model = yield* models.resolve(session)
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
-      const context = entries.map((entry) => entry.message)
+      const original = entries.map((entry) => entry.message)
+      const notice = yield* Effect.promise(() => automations.get(session.id)?.before(original) ?? Promise.resolve(""))
+      const context = yield* Effect.forEach(original, (message) => Effect.gen(function* () {
+        if (message.type !== "user" || !message.files?.some((file) => Document.documentType(file.name ?? file.uri, file.mime))) return message
+        const documents = message.files.filter((file) => Document.documentType(file.name ?? file.uri, file.mime))
+        const texts = yield* Effect.forEach(documents, (file) => Effect.gen(function* () {
+          if (file.uri.startsWith("file:")) {
+            const absolute = yield* Effect.promise(() => realpath(fileURLToPath(file.uri)))
+            const relative = path.relative(location.directory, absolute)
+            if (relative.startsWith("..") || path.isAbsolute(relative)) yield* permissions.assert({
+              sessionID: session.id, agent: agent.id, action: "external_directory", resources: [path.dirname(absolute)], save: [],
+            }).pipe(Effect.orDie)
+            yield* permissions.assert({ sessionID: session.id, agent: agent.id, action: "read", resources: [absolute], save: [] }).pipe(Effect.orDie)
+          }
+          return yield* Effect.tryPromise((signal) => Document.attachment(file, signal, session.id)).pipe(
+            Effect.catch(() => Effect.succeed(`Document conversion failed: ${file.name ?? "attachment"}. No content was extracted.`)),
+          )
+        }))
+        return { ...message, text: [message.text, ...texts].join("\n\n"), files: message.files.filter((file) => !documents.includes(file)) }
+      }))
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep ? undefined : yield* tools.materialize(agent.info?.permissions)
-      const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
+      const promptCacheKey = createHash("sha256").update(JSON.stringify([location.directory, location.workspaceID, model.provider, model.id, agent.info?.system, system.baseline])).digest("hex")
       const request = LLM.request({
         model,
         http: {
           headers: {
             "x-session-affinity": session.id,
-            "X-Session-Id": session.id,
+            "X-Session-Id": model.provider === "openrouter" ? promptCacheKey : session.id,
             ...(session.parentID ? { "x-parent-session-id": session.parentID } : {}),
           },
         },
-        providerOptions: { openai: { promptCacheKey } },
+        providerOptions: { openai: { promptCacheKey }, openrouter: { promptCacheKey } },
         system: [agent.info?.system, system.baseline]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
-        messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],
+        messages: [...toLLMMessages(context, model), ...(notice ? [Message.user(notice)] : []), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],
         tools: toolMaterialization?.definitions ?? [],
         toolChoice: isLastStep ? "none" : undefined,
       })
@@ -231,6 +259,15 @@ const layer = Layer.effect(
           ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
         },
         snapshot: startSnapshot,
+        prices: yield* Effect.serviceOption(Catalog.Service).pipe(Effect.flatMap((catalog) => Option.isSome(catalog)
+          ? catalog.value.model.available().pipe(Effect.map((items) => items.find((item) => String(item.providerID) === model.provider && String(item.api.id) === model.id)?.cost))
+          : Effect.succeed(undefined))),
+        request: {
+          systemCharacters: JSON.stringify(request.system).length,
+          messageCharacters: JSON.stringify(request.messages).length,
+          toolCharacters: JSON.stringify(request.tools).length,
+          cacheKey: promptCacheKey,
+        },
       })
       const withPublication = Semaphore.makeUnsafe(1).withPermit
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
@@ -335,7 +372,8 @@ const layer = Layer.effect(
                 timestamp: yield* DateTime.now,
                 assistantMessageID: yield* publisher.startAssistant(),
                 finish: stepSettlement.finish,
-                cost: 0,
+                cost: stepSettlement.usage.cost ?? 0,
+                usage: stepSettlement.usage,
                 tokens: stepSettlement.tokens,
                 snapshot: endSnapshot,
                 files,
@@ -349,6 +387,10 @@ const layer = Layer.effect(
           if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
+          if (needsContinuation) {
+            const context = yield* getContext(session.id)
+            yield* restore(Effect.promise((signal) => automations.get(session.id)?.after(context, signal) ?? Promise.resolve()))
+          }
           return { needsContinuation: !publisher.hasProviderError() && needsContinuation, step: currentStep }
         }),
       )
@@ -394,6 +436,14 @@ const layer = Layer.effect(
       const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
       if (!input.force && !hasSteer && !hasQueue) return
+      automations.set(input.sessionID, yield* Effect.promise(() => AutomaticChecks.session(location.directory, input.sessionID)))
+      yield* Effect.addFinalizer(() => Effect.gen(function* () {
+        const automation = automations.get(input.sessionID)
+        automations.delete(input.sessionID)
+        if (!automation) return
+        const context = yield* getContext(input.sessionID).pipe(Effect.orDie)
+        yield* Effect.promise(() => automation.finish(context))
+      }))
       yield* failInterruptedTools(input.sessionID)
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
       let shouldRun = input.force || hasSteer || hasQueue
@@ -410,7 +460,7 @@ const layer = Layer.effect(
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
       }
-    })
+    }, Effect.scoped)
 
     return Service.of({
       run,
@@ -434,6 +484,7 @@ export const node = makeLocationNode({
     ReferenceGuidance.node,
     Config.node,
     Snapshot.node,
+    PermissionV2.node,
     Database.node,
   ],
 })

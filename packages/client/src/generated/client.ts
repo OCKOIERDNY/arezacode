@@ -11,6 +11,8 @@ import type {
   SessionsActiveOutput,
   SessionsGetInput,
   SessionsGetOutput,
+  SessionsSetApprovalInput,
+  SessionsSetApprovalOutput,
   SessionsSwitchAgentInput,
   SessionsSwitchAgentOutput,
   SessionsSwitchModelInput,
@@ -27,6 +29,8 @@ import type {
   SessionsClearOutput,
   SessionsCommitInput,
   SessionsCommitOutput,
+  SessionsUsageInput,
+  SessionsUsageOutput,
   SessionsContextInput,
   SessionsContextOutput,
   SessionsHistoryInput,
@@ -45,6 +49,16 @@ import type {
   ProvidersListOutput,
   ProvidersGetInput,
   ProvidersGetOutput,
+  IntegrationsToolsListOutput,
+  IntegrationsToolsActionInput,
+  IntegrationsToolsActionOutput,
+  IntegrationsDocsListOutput,
+  IntegrationsDocsIndexInput,
+  IntegrationsDocsIndexOutput,
+  IntegrationsDocsRemoveInput,
+  IntegrationsDocsRemoveOutput,
+  IntegrationsDocsSearchInput,
+  IntegrationsDocsSearchOutput,
   IntegrationsListInput,
   IntegrationsListOutput,
   IntegrationsGetInput,
@@ -63,6 +77,12 @@ import type {
   CredentialsUpdateOutput,
   CredentialsRemoveInput,
   CredentialsRemoveOutput,
+  JevGetInput,
+  JevGetOutput,
+  JevUpdateInput,
+  JevUpdateOutput,
+  JevPrepareInput,
+  JevPrepareOutput,
   PermissionsListRequestsInput,
   PermissionsListRequestsOutput,
   PermissionsListSavedInput,
@@ -311,6 +331,7 @@ export function make(options: ClientOptions) {
             path: `/api/session`,
             body: {
               id: input?.["id"],
+              approvalMode: input?.["approvalMode"],
               agent: input?.["agent"],
               model: input?.["model"],
               location: input?.["location"],
@@ -343,6 +364,18 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      setApproval: (input: SessionsSetApprovalInput, requestOptions?: RequestOptions) =>
+        request<SessionsSetApprovalOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/approval`,
+            body: { mode: input["mode"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 409, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
       switchAgent: (input: SessionsSwitchAgentInput, requestOptions?: RequestOptions) =>
         request<SessionsSwitchAgentOutput>(
           {
@@ -432,6 +465,17 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [404, 400, 409, 401],
             empty: true,
+          },
+          requestOptions,
+        ),
+      usage: (input: SessionsUsageInput, requestOptions?: RequestOptions) =>
+        request<SessionsUsageOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/usage`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 409, 401],
+            empty: false,
           },
           requestOptions,
         ),
@@ -548,6 +592,70 @@ export function make(options: ClientOptions) {
         ),
     },
     integrations: {
+      toolsList: (requestOptions?: RequestOptions) =>
+        request<IntegrationsToolsListOutput>(
+          { method: "GET", path: `/api/tools`, successStatus: 200, declaredStatuses: [409, 401, 400], empty: false },
+          requestOptions,
+        ),
+      toolsAction: (input: IntegrationsToolsActionInput, requestOptions?: RequestOptions) =>
+        request<IntegrationsToolsActionOutput>(
+          {
+            method: "POST",
+            path: `/api/tools/${encodeURIComponent(input.engineID)}`,
+            body: { action: input["action"] },
+            successStatus: 200,
+            declaredStatuses: [400, 409, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      docsList: (requestOptions?: RequestOptions) =>
+        request<IntegrationsDocsListOutput>(
+          {
+            method: "GET",
+            path: `/api/tools/docs/sources`,
+            successStatus: 200,
+            declaredStatuses: [409, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      docsIndex: (input: IntegrationsDocsIndexInput, requestOptions?: RequestOptions) =>
+        request<IntegrationsDocsIndexOutput>(
+          {
+            method: "POST",
+            path: `/api/tools/docs/sources`,
+            body: { library: input["library"], version: input["version"], url: input["url"] },
+            successStatus: 200,
+            declaredStatuses: [400, 409, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      docsRemove: (input: IntegrationsDocsRemoveInput, requestOptions?: RequestOptions) =>
+        request<IntegrationsDocsRemoveOutput>(
+          {
+            method: "DELETE",
+            path: `/api/tools/docs/sources`,
+            body: { library: input["library"], version: input["version"], url: input["url"] },
+            successStatus: 200,
+            declaredStatuses: [400, 409, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      docsSearch: (input: IntegrationsDocsSearchInput, requestOptions?: RequestOptions) =>
+        request<IntegrationsDocsSearchOutput>(
+          {
+            method: "POST",
+            path: `/api/tools/docs/search`,
+            body: { library: input["library"], version: input["version"], query: input["query"] },
+            successStatus: 200,
+            declaredStatuses: [400, 409, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
       list: (input?: IntegrationsListInput, requestOptions?: RequestOptions) =>
         request<IntegrationsListOutput>(
           {
@@ -659,6 +767,59 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [409, 401, 400],
             empty: true,
+          },
+          requestOptions,
+        ),
+    },
+    jev: {
+      get: (input?: JevGetInput, requestOptions?: RequestOptions) =>
+        request<JevGetOutput>(
+          {
+            method: "GET",
+            path: `/api/jev`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [409, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      update: (input: JevUpdateInput, requestOptions?: RequestOptions) =>
+        request<JevUpdateOutput>(
+          {
+            method: "PATCH",
+            path: `/api/jev`,
+            query: { location: input["location"] },
+            body: {
+              enabled: input["enabled"],
+              skills: input["skills"],
+              context: input["context"],
+              findings: input["findings"],
+              routing: input["routing"],
+            },
+            successStatus: 200,
+            declaredStatuses: [409, 401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      prepare: (input: JevPrepareInput, requestOptions?: RequestOptions) =>
+        request<JevPrepareOutput>(
+          {
+            method: "POST",
+            path: `/api/jev/prepare`,
+            query: { location: input["location"] },
+            body: {
+              sessionID: input["sessionID"],
+              text: input["text"],
+              agent: input["agent"],
+              auto: input["auto"],
+              images: input["images"],
+              models: input["models"],
+            },
+            successStatus: 200,
+            declaredStatuses: [409, 401, 400],
+            empty: false,
           },
           requestOptions,
         ),

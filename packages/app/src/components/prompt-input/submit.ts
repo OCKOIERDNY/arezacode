@@ -5,6 +5,7 @@ import { Binary } from "@opencode-ai/core/util/binary"
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { batch, startTransition, type Accessor } from "solid-js"
 import { useTabs } from "@/context/tabs"
+import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
@@ -23,6 +24,7 @@ import { createPromptSubmissionState } from "./submission-state"
 import { normalizeSessionInfo } from "@/utils/session"
 import { Event } from "@opencode-ai/schema/event"
 import { blobDataUrl } from "@/utils/draft-store"
+import type { createJevClient } from "@/utils/jev"
 
 type PendingPrompt = {
   abort: AbortController
@@ -39,9 +41,12 @@ export type FollowupDraft = {
   agent: string
   model: { providerID: string; modelID: string }
   variant?: string
+  jev?: { auto: boolean; models: { providerID: string; modelID: string }[] }
 }
 
 type FollowupSendInput = {
+  scope?: DirectorySDK["scope"]
+  jev?: ReturnType<typeof createJevClient>
   api: DirectorySDK["api"]["session"]
   serverSync: ServerSync
   sync: DirectorySync
@@ -68,10 +73,28 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     input.serverSync.session.set("session_status", input.draft.sessionID, { type: "idle" })
   }
 
-  const wait = async () => {
+  const decision: { result?: Awaited<ReturnType<ReturnType<typeof createJevClient>["prepare"]>> } = {}
+  const wait = async (cleanup: VoidFunction = setIdle) => {
     const ok = await input.before?.()
     if (ok === false) return false
-    return true
+    const abort = new AbortController()
+    const key = input.scope ? ScopedKey.from(input.scope, input.draft.sessionID) : undefined
+    const entry = { abort, cleanup }
+    if (key) pending.set(key, entry)
+    try {
+      decision.result = await input.jev?.prepare({
+        sessionID: input.draft.sessionID,
+        text,
+        agent: input.draft.agent,
+        auto: input.draft.jev?.auto ?? false,
+        images: images.length > 0,
+        models: input.draft.jev?.models ?? [],
+      }, input.draft.sessionDirectory)
+      if (!input.jev?.state.enabled) decision.result = undefined
+      return !abort.signal.aborted
+    } finally {
+      if (key && pending.get(key) === entry) pending.delete(key)
+    }
   }
 
   const [head, ...tail] = text.split(" ")
@@ -92,16 +115,19 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         arguments: tail.join(" "),
         agent: input.draft.agent,
         model: {
-          id: input.draft.model.modelID,
-          providerID: input.draft.model.providerID,
-          variant: input.draft.variant,
+          id: decision.result?.model?.modelID ?? input.draft.model.modelID,
+          providerID: decision.result?.model?.providerID ?? input.draft.model.providerID,
+          variant: decision.result?.model ? undefined : input.draft.variant,
         },
-        files: await Promise.all(
+        files: [...await Promise.all(
           images.map(async (attachment) => ({
             uri: await blobDataUrl(attachment.blob, attachment.mime),
             name: attachment.filename,
           })),
-        ),
+        ), ...(decision.result?.skills ?? []).map((skill) => ({
+          uri: `data:text/plain;charset=utf-8,${encodeURIComponent(skill.content)}`,
+          name: `${skill.name}.txt`,
+        }))],
       })
       return true
     } catch (err) {
@@ -157,7 +183,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   })
 
   try {
-    if (!(await wait())) {
+    if (!(await wait(() => { setIdle(); remove() }))) {
       batch(() => {
         setIdle()
         remove()
@@ -165,12 +191,21 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       return false
     }
 
+    const prepared = decision.result
+    const selected = prepared?.model ?? input.draft.model
+    if (input.jev?.state.enabled) {
+      for (const skill of prepared?.skills ?? []) requestParts.push({
+        id: Identifier.ascending("part"), type: "text", synthetic: true,
+        text: skill.content,
+        metadata: { jevSkill: skill.name },
+      })
+    }
     await input.api.prompt({
       sessionID: input.draft.sessionID,
       id: messageID,
       agent: input.draft.agent,
-      model: input.draft.model,
-      variant: input.draft.variant,
+      model: input.jev?.state.enabled ? selected : input.draft.model,
+      variant: prepared?.model ? undefined : input.draft.variant,
       legacyParts: requestParts,
       text: requestParts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
       files: requestParts.flatMap((part) => {
@@ -213,6 +248,7 @@ type PromptSubmitInput = {
   imageAttachments: Accessor<ImageAttachmentPart[]>
   commentCount: Accessor<number>
   autoAccept: Accessor<boolean>
+  approvalMode?: Accessor<"default" | "ask" | "auto" | "full">
   mode: Accessor<"normal" | "shell">
   working: Accessor<boolean>
   editor: () => HTMLDivElement | undefined
@@ -238,6 +274,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const serverSync = useServerSync()
   const local = useLocal()
   const permission = usePermission()
+  const serverSDK = useServerSDK()
   const prompt = input.prompt
   const layout = useLayout()
   const language = useLanguage()
@@ -353,8 +390,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     const projectDirectory = sdk().directory
     const permissionState = permission.currentServerState()
+    const approvalApi = serverSDK().approval
+    const approvalMode = input.approvalMode?.()
     const isNewSession = !params.id
-    const shouldAutoAccept = isNewSession && input.autoAccept()
+    const shouldAutoAccept = isNewSession && (!approvalMode || approvalMode === "default") && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"
 
     let sessionDirectory = projectDirectory
@@ -407,7 +446,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           model: { id: currentModel.id, providerID: currentModel.provider.id, variant },
           location: { directory: sessionDirectory },
         })
-        .then(normalizeSessionInfo)
+        .then(async (session) => {
+          if (approvalMode && approvalMode !== "default") await approvalApi.set(session.id, approvalMode)
+          return normalizeSessionInfo(session)
+        })
         .catch((err) => {
           showToast({
             title: language.t("prompt.toast.sessionCreateFailed.title"),
@@ -423,7 +465,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           if (shouldAutoAccept) permissionState.enableAutoAccept(session.id, sessionDirectory)
           local.session.promote(sessionDirectory, session.id, {
             agent: currentAgent.name,
-            model: { providerID: currentModel.provider.id, modelID: currentModel.id },
+            model: { providerID: currentModel.provider.id, modelID: currentModel.id, auto: modelSelection.auto?.() ?? false },
             variant: variant ?? null,
           })
           layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
@@ -455,6 +497,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       variant,
+      jev: {
+        auto: modelSelection.auto?.() ?? false,
+        models: modelSelection.auto?.() ? modelSelection.list().filter((item) => modelSelection.visible({ providerID: item.provider.id, modelID: item.id }))
+          .slice(0, 255).map((item) => ({ providerID: item.provider.id, modelID: item.id })) : [],
+      },
     }
 
     const clearInput = () => {
@@ -508,41 +555,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           restoreInput()
         })
       return
-    }
-
-    if (text.startsWith("/")) {
-      const [cmdName, ...args] = text.split(" ")
-      const commandName = cmdName.slice(1)
-      const customCommand = sync().data.command.find((c) => c.name === commandName)
-      if (customCommand) {
-        clearInput()
-        const messageID = Identifier.ascending("message")
-        serverSync().session.set("session_status", session.id, { type: "busy" })
-        sdk()
-          .api.session.command({
-            sessionID: session.id,
-            id: messageID,
-            command: commandName,
-            arguments: args.join(" "),
-            agent,
-            model: { id: model.modelID, providerID: model.providerID, variant },
-            files: await Promise.all(
-              images.map(async (attachment) => ({
-                uri: await blobDataUrl(attachment.blob, attachment.mime),
-                name: attachment.filename,
-              })),
-            ),
-          })
-          .catch((err) => {
-            serverSync().session.set("session_status", session.id, { type: "idle" })
-            showToast({
-              title: language.t("prompt.toast.commandSendFailed.title"),
-              description: formatServerError(err, language.t, language.t("common.requestFailed")),
-            })
-            restoreInput()
-          })
-        return
-      }
     }
 
     const commentItems = context.filter((item) => item.type === "file" && !!item.comment?.trim())
@@ -618,6 +630,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     void sendFollowupDraft({
+      scope: sdk().scope,
+      jev: sdk().jev,
       api: sdk().api.session,
       sync: sync(),
       serverSync: serverSync(),

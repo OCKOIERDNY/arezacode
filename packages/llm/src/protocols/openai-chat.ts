@@ -118,9 +118,12 @@ const OpenAIChatUsage = Schema.Struct({
   prompt_tokens: Schema.optional(Schema.Number),
   completion_tokens: Schema.optional(Schema.Number),
   total_tokens: Schema.optional(Schema.Number),
+  cost: optionalNull(Schema.Number),
+  cost_details: optionalNull(Schema.Struct({ upstream_inference_cost: optionalNull(Schema.Number) })),
   prompt_tokens_details: optionalNull(
     Schema.Struct({
       cached_tokens: Schema.optional(Schema.Number),
+      cache_write_tokens: Schema.optional(Schema.Number),
     }),
   ),
   completion_tokens_details: optionalNull(
@@ -154,6 +157,9 @@ const OpenAIChatChoice = Schema.Struct({
 })
 
 const OpenAIChatEvent = Schema.Struct({
+  id: optionalNull(Schema.String),
+  model: optionalNull(Schema.String),
+  provider: optionalNull(Schema.String),
   choices: Schema.Array(OpenAIChatChoice),
   usage: optionalNull(OpenAIChatUsage),
 })
@@ -388,17 +394,24 @@ const mapFinishReason = (reason: string | null | undefined): FinishReason => {
 // a `reasoning_tokens` subset. We pass the inclusive totals through and
 // derive the non-cached breakdown so the `LLM.Usage` contract is
 // satisfied on both sides.
-const mapUsage = (usage: OpenAIChatEvent["usage"]): Usage | undefined => {
+const mapUsage = (usage: OpenAIChatEvent["usage"], event: OpenAIChatEvent): Usage | undefined => {
   if (!usage) return undefined
   const cached = usage.prompt_tokens_details?.cached_tokens
+  const written = usage.prompt_tokens_details?.cache_write_tokens
   const reasoning = usage.completion_tokens_details?.reasoning_tokens
-  const nonCached = ProviderShared.subtractTokens(usage.prompt_tokens, cached)
+  const nonCached = ProviderShared.subtractTokens(usage.prompt_tokens, (cached ?? 0) + (written ?? 0))
   return new Usage({
     inputTokens: usage.prompt_tokens,
     outputTokens: usage.completion_tokens,
     nonCachedInputTokens: nonCached,
     cacheReadInputTokens: cached,
+    cacheWriteInputTokens: written,
     reasoningTokens: reasoning,
+    cost: usage.cost ?? undefined,
+    upstreamCost: usage.cost_details?.upstream_inference_cost ?? undefined,
+    responseID: event.id ?? undefined,
+    responseModel: event.model ?? undefined,
+    responseProvider: event.provider ?? undefined,
     totalTokens: ProviderShared.totalTokens(usage.prompt_tokens, usage.completion_tokens, usage.total_tokens),
     providerMetadata: { openai: usage },
   })
@@ -407,7 +420,7 @@ const mapUsage = (usage: OpenAIChatEvent["usage"]): Usage | undefined => {
 const step = (state: ParserState, event: OpenAIChatEvent) =>
   Effect.gen(function* () {
     const events: LLMEvent[] = []
-    const usage = mapUsage(event.usage) ?? state.usage
+    const usage = mapUsage(event.usage, event) ?? state.usage
     const choice = event.choices[0]
     const finishReason = choice?.finish_reason ? mapFinishReason(choice.finish_reason) : state.finishReason
     const delta = choice?.delta

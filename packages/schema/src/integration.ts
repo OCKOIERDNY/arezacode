@@ -11,6 +11,39 @@ import { IntegrationID, IntegrationMethodID } from "./integration-id"
 export const ID = IntegrationID
 export type ID = typeof ID.Type
 
+export const EngineID = Schema.Literals(["markitdown", "headroom", "semgrep", "entire", "grounded", "ponytail"])
+export const EngineSettings = Schema.Struct({
+  enabled: Schema.Boolean,
+  current: Schema.String.check(Schema.isPattern(/^\d+\.\d+\.\d+-[a-f0-9-]{36}$/)).pipe(optional),
+  previous: Schema.String.check(Schema.isPattern(/^\d+\.\d+\.\d+-[a-f0-9-]{36}$/)).pipe(optional),
+})
+export const EngineStatus = Schema.Struct({
+  id: EngineID,
+  version: Schema.String,
+  enabled: Schema.Boolean,
+  installed: Schema.Boolean,
+  managed: Schema.Boolean,
+  running: Schema.Boolean,
+  rollback: Schema.Boolean,
+  storageBytes: Schema.Number,
+  error: Schema.String.pipe(optional),
+  lastResult: Schema.String.pipe(optional),
+  updatedAt: Schema.Number.pipe(optional),
+})
+export const EngineAction = Schema.Struct({
+  action: Schema.Literals(["install", "enable", "disable", "cancel", "rollback", "check"]),
+})
+export const DocsSource = Schema.Struct({
+  library: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9@][a-zA-Z0-9@/._-]{0,99}$/)),
+  version: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9._+-]{0,79}$/)),
+  url: Schema.String.check(Schema.isMaxLength(2048)),
+})
+export const DocsQuery = Schema.Struct({
+  library: DocsSource.fields.library,
+  version: DocsSource.fields.version,
+  query: Schema.String.check(Schema.isMaxLength(2000)),
+})
+
 export const MethodID = IntegrationMethodID
 export type MethodID = typeof MethodID.Type
 

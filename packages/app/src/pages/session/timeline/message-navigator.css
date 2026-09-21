@@ -152,9 +152,7 @@
 [data-component="chat-changes-preview"] {
   z-index: 80;
   width: min(360px, calc(100vw - 32px));
-  max-height: min(320px, calc(100vh - 120px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   padding: 8px;
   border: 1px solid var(--border-base);
   border-radius: 14px;
@@ -166,6 +164,14 @@
 
   &[data-closed] {
     animation: hover-card-close 150ms ease-out;
+  }
+
+  .chat-changes-scroll {
+    max-height: min(304px, calc(100vh - 136px));
+  }
+
+  .scroll-view__viewport {
+    overscroll-behavior: contain;
   }
 
   button {

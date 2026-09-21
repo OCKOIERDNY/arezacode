@@ -1,3 +1,7 @@
+[data-timeline-row] [data-component="assistant-message"] {
+  content-visibility: visible;
+}
+
 [data-component="assistant-message"] {
   content-visibility: auto;
   width: 100%;

@@ -12,7 +12,7 @@ import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
-import { getSessionContext } from "@/components/session/session-context-metrics"
+import { getSessionContext, recordedUsage } from "@/components/session/session-context-metrics"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { useSettings } from "@/context/settings"
@@ -75,7 +75,9 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
 
   const context = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
   const cost = createMemo(() => {
-    return usd().format(info()?.cost ?? 0)
+    const value = info()?.cost
+    const known = messages().some((message) => message.role === "assistant" && recordedUsage(message)?.cost !== undefined)
+    return value !== undefined && (value > 0 || known) ? usd().format(value) : "—"
   })
   const contextVisible = createMemo(() => view().reviewPanel.opened() && tabState.activeTab() === "context")
   const hasOtherTabs = createMemo(() =>
@@ -128,10 +130,10 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const tooltipValue = () => (
     <div class="flex w-[120px] flex-col gap-2">
       <ContextTooltipRow name={language.t("context.usage.cost")} value={cost()} />
-      <ContextTooltipRow name={language.t("context.usage.usage")} value={`${context()?.usage ?? 0}%`} />
+      <ContextTooltipRow name={language.t("context.usage.usage")} value={context()?.usage === null || context()?.usage === undefined ? "—" : `${context()?.usage}%`} />
       <ContextTooltipRow
         name={language.t("context.usage.tokens")}
-        value={context()?.total.toLocaleString(language.intl()) ?? "0"}
+        value={context()?.total.toLocaleString(language.intl()) ?? "—"}
       />
     </div>
   )

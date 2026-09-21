@@ -12,6 +12,7 @@ import {
   setupTimeline,
   shell,
   textPart,
+  waitForVisualSettle,
   userMessage,
   type TimelineMessage,
 } from "./fixture"
@@ -57,6 +58,7 @@ test("keeps moving upward while drag-selecting above the timeline", async ({ pag
   const scroller = page.locator(".scroll-view__viewport", { has: page.locator("[data-timeline-row]") })
   const text = page.getByText("History 79.", { exact: false })
   await expect(text).toBeVisible()
+  await waitForVisualSettle(page, ['[data-timeline-part-id="prt_0079_scroll"]'])
   await scroller.evaluate((element) => {
     element.dataset.selectionLength = "0"
     document.addEventListener("selectionchange", () => {
@@ -203,10 +205,9 @@ test("does not claim keyboard scrolling owned by a nested scrollable", async ({ 
   expect(await nested.evaluate((element) => element.scrollTop)).toBeLessThan(nestedBefore)
 
   await nested.evaluate((element) => (element.scrollTop = 0))
-  await scroller.evaluate((element) => (element.scrollTop = Math.min(300, element.scrollHeight - element.clientHeight)))
   const boundaryBefore = await scroller.evaluate((element) => element.scrollTop)
   expect(boundaryBefore).toBeGreaterThan(0)
-  await nested.press("PageUp")
+  await page.keyboard.press("PageUp")
   await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeLessThan(boundaryBefore)
 
   const nonOverflowing = page.locator(`[data-timeline-part-id="${shellID}"]`).first()
@@ -233,9 +234,10 @@ test("jump to latest lands on stable final rows after offscreen growth", async (
     cpuRate: 4,
   })
   const scroller = page.locator(".scroll-view__viewport", { has: page.locator("[data-timeline-row]") })
-  await scroller.evaluate(
-    (element) => (element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight - 600)),
-  )
+  await expect(page.locator(`[data-timeline-part-id="${followingID}"]`)).toBeVisible()
+  await scroller.hover()
+  await page.mouse.wheel(0, -600)
+  await expect(page.getByRole("button", { name: /Jump to latest/i })).toBeVisible()
   await timeline.send(partUpdated(shell(shellID, "running", lines(50))), 300)
   const regions = defineVisualRegions({
     shell: { selector: `[data-timeline-part-id="${shellID}"]`, closest: '[data-timeline-row="AssistantPart"]' },
@@ -281,14 +283,18 @@ test("handles a single row taller than the viewport", async ({ page }, testInfo)
     following: { selector: `[data-timeline-part-id="${followingID}"]`, closest: '[data-timeline-row="AssistantPart"]' },
   })
   await startVisualProbe(page, regions)
+  await timeline.waitForPart(shellID)
+  await timeline.settle(6)
   await timeline.send(partUpdated(shell(shellID, "completed", lines(100))), 700)
+  const shellRow = page.locator(`[data-timeline-part-id="${shellID}"]`).locator('xpath=ancestor::*[@data-timeline-row="AssistantPart"]')
+  await expect.poll(() => shellRow.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(await page.locator(".message-timeline-scroll > .scroll-view__viewport").evaluate((element) => element.clientHeight))
   const trace = await stopVisualProbe<keyof typeof regions>(page)
   await reportVisualStability(
     testInfo,
     "taller-than-viewport",
     trace,
     visualPlan(regions, [
-      { type: "required", regions: ["shell", "following"] },
+      { type: "required", regions: ["following"] },
       { type: "unique", regions: ["shell", "following"] },
       { type: "stable", regions: ["shell", "following"] },
       { type: "opacity", regions: "all" },

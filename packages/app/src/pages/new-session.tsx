@@ -1,6 +1,7 @@
 import { createPromptProjectController } from "@/components/prompt-project-selector"
 import { useTitlebarRightMount } from "@/components/titlebar"
 import { useSettings } from "@/context/settings"
+import { useLayout } from "@/context/layout"
 import { finishStartup } from "@opencode-ai/ui/logo"
 import { createEffect, createResource } from "solid-js"
 import { createNewSessionDraftController } from "./new-session/new-session-draft-controller"
@@ -11,6 +12,7 @@ import { useNewSessionCommands } from "./new-session/use-new-session-commands"
 /** The draft-only V2 session page. Submitting promotes the draft into a real session. */
 export default function NewSessionPage() {
   const settings = useSettings()
+  const layout = useLayout()
   const rightMount = useTitlebarRightMount()
   const workspace = createNewSessionWorkspaceController()
   const draft = createNewSessionDraftController({
@@ -29,7 +31,7 @@ export default function NewSessionPage() {
     },
   })
   createEffect(() => {
-    if (!draft.prompt.ready()) return
+    if (!layout.ready() || !settings.ready() || !draft.prompt.ready()) return
     finishStartup()
     draft.input.restoreFocus()
   })

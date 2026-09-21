@@ -27,6 +27,7 @@ export const groupNames = {
   "server.provider": "providers",
   "server.integration": "integrations",
   "server.credential": "credentials",
+  "server.jev": "jev",
   "server.permission": "permissions",
   "server.fs": "files",
   "server.command": "commands",

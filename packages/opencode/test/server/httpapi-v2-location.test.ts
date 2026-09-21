@@ -10,6 +10,17 @@ import path from "node:path"
 
 const context = Context.empty() as Context.Context<unknown>
 
+test("usage endpoint distinguishes an empty session from a missing session", async () => {
+  await using tmp = await tmpdir({ git: true })
+  const created = await request("/session", tmp.path, { method: "POST" })
+  expect(created.status).toBe(200)
+  const session = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String }))(await created.json())
+  const usage = await request(`/api/session/${session.id}/usage`, tmp.path)
+  expect(usage.status).toBe(200)
+  expect(await usage.json()).toEqual([])
+  expect((await request("/api/session/ses_missing_usage/usage", tmp.path)).status).toBe(404)
+}, 30_000)
+
 function request(route: string, directory: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
   headers.set("x-opencode-directory", directory)

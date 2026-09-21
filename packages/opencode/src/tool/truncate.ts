@@ -9,6 +9,7 @@ import { Config } from "@/config/config"
 import { ToolID } from "./schema"
 import { TRUNCATION_DIR } from "./truncation-dir"
 import { AutomaticChecks } from "@opencode-ai/core/automatic-checks"
+import { Jev } from "@opencode-ai/core/jev"
 
 const RETENTION = Duration.days(7)
 
@@ -20,6 +21,7 @@ export const GLOB = path.join(TRUNCATION_DIR, "*")
 export type Result = { content: string; truncated: false } | { content: string; truncated: true; outputPath: string }
 
 export interface Options {
+  sessionID?: string
   maxLines?: number
   maxBytes?: number
   direction?: "head" | "tail"
@@ -89,13 +91,14 @@ const layer = Layer.effect(
       const resolved = yield* limits()
       const maxLines = options.maxLines ?? resolved.maxLines
       const maxBytes = options.maxBytes ?? resolved.maxBytes
-      const compressed = yield* Effect.tryPromise(() => AutomaticChecks.compress(text)).pipe(
+      const ranked = yield* Effect.promise(() => Jev.context(text, options.sessionID))
+      const compressed = ranked ?? (yield* Effect.tryPromise(() => AutomaticChecks.compress(text)).pipe(
         Effect.catch(() => Effect.succeed(undefined)),
-      )
+      ))
       if (compressed && Buffer.byteLength(compressed) < maxBytes && compressed.split("\n").length < maxLines) {
         const file = yield* write(text)
         return {
-          content: `${compressed}\n\nHeadroom compressed this output. Full original: ${file}. Use Read for omitted detail.`,
+          content: `${compressed}\n\n${ranked ? "Jev selected relevant excerpts." : "Headroom compressed this output."} Full original: ${file}. Use Read for omitted detail.`,
           truncated: true,
           outputPath: file,
         } as const

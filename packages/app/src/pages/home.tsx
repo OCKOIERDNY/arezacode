@@ -225,9 +225,11 @@ export function NewHome() {
   const home = createHomeController()
   const projects = createHomeProjectsController(home)
   const language = useLanguage()
+  const layout = useLayout()
+  const settings = useSettings()
   let opening = false
   createEffect(() => {
-    if (home.server.focusedSync().ready && !home.project.newSession()) finishStartup()
+    if (layout.ready() && settings.ready() && home.server.focusedSync().ready && !home.project.newSession()) finishStartup()
   })
   createEffect(() => {
     if (opening || !home.project.newSession() || !home.server.focused()) return

@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import {
   createEffect,
   createSignal,
@@ -356,7 +357,7 @@ export function PromptProjectSelector(props: {
                 </button>
               </Show>
             </div>
-            <div class="max-h-[224px] overflow-y-auto">
+            <ScrollView class="max-h-[224px]">
               <Show
                 when={props.controller.servers().length > 1}
                 fallback={
@@ -394,7 +395,7 @@ export function PromptProjectSelector(props: {
                   )}
                 </For>
               </Show>
-            </div>
+            </ScrollView>
           </div>
           <div class="h-px bg-v2-border-border-muted" />
           <div class="flex flex-col p-0.5">

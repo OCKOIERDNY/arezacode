@@ -70,6 +70,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           return {
             data: yield* session.create({
               id: ctx.payload.id,
+              approvalMode: ctx.payload.approvalMode,
               agent: ctx.payload.agent,
               model: ctx.payload.model,
               location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) },
@@ -102,6 +103,17 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               ),
             ),
           }
+        }),
+      )
+      .handle(
+        "session.setApproval",
+        Effect.fn(function* (ctx) {
+          yield* session.setApproval({ sessionID: ctx.params.sessionID, mode: ctx.payload.mode }).pipe(
+            Effect.catchTag("Session.NotFoundError", (error) =>
+              Effect.fail(new SessionNotFoundError({ sessionID: error.sessionID, message: "Session not found" })),
+            ),
+          )
+          return HttpApiSchema.NoContent.make()
         }),
       )
       .handle(
@@ -299,6 +311,12 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             ),
           )
           return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "session.usage",
+        Effect.fn(function* (ctx) {
+          return yield* session.usage(ctx.params.sessionID).pipe(Effect.catchTag("Session.NotFoundError", (error) => Effect.fail(new SessionNotFoundError({ sessionID: error.sessionID, message: `Session not found: ${error.sessionID}` }))))
         }),
       )
       .handle(

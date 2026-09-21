@@ -3,14 +3,13 @@ import {
   createMemo,
   mergeProps,
   onCleanup,
-  onMount,
   Show,
   splitProps,
+  untrack,
   type Accessor,
   type ComponentProps,
 } from "solid-js"
 import { Portal } from "solid-js/web"
-import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createStore } from "solid-js/store"
 import { useI18n } from "../context/i18n"
 
@@ -18,7 +17,9 @@ export type ScrollViewThumbVisibility = "hover" | "scroll"
 
 export interface ScrollViewProps extends ComponentProps<"div"> {
   viewportRef?: (el: HTMLDivElement) => void
-  orientation?: "vertical" | "horizontal" // currently only vertical is fully implemented for thumb
+  viewportClass?: string
+  scrollElement?: Accessor<HTMLDivElement | undefined>
+  orientation?: "vertical" | "horizontal" | "both"
   /**
    * `hover`: show while hovered or scrolling. `scroll`: show only while scrolling.
    *
@@ -98,13 +99,15 @@ export function scrollTopFromThumbPointer(input: {
 
 export function ScrollView(props: ScrollViewProps) {
   const i18n = useI18n()
-  const merged = mergeProps({ orientation: "vertical", thumbVisibility: "hover" }, props)
+  const merged = mergeProps({ orientation: "both", thumbVisibility: "hover" }, props)
   const [local, events, rest] = splitProps(
     merged,
     [
       "class",
       "children",
       "viewportRef",
+      "viewportClass",
+      "scrollElement",
       "orientation",
       "thumbVisibility",
       "thumbContainer",
@@ -124,9 +127,8 @@ export function ScrollView(props: ScrollViewProps) {
     ],
   )
 
-  let rootRef!: HTMLDivElement
+  let contentRef!: HTMLDivElement
   let viewportRef!: HTMLDivElement
-  let thumbRef!: HTMLDivElement
 
   const resolveEl = (value: HTMLElement | Accessor<HTMLElement | undefined> | undefined) => {
     if (typeof value === "function") return value()
@@ -144,6 +146,9 @@ export function ScrollView(props: ScrollViewProps) {
     thumbHeight: 0,
     thumbTop: 0,
     showThumb: false,
+    thumbWidth: 0,
+    thumbLeft: 0,
+    showHorizontal: false,
   })
   const isHovered = () => state.isHovered
   const isDragging = () => state.isDragging
@@ -174,49 +179,63 @@ export function ScrollView(props: ScrollViewProps) {
     if (!viewportRef) return
     const { scrollTop, scrollHeight, clientHeight } = viewportRef
 
-    if (scrollHeight <= clientHeight || scrollHeight === 0) {
-      setState("showThumb", false)
-      return
-    }
-
-    setState("showThumb", true)
-    const trackPadding = 8
-    const trackClientHeight = thumbMount()?.clientHeight || clientHeight
-    const trackHeight = trackClientHeight - trackPadding * 2
-
-    const minThumbHeight = 32
-    // Calculate raw thumb height based on ratio
-    let height = (clientHeight / scrollHeight) * trackHeight
-    height = Math.max(height, minThumbHeight)
-
-    const maxScrollTop = scrollHeight - clientHeight
-    const maxThumbTop = trackHeight - height
-
-    const top = maxScrollTop > 0 ? (scrollTop / maxScrollTop) * maxThumbTop : 0
-
-    // Ensure thumb stays within bounds (shouldn't be necessary due to math above, but good for safety)
-    const boundedTop = trackPadding + Math.max(0, Math.min(top, maxThumbTop))
-
-    setState("thumbHeight", height)
-    setState("thumbTop", boundedTop)
+    const trackHeight = Math.max(0, (thumbMount()?.clientHeight || clientHeight) - 16)
+    const height = Math.min(trackHeight, Math.max(32, (clientHeight / Math.max(1, scrollHeight)) * trackHeight))
+    const trackWidth = Math.max(0, viewportRef.clientWidth - 16)
+    const width = Math.min(
+      trackWidth,
+      Math.max(32, (viewportRef.clientWidth / Math.max(1, viewportRef.scrollWidth)) * trackWidth),
+    )
+    const horizontalProgress = Math.min(
+      1,
+      Math.abs(viewportRef.scrollLeft) / Math.max(1, viewportRef.scrollWidth - viewportRef.clientWidth),
+    )
+    setState({
+      showThumb: local.orientation !== "horizontal" && scrollHeight > clientHeight,
+      thumbHeight: Math.max(0, height),
+      thumbTop:
+        8 +
+        Math.max(
+          0,
+          Math.min(
+            (scrollTop / Math.max(1, scrollHeight - clientHeight)) * (trackHeight - height),
+            trackHeight - height,
+          ),
+        ),
+      showHorizontal: local.orientation !== "vertical" && viewportRef.scrollWidth > viewportRef.clientWidth,
+      thumbWidth: Math.max(0, width),
+      thumbLeft:
+        8 + (viewportRef.matches(":dir(rtl)") ? 1 - horizontalProgress : horizontalProgress) * (trackWidth - width),
+    })
   }
 
-  onMount(() => {
-    if (local.viewportRef) {
-      local.viewportRef(viewportRef)
-    }
-
-    createResizeObserver(
-      () => [viewportRef, viewportRef.firstElementChild, thumbMount()].filter(Boolean) as HTMLElement[],
-      updateThumb,
-    )
-
-    updateThumb()
-  })
-
   createEffect(() => {
-    thumbMount()
-    updateThumb()
+    viewportRef = local.scrollElement?.() ?? contentRef
+    if (!viewportRef) return
+    untrack(() => local.viewportRef?.(viewportRef))
+    const viewport = viewportRef
+    const onScroll = (event: Event) => {
+      updateThumb()
+      markScrolling()
+      if (typeof events.onScroll === "function") events.onScroll(event as any)
+    }
+    viewport.addEventListener("scroll", onScroll, { passive: true })
+    const resize = new ResizeObserver(updateThumb)
+    const observe = () => {
+      resize.disconnect()
+      ;[viewportRef, ...viewportRef.children, thumbMount()].forEach((element) => {
+        if (element) resize.observe(element)
+      })
+      updateThumb()
+    }
+    const children = new MutationObserver(observe)
+    children.observe(viewportRef, { childList: true })
+    observe()
+    onCleanup(() => {
+      viewport.removeEventListener("scroll", onScroll)
+      resize.disconnect()
+      children.disconnect()
+    })
   })
 
   createEffect(() => {
@@ -234,26 +253,34 @@ export function ScrollView(props: ScrollViewProps) {
     })
   })
 
-  const onThumbPointerDown = (e: PointerEvent) => {
+  const onThumbPointerDown = (e: PointerEvent, horizontal = false) => {
     e.preventDefault()
     e.stopPropagation()
     setState("isDragging", true)
-    const grabOffset = e.clientY - thumbRef.getBoundingClientRect().top
-    const track = thumbMount() ?? viewportRef
+    const thumbRef = e.currentTarget as HTMLDivElement
+    const grabOffset = horizontal
+      ? e.clientX - thumbRef.getBoundingClientRect().left
+      : e.clientY - thumbRef.getBoundingClientRect().top
+    const track = horizontal ? viewportRef : (thumbMount() ?? viewportRef)
 
     thumbRef.setPointerCapture(e.pointerId)
 
     const onPointerMove = (e: PointerEvent) => {
       const { scrollHeight, clientHeight } = viewportRef
-      viewportRef.scrollTop = scrollTopFromThumbPointer({
-        pointer: e.clientY,
-        viewportTop: track.getBoundingClientRect().top,
+      const offset = scrollTopFromThumbPointer({
+        pointer: horizontal ? e.clientX : e.clientY,
+        viewportTop: horizontal ? track.getBoundingClientRect().left : track.getBoundingClientRect().top,
         grabOffset,
-        clientHeight: track.clientHeight,
-        scrollClientHeight: clientHeight,
-        scrollHeight,
-        thumbHeight: thumbHeight(),
+        clientHeight: horizontal ? track.clientWidth : track.clientHeight,
+        scrollClientHeight: horizontal ? viewportRef.clientWidth : clientHeight,
+        scrollHeight: horizontal ? viewportRef.scrollWidth : scrollHeight,
+        thumbHeight: horizontal ? state.thumbWidth : thumbHeight(),
       })
+      viewportRef[horizontal ? "scrollLeft" : "scrollTop"] =
+        horizontal && viewportRef.matches(":dir(rtl)")
+          ? offset - (viewportRef.scrollWidth - viewportRef.clientWidth)
+          : offset
+      updateThumb()
     }
 
     const done = (e: PointerEvent) => {
@@ -269,18 +296,17 @@ export function ScrollView(props: ScrollViewProps) {
     thumbRef.addEventListener("pointercancel", done)
   }
 
-  const renderThumb = () => (
+  const renderThumb = (horizontal = false) => (
     <div
-      ref={(el) => {
-        thumbRef = el
-      }}
-      onPointerDown={onThumbPointerDown}
+      onPointerDown={(event) => onThumbPointerDown(event, horizontal)}
+      data-orientation={horizontal ? "horizontal" : "vertical"}
       class="scroll-view__thumb"
       data-visible={thumbVisible()}
       data-dragging={isDragging()}
       style={{
-        height: `${thumbHeight()}px`,
-        transform: `translateY(${thumbTop()}px)`,
+        height: horizontal ? undefined : `${thumbHeight()}px`,
+        width: horizontal ? `${state.thumbWidth}px` : undefined,
+        transform: horizontal ? `translateX(${state.thumbLeft}px)` : `translateY(${thumbTop()}px)`,
         "z-index": 100, // ensure it displays over content
       }}
     />
@@ -291,6 +317,8 @@ export function ScrollView(props: ScrollViewProps) {
   // We can also explicitly catch PageUp/Down if we want smooth scroll or specific behavior,
   // but native usually handles this perfectly. Let's explicitly ensure it behaves well.
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.defaultPrevented) return
+    if (e.target instanceof Element && e.target.closest('[role="listbox"], [role="menu"], [role="tablist"]')) return
     // If user is focused on an input inside the scroll view, don't hijack keys
     if (document.activeElement && ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) {
       return
@@ -300,40 +328,40 @@ export function ScrollView(props: ScrollViewProps) {
     if (!isScrollKeyTarget(e.target, next)) return
     if (scrollKeyOwner(viewportRef, e.target, next) !== viewportRef) return
 
+    const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth"
     const scrollAmount = viewportRef.clientHeight * 0.8
     const lineAmount = 40
 
     switch (next) {
       case "page-down":
         e.preventDefault()
-        viewportRef.scrollBy({ top: scrollAmount, behavior: "smooth" })
+        viewportRef.scrollBy({ top: scrollAmount, behavior })
         break
       case "page-up":
         e.preventDefault()
-        viewportRef.scrollBy({ top: -scrollAmount, behavior: "smooth" })
+        viewportRef.scrollBy({ top: -scrollAmount, behavior })
         break
       case "home":
         e.preventDefault()
-        viewportRef.scrollTo({ top: 0, behavior: "smooth" })
+        viewportRef.scrollTo({ top: 0, behavior })
         break
       case "end":
         e.preventDefault()
-        viewportRef.scrollTo({ top: viewportRef.scrollHeight, behavior: "smooth" })
+        viewportRef.scrollTo({ top: viewportRef.scrollHeight, behavior })
         break
       case "up":
         e.preventDefault()
-        viewportRef.scrollBy({ top: -lineAmount, behavior: "smooth" })
+        viewportRef.scrollBy({ top: -lineAmount, behavior })
         break
       case "down":
         e.preventDefault()
-        viewportRef.scrollBy({ top: lineAmount, behavior: "smooth" })
+        viewportRef.scrollBy({ top: lineAmount, behavior })
         break
     }
   }
 
   return (
     <div
-      ref={rootRef}
       class={`scroll-view ${local.class || ""}`}
       style={local.style}
       onPointerEnter={() => {
@@ -346,14 +374,9 @@ export function ScrollView(props: ScrollViewProps) {
     >
       {/* Viewport */}
       <div
-        ref={viewportRef}
-        class="scroll-view__viewport"
-        data-scrollable
-        onScroll={(e) => {
-          updateThumb()
-          markScrolling()
-          if (typeof events.onScroll === "function") events.onScroll(e as any)
-        }}
+        ref={contentRef}
+        class={`${local.scrollElement ? "scroll-view__content" : "scroll-view__viewport"} ${local.viewportClass || ""}`}
+        data-scrollable={local.scrollElement ? undefined : ""}
         onWheel={(e) => {
           markScrolling()
           const handler = events.onWheel
@@ -383,6 +406,7 @@ export function ScrollView(props: ScrollViewProps) {
           {(mount) => <Portal mount={mount()}>{renderThumb()}</Portal>}
         </Show>
       </Show>
+      <Show when={state.showHorizontal}>{renderThumb(true)}</Show>
     </div>
   )
 }

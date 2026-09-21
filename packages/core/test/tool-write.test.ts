@@ -15,6 +15,7 @@ import { SessionV2 } from "@opencode-ai/core/session"
 import { ToolRegistry } from "@opencode-ai/core/tool/registry"
 import { ToolOutputStore } from "@opencode-ai/core/tool-output-store"
 import { WriteTool } from "@opencode-ai/core/tool/write"
+import { GrepTool } from "@opencode-ai/core/tool/grep"
 import { location } from "./fixture/location"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
@@ -76,6 +77,7 @@ const withTool = <A, E, R>(directory: string, body: (registry: ToolRegistry.Inte
           LocationMutation.node,
           FileMutation.node,
           WriteTool.node,
+          GrepTool.node,
         ]),
         [
           [FSUtil.node, filesystem],
@@ -97,6 +99,32 @@ const call = (input: typeof WriteTool.Input.Type, id = "call-write") => ({
 const it = testEffect(Layer.empty)
 
 describe("WriteTool", () => {
+  it.live("requires real reuse evidence and rejects copying a shared implementation", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) => Effect.gen(function* () {
+          const content = "export function SharedPanel() { return 'the existing shared component owns this implementation and its behavior' }\n"
+          yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "shared.tsx"), content))
+          const missing = yield* settleTool(registry, call({ path: "new.tsx", content }))
+          expect(missing.result.type).toBe("error")
+          expect(JSON.stringify(missing.result)).toContain("reuse_check")
+          const proof = yield* settleTool(registry, { sessionID, ...toolIdentity, call: { type: "tool-call", id: "reuse-proof", name: "reuse_check", input: { target: "new.tsx", query: "SharedPanel" } } })
+          expect(proof.result.type).toBe("text")
+          expect(JSON.stringify(proof.result)).toContain("shared.tsx")
+          const duplicate = yield* settleTool(registry, call({ path: "new.tsx", content }, "copy-shared"))
+          expect(duplicate.result.type).toBe("error")
+          expect(JSON.stringify(duplicate.result)).toContain("Duplicate implementation")
+          const reuse = yield* settleTool(registry, call({ path: "new.tsx", content: "export { SharedPanel } from './shared'\n" }, "reuse-shared"))
+          expect(reuse.result.type).toBe("text")
+          expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "new.tsx"), "utf8"))).toBe("export { SharedPanel } from './shared'\n")
+        }))
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("registers and creates a relative file through FileMutation once", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -104,7 +132,7 @@ describe("WriteTool", () => {
         reset()
         return withTool(tmp.path, (registry) =>
           Effect.gen(function* () {
-            expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["write"])
+            expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["grep", "reuse_check", "write"])
             const settled = yield* settleTool(registry, call({ path: "src/new.txt", content: "created" }))
             expect(settled).toEqual({
               result: { type: "text", value: "Created file successfully: src/new.txt" },
@@ -287,7 +315,7 @@ test("keeps the locked write schema, semantics docstring, and deferred UX TODOs 
   const definition = await Effect.runPromise(
     withTool(path.dirname(fileURLToPath(import.meta.url)), (registry) => toolDefinitions(registry)),
   )
-  const schema = definition[0]?.inputSchema as { readonly properties?: Record<string, unknown> }
+  const schema = definition.find((item) => item.name === "write")?.inputSchema as { readonly properties?: Record<string, unknown> }
 
   expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["content", "path"])
   expect(source).toContain(

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { mockOpenCodeServer } from "../utils/mock-server"
+import { currentSession, mockOpenCodeServer } from "../utils/mock-server"
 import { expectAppVisible } from "../utils/waits"
 
 const directory = "C:/OpenCode/PromptInputV2Editing"
@@ -183,4 +183,57 @@ test("groups slash commands and shows skill origins and instruction token estima
   await expect(page.locator("[data-suggestion-group]")).toHaveText(["Skills"])
   await input.press("Enter")
   await expect(input).toHaveText("/personal-design-with-a-long-skill-name ")
+})
+
+test("keeps long drafts editable with the shared scrollbar", async ({ page }) => {
+  const composer = page.locator('[data-component="prompt-input-v2"]')
+  const input = composer.locator('[data-component="prompt-input"]')
+  await input.fill(Array.from({ length: 80 }, (_, index) => `Draft line ${index}`).join("\n"))
+  await expect(input).toHaveCSS("scrollbar-width", "none")
+  await expect(input).toHaveCSS("max-height", "180px")
+  await input.hover()
+  const thumb = composer.locator('.scroll-view__thumb[data-orientation="vertical"]')
+  await expect(thumb).toBeVisible()
+  const bounds = (await thumb.boundingBox())!
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y - 150, { steps: 8 })
+  await page.mouse.up()
+  await expect.poll(() => input.evaluate((element) => element.scrollTop)).toBe(0)
+  await input.press("ControlOrMeta+End")
+  await input.press("!")
+  await expect(input).toContainText("Draft line 79!")
+  await expect.poll(() => input.evaluate((element) => element.scrollTop)).toBeGreaterThan(300)
+  await page.screenshot({ path: "/tmp/areza-prompt-shared-scrollbar.png" })
+})
+
+
+test("changes approval modes in chat and restores the saved mode", async ({ page }) => {
+  const state = { mode: "default" }
+  await page.route(`**/api/session/${sessionID}`, async (route) => {
+    await route.fulfill({ json: { data: { ...currentSession({ id: sessionID, projectID, directory, title: "Prompt input V2 editing" }), approvalMode: state.mode } }, headers: { "access-control-allow-origin": "*" } })
+  })
+  await page.route(`**/api/session/${sessionID}/approval`, async (route) => {
+    state.mode = route.request().postDataJSON().mode
+    await route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
+  })
+  await page.reload()
+  const mode = page.locator('[data-action="prompt-approval"]')
+  await expect(mode).toContainText("Project defaults")
+  await mode.getByRole("button").click()
+  await expect(page.getByRole("option", { name: /^Full access/ })).toBeVisible()
+  await page.screenshot({ path: "/tmp/areza-approval-modes.png" })
+  await page.getByRole("option", { name: /^Ask for approval/ }).click()
+  await expect(mode).toContainText("Ask for approval")
+  await page.reload()
+  await expect(mode).toContainText("Ask for approval")
+  await mode.getByRole("button").click()
+  await page.getByRole("option", { name: /^Approve for me/ }).click()
+  await expect(mode).toContainText("Approve for me")
+  await mode.getByRole("button").click()
+  await page.getByRole("option", { name: /^Full access/ }).click()
+  await expect(mode).toContainText("Full access")
+  await expect(mode.locator('use[href="#opencode-v2-icon-shield"]')).toBeAttached()
+  await expect.poll(() => mode.locator('[data-slot="select-v2-value-text"]').evaluate((element) => getComputedStyle(element).color)).toBe("rgb(242, 207, 118)")
+  await page.screenshot({ path: "/tmp/areza-full-access-yellow.png" })
 })

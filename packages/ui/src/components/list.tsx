@@ -1,3 +1,4 @@
+import { ScrollView } from "./scroll-view"
 import { type FilteredListProps, useFilteredList } from "@opencode-ai/ui/hooks"
 import { createEffect, For, type JSX, on, Show } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -315,7 +316,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
           {searchAction()}
         </div>
       </Show>
-      <div ref={setScrollRef} data-slot="list-scroll">
+      <ScrollView viewportRef={setScrollRef} data-slot="list-scroll">
         <Show
           when={flat().length > 0 || showAdd()}
           fallback={
@@ -388,7 +389,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
             </div>
           </Show>
         </Show>
-      </div>
+      </ScrollView>
     </div>
   )
 }

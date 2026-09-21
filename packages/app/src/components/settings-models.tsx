@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Switch } from "@opencode-ai/ui/switch"
@@ -6,12 +7,12 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
-import { useModels } from "@/context/models"
+import { useSettingsModels } from "@/hooks/use-settings-models"
 import { popularProviders } from "@/hooks/use-providers"
 import { SettingsList } from "./settings-list"
 import { SettingsServerPicker, SettingsServerScope } from "./settings-server-picker"
 
-type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
+type ModelItem = ReturnType<ReturnType<typeof useSettingsModels>["list"]>[number]
 
 const ListLoadingState: Component<{ label: string }> = (props) => {
   return (
@@ -42,7 +43,7 @@ export const SettingsModels: Component = () => {
 
 const SettingsModelsContent: Component = () => {
   const language = useLanguage()
-  const models = useModels()
+  const models = useSettingsModels()
 
   const list = useFilteredList<ModelItem>({
     items: (_filter) => models.list(),
@@ -67,7 +68,7 @@ const SettingsModelsContent: Component = () => {
   })
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
+    <ScrollView viewportClass="flex flex-col px-4 pb-10 sm:px-10 sm:pb-10" class="h-full">
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex flex-col gap-4 pt-6 pb-6 max-w-[720px]">
           <div class="flex items-center justify-between gap-4">
@@ -125,6 +126,7 @@ const SettingsModelsContent: Component = () => {
                             <div class="flex-shrink-0">
                               <Switch
                                 checked={models.visible(key)}
+                                disabled={models.disabled(key)}
                                 onChange={(checked) => {
                                   models.setVisibility(key, checked)
                                 }}
@@ -144,6 +146,6 @@ const SettingsModelsContent: Component = () => {
           </Show>
         </Show>
       </div>
-    </div>
+    </ScrollView>
   )
 }

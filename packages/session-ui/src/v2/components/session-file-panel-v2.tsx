@@ -1,4 +1,5 @@
 import { Show, type JSX, type ParentProps } from "solid-js"
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import "./session-review-v2.css"
 
 export function SessionFilePanelV2(props: {
@@ -10,7 +11,7 @@ export function SessionFilePanelV2(props: {
 }) {
   return (
     <div data-component="session-review-v2">
-      <div data-slot="session-review-v2-body">
+      <ScrollView data-slot="session-review-v2-body" orientation="horizontal">
         {props.sidebar}
         <div data-slot="session-review-v2-preview">
           <Show when={props.toolbar}>
@@ -29,7 +30,7 @@ export function SessionFilePanelV2(props: {
           </Show>
           {props.children}
         </div>
-      </div>
+      </ScrollView>
     </div>
   )
 }

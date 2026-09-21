@@ -6,6 +6,7 @@ import * as AnthropicMessages from "@opencode-ai/llm/protocols/anthropic-message
 import * as OpenAICompatibleChat from "@opencode-ai/llm/protocols/openai-compatible-chat"
 import * as OpenAIResponses from "@opencode-ai/llm/protocols/openai-responses"
 import { Auth, type AnyRoute } from "@opencode-ai/llm/route"
+import { OpenRouter } from "@opencode-ai/llm/providers/openrouter"
 import { Context, Effect, Layer, Schema } from "effect"
 import { produce } from "immer"
 import { Catalog } from "../../catalog"
@@ -139,6 +140,11 @@ export const fromCatalogModel = (
           Object.assign(draft.request.body, credential.metadata)
         })
   const key = apiKey(resolved, credential)
+  if (resolved.providerID === "openrouter") {
+    return Effect.succeed(withDefaults(resolved, OpenRouter.route)
+      .with({ auth: key === undefined ? Auth.none : Auth.bearer(key) })
+      .model({ id: resolved.api.id }))
+  }
   if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/openai") {
     return Effect.succeed(
       withDefaults(resolved, OpenAIResponses.route)
@@ -173,7 +179,7 @@ export const resolve = (session: SessionSchema.Info, model: ModelV2.Info, creden
   withVariant(model, session.model?.variant).pipe(Effect.flatMap((model) => fromCatalogModel(model, credential)))
 
 export const supported = (model: ModelV2.Info) =>
-  model.api.type === "aisdk" &&
+  model.providerID === "openrouter" || model.api.type === "aisdk" &&
   (model.api.package === "@ai-sdk/openai" ||
     model.api.package === "@ai-sdk/anthropic" ||
     (model.api.package === "@ai-sdk/openai-compatible" && model.api.url !== undefined))

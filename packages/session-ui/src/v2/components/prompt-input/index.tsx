@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -42,6 +43,7 @@ export type PromptInputV2Props = {
   borderUnderlay?: boolean
   class?: string
   modelControl?: JSX.Element
+  approvalControl?: JSX.Element
   variantControlVisible?: boolean
   attachKeybind?: string[]
   attachShortcut?: string
@@ -144,7 +146,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
           />
         </Show>
 
-        <div class="relative min-h-[60px]">
+        <ScrollView scrollElement={() => editor} class="relative min-h-[60px] max-h-[180px]">
           <div
             ref={(element) => {
               editor = element
@@ -161,7 +163,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
             spellcheck={state.mode === "normal"}
             // @ts-expect-error
             autocomplete="off"
-            class="relative z-10 block min-h-[60px] max-h-[180px] w-full overflow-y-auto whitespace-pre-wrap bg-transparent px-4 pt-4 pb-2 text-[13px] font-[440] leading-5 text-v2-text-text-base focus:outline-none empty:before:content-['\200B'] [&_[data-mention=file]]:text-syntax-property [&_[data-mention=agent]]:text-syntax-type [&_[data-mention=reference]]:text-syntax-keyword"
+            class="relative z-10 block min-h-[60px] max-h-[180px] w-full overflow-y-auto no-scrollbar whitespace-pre-wrap bg-transparent px-4 pt-4 pb-2 text-[13px] font-[440] leading-5 text-v2-text-text-base focus:outline-none empty:before:content-['\200B'] [&_[data-mention=file]]:text-syntax-property [&_[data-mention=agent]]:text-syntax-type [&_[data-mention=reference]]:text-syntax-keyword"
             classList={{ "font-mono!": state.mode === "shell", "opacity-50": props.disabled }}
             onInput={(event) => {
               const cursor = promptInputV2Cursor(event.currentTarget)
@@ -194,7 +196,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
                   : i18n.t("ui.promptInput.placeholder.normal", { slash: "/", at: "@" }))}
             </div>
           </Show>
-        </div>
+        </ScrollView>
 
         <div class="flex h-11 items-center px-2">
           <div
@@ -217,6 +219,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
               onContext={props.controller.openContext}
               onShell={props.controller.openShell}
             />
+            {props.approvalControl}
             <Show when={view.agent} keyed>
               {(control) => (
                 <PromptInputV2ConfiguredSelect
@@ -390,9 +393,9 @@ export function PromptInputV2Attachments(props: {
   return (
     <Show when={props.attachments.length > 0 || (props.comments?.length ?? 0) > 0}>
       <div data-component="prompt-input-v2-attachments" data-slot="prompt-attachments" class="relative">
-        <div
+        <ScrollView
           data-slot="prompt-attachments-scroll"
-          class="flex flex-nowrap gap-2 overflow-x-auto no-scrollbar px-2 pt-2 pb-1"
+          orientation="horizontal" viewportClass="flex flex-nowrap gap-2 px-2 pt-2 pb-1"
         >
           <For each={props.comments ?? []}>
             {(comment) => (
@@ -454,7 +457,7 @@ export function PromptInputV2Attachments(props: {
               </div>
             )}
           </For>
-        </div>
+        </ScrollView>
         <div
           data-slot="prompt-attachments-fade-left"
           class="pointer-events-none absolute inset-y-0 start-0 z-10 w-6 bg-[linear-gradient(to_right,var(--v2-background-bg-base),transparent)] rtl:bg-[linear-gradient(to_left,var(--v2-background-bg-base),transparent)]"
@@ -618,8 +621,8 @@ export function PromptInputV2Popover(props: {
   onSelect: (item: PromptInputV2Suggestion) => void
 }) {
   return (
-    <div
-      class="absolute inset-x-0 -top-2 z-40 flex max-h-80 -translate-y-full flex-col overflow-auto rounded-xl bg-v2-background-bg-base p-2 shadow-[var(--v2-elevation-raised)] no-scrollbar"
+    <ScrollView
+      class="absolute inset-x-0 -top-2 z-40 flex max-h-80 -translate-y-full flex-col overflow-hidden rounded-xl bg-v2-background-bg-base p-2 shadow-[var(--v2-elevation-raised)] no-scrollbar"
       onMouseDown={(event) => event.preventDefault()}
     >
       <Show when={props.search}>
@@ -689,7 +692,7 @@ export function PromptInputV2Popover(props: {
           )}
         </For>
       </Show>
-    </div>
+    </ScrollView>
   )
 }
 

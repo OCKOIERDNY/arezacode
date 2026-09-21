@@ -447,7 +447,7 @@ function SessionFileViewV1(props: { tab: string }) {
   })
 
   const renderFile = (source: string) => (
-    <div class="relative overflow-hidden pb-40">
+    <div class="relative min-h-full" style={{ "background-color": "var(--opencode-diffs-bg, var(--color-background-stronger))" }}>
       <Dynamic
         component={fileComponent}
         mode="text"
@@ -492,7 +492,7 @@ function SessionFileViewV1(props: { tab: string }) {
   )
 
   const content = () => (
-    <div class="mt-3 relative h-full min-h-0">
+    <div class="relative h-full min-h-0">
       <ScrollView class="h-full" viewportRef={scrollSync.setViewport} onScroll={scrollSync.handleScroll as any}>
         <Switch>
           <Match when={state()?.loaded}>{renderFile(contents())}</Match>
@@ -730,7 +730,7 @@ function SessionFileViewV2(props: { tab: string }) {
   })
 
   const renderFile = (source: string) => (
-    <div class="relative overflow-hidden pb-40">
+    <div class="relative min-h-full" style={{ "background-color": "var(--opencode-diffs-bg, var(--color-background-stronger))" }}>
       <Dynamic
         component={fileComponent}
         mode="text"
@@ -783,7 +783,7 @@ function SessionFileViewV2(props: { tab: string }) {
   )
 
   const content = () => (
-    <div class="mt-3 relative h-full min-h-0">
+    <div class="relative h-full min-h-0">
       <ScrollView class="h-full" viewportRef={scrollSync.setViewport} onScroll={scrollSync.handleScroll as any}>
         <Switch>
           <Match when={state()?.loaded}>{renderFile(contents())}</Match>

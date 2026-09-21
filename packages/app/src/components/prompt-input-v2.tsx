@@ -1,3 +1,6 @@
+import { createStore } from "solid-js/store"
+import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
+import type { Permission } from "@opencode-ai/schema/permission"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
@@ -7,6 +10,8 @@ import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import type { ReferenceInfo } from "@opencode-ai/sdk/v2/client"
 import { createEffect, createMemo, createResource, on, Show } from "solid-js"
+import { useServerSDK } from "@/context/server-sdk"
+import { useServerSync } from "@/context/server-sync"
 import { Token } from "@opencode-ai/core/util/token"
 import { ModelSelectorPopoverV2 } from "@/components/dialog-select-model"
 import { DialogSelectModelUnpaidV2 } from "@/components/dialog-select-model-unpaid-v2"
@@ -43,9 +48,14 @@ export type PromptInputV2ComposerProps = {
 export type PromptInputV2ControllerProps = Omit<PromptInputProps, "class" | "submission">
 export type PromptInputV2ComposerController = PromptInputV2Interaction & {
   readonly model: PromptInputProps["controls"]["model"]
+  readonly approval: { current: () => Permission.ApprovalMode; saving: () => boolean; select: (mode: Permission.ApprovalMode) => Promise<void> }
 }
 
 export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
+  const serverSDK = useServerSDK()
+  const serverSync = useServerSync()
+  const jev = () => serverSDK().jev
+  createEffect(on(() => serverSync().data.provider.connected.includes("openrouter"), () => void jev().refresh()))
   const dialog = useDialog()
   const command = useCommand()
   const language = useLanguage()
@@ -56,23 +66,57 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
         controller={props.controller}
         borderUnderlay={props.borderUnderlay}
         class={props.class}
-        variantControlVisible={!props.controller.model.loading}
+        variantControlVisible={!props.controller.model.loading && !(jev().available() && props.controller.model.selection.auto())}
         attachKeybind={command.keybindParts("file.attach")}
         attachShortcut={command.keybind("file.attach")}
+        approvalControl={
+          <SelectV2
+            appearance="inline"
+            data-action="prompt-approval"
+            classList={{ "prompt-approval-full": props.controller.approval.current() === "full" }}
+            icon={<Show when={props.controller.approval.current() === "full"}><Icon name="shield" /></Show>}
+            aria-label={language.t("approval.title")}
+            options={["default", "ask", "auto", "full"] as Permission.ApprovalMode[]}
+            current={props.controller.approval.current()}
+            disabled={props.controller.approval.saving()}
+            placement="top-start"
+            label={(mode) => language.t(`approval.${mode}`)}
+            onSelect={(mode) => mode && void props.controller.approval.select(mode)}
+          >
+            {(mode) => <span data-slot="approval-mode-option" class="flex flex-col gap-1 leading-4">
+              <span class="flex items-center gap-2" classList={{ "text-[var(--v2-state-fg-warning)]": mode === "full" }}>
+                <Show when={mode === "full"}><Icon name="shield" /></Show>
+                {language.t(`approval.${mode}`)}
+              </span>
+              <span class="text-12 text-text-weak whitespace-normal max-w-72">{language.t(`approval.${mode}.description`)}</span>
+            </span>}
+          </SelectV2>
+        }
         modelControl={
+          <div class="flex min-w-0 items-center gap-1">
           <PromptInputV2ModelControl
             loading={props.controller.model.loading}
-            paid={props.controller.model.paid}
+            paid={props.controller.model.paid || props.controller.model.selection.list().length > 0}
             title={language.t("command.model.choose")}
             keybind={command.keybindParts("model.choose")}
             model={props.controller.model.selection}
             providerID={props.controller.model.selection.current()?.provider?.id}
-            modelName={props.controller.model.selection.current()?.name ?? language.t("dialog.model.select.title")}
+            modelName={jev().available() && props.controller.model.selection.auto() ? language.t("jev.auto") : props.controller.model.selection.current()?.name ?? language.t("dialog.model.select.title")}
             onClose={props.controller.restoreFocus}
             onUnpaidClick={() =>
               dialog.show(() => <DialogSelectModelUnpaidV2 model={props.controller.model.selection} />)
             }
           />
+          <Show when={jev().available()}>
+          <TooltipV2 value={language.t(jev().state.enabled ? "jev.disable" : "jev.enable")}>
+            <ButtonV2 type="button" variant={jev().state.enabled ? "neutral" : "ghost-muted"} size="small" data-action="prompt-jev"
+              aria-pressed={jev().state.enabled} disabled={!jev().state.loaded || jev().state.saving || jev().state.error}
+              onClick={() => void jev().update({ enabled: !jev().state.enabled })}>
+              {language.t("jev.name")}
+            </ButtonV2>
+          </TooltipV2>
+          </Show>
+          </div>
         }
       />
     </div>
@@ -80,6 +124,7 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
 }
 
 export function usePromptInputV2Controller(props: PromptInputV2ControllerProps): PromptInputV2ComposerController {
+  const serverSDK = useServerSDK()
   const sdk = useSDK()
   const sync = useSync()
   const files = useFile()
@@ -113,6 +158,26 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     }, [])
   })
   const info = createMemo(() => (props.controls.session.id ? sync().session.get(props.controls.session.id) : undefined))
+  const [approval, setApproval] = createStore<{ mode: Permission.ApprovalMode; saving: boolean }>({ mode: "default", saving: false })
+  const [savedApproval] = createResource(
+    () => props.controls.session.id ? { id: props.controls.session.id, server: serverSDK() } : undefined,
+    (source) => source.server.approval.get(source.id).catch(() => undefined),
+  )
+  createEffect(on(() => [props.controls.session.id, savedApproval()] as const, ([, mode]) => {
+    setApproval("mode", mode ?? "default")
+  }))
+  const selectApproval = async (mode: Permission.ApprovalMode) => {
+    const id = props.controls.session.id
+    if (!id) { setApproval("mode", mode); return }
+    const context = sdk()
+    const permissions = permission.currentServerState()
+    setApproval("saving", true)
+    await serverSDK().approval.set(id, mode).then(() => {
+      permissions.disableAutoAccept(id, context.directory)
+      if (props.controls.session.id === id && sdk().scope === context.scope) setApproval("mode", mode)
+    }).catch((error) => showToast({ title: language.t("common.requestFailed"), description: String(error) }))
+      .finally(() => setApproval("saving", false))
+  }
   const working = createMemo(() => sync().data.session_working(props.controls.session.id ?? ""))
   const attachments = createMemo(() =>
     prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
@@ -202,6 +267,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     imageAttachments: attachments,
     commentCount,
     autoAccept: accepting,
+    approvalMode: () => approval.mode,
     mode,
     working,
     editor: () => editor,
@@ -459,6 +525,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
       },
     },
   })
+  Object.defineProperty(controller, "approval", { value: { current: () => approval.mode, saving: () => approval.saving || (!!props.controls.session.id && (savedApproval.loading || savedApproval() === undefined)), select: selectApproval } })
   Object.defineProperty(controller, "model", { get: () => props.controls.model })
 
   command.register("prompt-input", () => [

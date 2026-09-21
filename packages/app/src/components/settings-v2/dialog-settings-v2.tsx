@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { Component, createMemo, createSignal, startTransition } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/v2/dialog-v2"
 import { TabsV2 } from "@opencode-ai/ui/v2/tabs-v2"
@@ -8,6 +9,7 @@ import { SettingsGeneralV2 } from "./general"
 import { SettingsKeybinds } from "../settings-keybinds"
 import { SettingsProvidersV2 } from "./providers"
 import { SettingsModelsV2 } from "./models"
+import { SettingsTools } from "./jev"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -50,7 +52,8 @@ export const DialogSettings: Component<{
         onChange={(value) => void startTransition(() => setTab(value))}
         class="settings-v2"
       >
-        <TabsV2.List>
+        <TabsV2.List class="overflow-hidden!">
+          <ScrollView class="h-full w-full">
           <div class="flex flex-col justify-between h-full w-full">
             <div class="flex flex-col gap-3 w-full">
               <div class="flex flex-col gap-3">
@@ -83,6 +86,10 @@ export const DialogSettings: Component<{
                       <Icon name="models" />
                       {language.t("settings.models.title")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="tools">
+                      <Icon name="sliders" />
+                      {language.t("tools.title")}
+                    </TabsV2.Trigger>
                   </div>
                 </div>
               </div>
@@ -92,21 +99,35 @@ export const DialogSettings: Component<{
               <span>v{platform.version}</span>
             </div>
           </div>
+        </ScrollView>
         </TabsV2.List>
-        <TabsV2.Content value="general" class="settings-v2-panel">
+        <TabsV2.Content value="general" class="min-h-0 overflow-hidden">
+          <ScrollView class="h-full" viewportClass="settings-v2-panel">
           <SettingsGeneralV2 sessionID={props.sessionID} />
+          </ScrollView>
         </TabsV2.Content>
-        <TabsV2.Content value="shortcuts" class="settings-v2-panel">
+        <TabsV2.Content value="shortcuts" class="min-h-0 overflow-hidden">
+          <ScrollView class="h-full" viewportClass="settings-v2-panel">
           <SettingsKeybinds v2 />
+          </ScrollView>
         </TabsV2.Content>
-        <TabsV2.Content value="servers" class="settings-v2-panel">
+        <TabsV2.Content value="servers" class="min-h-0 overflow-hidden">
+          <ScrollView class="h-full" viewportClass="settings-v2-panel">
           <SettingsServersV2 />
+          </ScrollView>
         </TabsV2.Content>
-        <TabsV2.Content value="providers" class="settings-v2-panel">
+        <TabsV2.Content value="providers" class="min-h-0 overflow-hidden">
+          <ScrollView class="h-full" viewportClass="settings-v2-panel">
           <SettingsProvidersV2 directory={directory} onBack={showProviders} />
+          </ScrollView>
         </TabsV2.Content>
-        <TabsV2.Content value="models" class="settings-v2-panel">
+        <TabsV2.Content value="models" class="min-h-0 overflow-hidden">
+          <ScrollView class="h-full" viewportClass="settings-v2-panel">
           <SettingsModelsV2 />
+          </ScrollView>
+        </TabsV2.Content>
+        <TabsV2.Content value="tools" class="min-h-0 overflow-hidden">
+          <ScrollView class="h-full" viewportClass="settings-v2-panel"><SettingsTools /></ScrollView>
         </TabsV2.Content>
       </TabsV2>
     </Dialog>

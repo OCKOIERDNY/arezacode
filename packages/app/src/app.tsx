@@ -477,7 +477,7 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean; start
 
   return (
     <>
-      <Show when={!checking()}>
+      <Show when={!checking() && startupHealthCheck.latest !== undefined}>
         <Show
           when={startupHealthCheck.latest}
           fallback={

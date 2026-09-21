@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { isRTL } from "@kobalte/core/i18n"
@@ -122,7 +123,7 @@ export function TabsInfoPopup() {
             />
           </Show>
         </div>
-        <div class="relative flex min-h-0 w-full flex-1 flex-col items-start gap-6 overflow-y-auto p-8">
+        <ScrollView viewportClass="flex flex-col items-start gap-6 p-8" class="relative min-h-0 w-full flex-1">
           <p class="w-full shrink-0 self-stretch text-[21px] font-[610] leading-6 tracking-[-0.37px] tabular-nums text-v2-text-text-base">
             {language.t("help.tabs.title")}
           </p>
@@ -136,7 +137,7 @@ export function TabsInfoPopup() {
             <p>{language.t("help.tabs.persistence")}</p>
             <p>{language.t("help.tabs.worktrees")}</p>
           </div>
-        </div>
+        </ScrollView>
       </DrawerContent>
     </Drawer>
   )

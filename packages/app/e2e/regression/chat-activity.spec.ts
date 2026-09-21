@@ -3,6 +3,40 @@ import { buildInitialStreamEvent, buildStreamDeltaEvents, setupTimelineBenchmark
 
 test.use({ colorScheme: "dark" })
 
+test("resizing paints the latest pointer position once per frame and preserves the release position", async ({ page }) => {
+  await setupTimelineBenchmark(page, { historyTurns: 3, eventBatch: 1, newLayoutDesigns: true })
+  const sidebar = page.locator('[data-component="project-sidebar"]')
+  if (!(await sidebar.isVisible())) await page.getByRole("button", { name: "Toggle sidebar", exact: true }).click()
+  const handle = sidebar.getByRole("separator")
+  const result = await handle.evaluate(async (element) => {
+    const slot = element.closest<HTMLElement>('[data-component="project-sidebar-slot"]')!
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    const startWidth = slot.getBoundingClientRect().width
+    const startX = element.getBoundingClientRect().x
+    const delta = startWidth > 300 ? -60 : 60
+    let writes = 0
+    const observer = new MutationObserver((records) => (writes += records.length))
+    observer.observe(slot, { attributes: true, attributeFilter: ["style"] })
+    element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: startX }))
+    for (let index = 1; index <= 100; index++) {
+      document.dispatchEvent(new MouseEvent("mousemove", { clientX: startX + (delta * index) / 100 }))
+    }
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    const painted = slot.getBoundingClientRect().width
+    const frameWrites = writes
+    document.dispatchEvent(new MouseEvent("mousemove", { clientX: startX + delta / 2 }))
+    document.dispatchEvent(new MouseEvent("mouseup"))
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    observer.disconnect()
+    return { startWidth, delta, painted, frameWrites, released: parseFloat(slot.style.width), dragging: element.getAttribute("data-dragging") }
+  })
+  expect(result.frameWrites).toBeLessThanOrEqual(1)
+  expect(result.painted).toBeCloseTo(result.startWidth + result.delta, 0)
+  expect(result.released).toBeCloseTo(result.startWidth + result.delta / 2, 0)
+  expect(result.dragging).toBe("false")
+  await page.screenshot({ path: "/tmp/areza-resize-frame-budget.png" })
+})
+
 test("smoothly returns to the bottom and resumes following, with a reduced-motion fallback", async ({ page }) => {
   const fixture = await setupTimelineBenchmark(page, { historyTurns: 12, eventBatch: 1, newLayoutDesigns: true })
   const latest = page.locator('[data-slot="chat-latest"]')
@@ -110,6 +144,15 @@ test("swaps the sidebars from settings and keeps resize directions correct", asy
   const filesToggle = page.locator('[aria-controls="review-panel"]')
   await expect.poll(async () => (await filesToggle.boundingBox())!.x < (await projectsToggle.boundingBox())!.x).toBe(true)
   const checkClosedPanel = async (side: string) => {
+    const handle = (await divider.boundingBox())!
+    const width = (await files.boundingBox())!.width
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + 80)
+    await page.mouse.down()
+    await page.mouse.move(handle.x + handle.width / 2 + (side === "right" ? -1 : 1) * (width - 150), handle.y + 80, { steps: 8 })
+    await page.mouse.up()
+    await expect(files).toHaveAttribute("data-opened", "false")
+    await filesToggle.click()
+    await expect(files).toBeVisible()
     await filesToggle.click()
     await expect(files).toBeHidden()
     const edges = () => chat.evaluate((el) => {
@@ -194,7 +237,10 @@ test("shows live work, jumps to the latest reply, and previews every changed fil
   const preview = page.locator('[data-component="chat-changes-preview"]')
   await expect(preview).toBeVisible()
   await expect(preview.getByRole("button")).toHaveCount(30)
-  expect(await preview.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+  const viewport = preview.locator(".scroll-view__viewport")
+  expect(await viewport.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+  await expect(viewport).toHaveCSS("scrollbar-width", "none")
+  await expect(preview.locator(".scroll-view__thumb[data-orientation=vertical]")).toBeVisible()
   await preview.hover()
   await page.mouse.wheel(0, 2000)
   await expect(preview.getByRole("button", { name: "src/file-29.ts +2 -1", exact: true })).toBeInViewport()

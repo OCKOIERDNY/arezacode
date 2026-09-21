@@ -53,7 +53,12 @@ test("opens and searches project files inline", async ({ page }) => {
         { name: "src", path: "src", absolute: `${directory}/src`, type: "directory", ignored: false },
       ]
     },
-    fileContent: (path) => ({ type: "text", content: `contents:${path}` }),
+    fileContent: (path) => ({
+      type: "text",
+      content: path === "README.md"
+        ? [`contents:${path}`, ...Array.from({ length: 200 }, (_, index) => `line ${index}`), "final-visible-line"].join("\n")
+        : `contents:${path}`,
+    }),
     findFiles: (input) => {
       searches.push(input)
       return input.query === "nested" ? ["src/nested.ts"] : []
@@ -113,6 +118,17 @@ test("opens and searches project files inline", async ({ page }) => {
   await expect(sidebarToggle).toBeEnabled()
   await expect(panel.getByText("contents:README.md", { exact: true })).toBeVisible()
   await expect(sidebar).toHaveCount(0)
+  const fileViewport = panel.locator('[data-slot="session-review-v2-preview"] .scroll-view__viewport')
+  const topGap = await fileViewport.evaluate((element) =>
+    element.getBoundingClientRect().top - element.closest('[data-slot="session-review-v2-preview"]')!.getBoundingClientRect().top,
+  )
+  expect(topGap).toBeLessThanOrEqual(1)
+  await fileViewport.evaluate((element) => (element.scrollTop = element.scrollHeight))
+  const lastLine = panel.getByText("final-visible-line", { exact: true })
+  await expect(lastLine).toBeVisible()
+  expect((await lastLine.boundingBox())!.y + (await lastLine.boundingBox())!.height)
+    .toBeLessThanOrEqual((await panel.boundingBox())!.y + (await panel.boundingBox())!.height)
+  await page.screenshot({ path: "/tmp/areza-file-last-line.png" })
 
   await panel.getByRole("button", { name: "Open file" }).click()
   await expect(panel.getByRole("tab", { name: "README.md" })).toHaveCount(0)

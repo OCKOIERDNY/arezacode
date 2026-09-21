@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import {
@@ -1507,10 +1508,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             editorRef?.focus()
           }}
         >
-          <div
-            class="relative max-h-[240px] overflow-y-auto no-scrollbar"
-            ref={(el) => (scrollRef = el)}
-            style={{ "scroll-padding-bottom": space }}
+          <ScrollView
+            class="relative max-h-[240px]"
+            viewportRef={(el) => { scrollRef = el; el.style.scrollPaddingBottom = space }}
           >
             <div
               data-component="prompt-input"
@@ -1548,7 +1548,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             >
               {placeholder()}
             </div>
-          </div>
+          </ScrollView>
 
           <div
             aria-hidden="true"

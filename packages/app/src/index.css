@@ -328,3 +328,19 @@
     }
   }
 }
+
+[data-component="menu-v2-item"]:has([data-slot="approval-mode-option"]) {
+  height: auto;
+  align-items: flex-start;
+  padding-block: 8px;
+}
+
+[data-component="select-v2"].prompt-approval-full,
+[data-component="select-v2"].prompt-approval-full [data-slot="select-v2-value-text"],
+[data-component="select-v2"].prompt-approval-full [data-slot="select-v2-chevron"] {
+  color: var(--v2-state-fg-warning);
+}
+
+[data-slot="select-v2-content"]:has([data-slot="approval-mode-option"]) .select-v2-scroll {
+  max-height: min(24rem, 60vh);
+}

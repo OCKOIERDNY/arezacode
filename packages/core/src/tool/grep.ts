@@ -13,6 +13,9 @@ import { RelativePath } from "../schema"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
+import { AutomaticChecks } from "../automatic-checks"
+import { LocationMutation } from "../location-mutation"
+import { Jev } from "../jev"
 
 export const name = "grep"
 
@@ -57,9 +60,37 @@ const layer = Layer.effectDiscard(
     const ripgrep = yield* Ripgrep.Service
     const location = yield* Location.Service
     const permission = yield* PermissionV2.Service
+    const mutation = yield* LocationMutation.Service
 
     yield* tools
       .register({
+        reuse_check: Tool.withPermission(Tool.make({
+          description: "Before creating a source file or adding a substantial feature, search for existing owners, shared UI components, helpers, and installed native capabilities. Supply the target and a feature-oriented search pattern. Returns bounded evidence, never proof that no duplicates exist. Valid evidence permits source writes for ten minutes until the target or candidates change. Inspect the candidates and use docs_search for installed-library APIs before implementing.",
+          input: Schema.Struct({ target: Schema.String, query: Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(200)) }),
+          output: Schema.String,
+          toModelOutput: ({ output }) => [{ type: "text", text: output }],
+          execute: (input, context) => Effect.gen(function* () {
+            const source = { type: "tool" as const, messageID: context.assistantMessageID, callID: context.toolCallID }
+            const target = yield* mutation.resolve({ path: input.target, kind: "file" })
+            if (target.externalDirectory) return yield* new ToolFailure({ message: "Run reuse_check from the project that owns this file." })
+            yield* permission.assert({ action: "grep", resources: [input.query], save: ["*"], sessionID: context.sessionID, agent: context.agent, source })
+            const matches = yield* ripgrep.grep({ cwd: location.directory, pattern: input.query, include: "*.{ts,tsx,js,jsx,mjs,cjs,vue,svelte,py,php,rs,go,swift}", limit: 80 })
+            const paths = [...new Set(matches.map((match) => match.entry.path))].filter((file) => path.resolve(location.directory, file) !== target.canonical).slice(0,12)
+            const candidates: Array<{ path: string; content: string }> = []
+            for (const file of [input.target, ...paths]) {
+              const item = yield* mutation.resolve({ path: file, kind: "file" })
+              if (item.externalDirectory) continue
+              yield* permission.assert({ action: "read", resources: [item.resource], save: ["*"], sessionID: context.sessionID, agent: context.agent, source })
+              const info = yield* fs.stat(item.canonical).pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)))
+              if (info?.type === "File" && (item.canonical === target.canonical || info.size <= 64 * 1024)) candidates.push({ path: item.canonical, content: yield* fs.readFileString(item.canonical) })
+            }
+            const before = candidates.find((candidate) => candidate.path === target.canonical)?.content ?? ""
+            yield* Effect.promise(() => AutomaticChecks.rememberReuse(context.sessionID, target.canonical, before, candidates.filter((candidate) => candidate.path !== target.canonical)))
+            const evidence = matches.map((match) => `${match.entry.path}:${match.line}: ${match.text}`)
+            const ranked = yield* Effect.promise(() => Jev.prioritize(evidence, context.sessionID))
+            return `Ponytail build preflight recorded for ${input.target}. Bounded search: ${matches.length} matches, ${paths.length} candidate files. Reuse existing owners where suitable; identical implementation blocks will be rejected. This is evidence, not a claim of semantic uniqueness.\n${ranked.join("\n")}`
+          }).pipe(Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Reuse search failed; source creation remains blocked. Check the target, pattern, and read permissions." }))),
+        }), "grep"),
         [name]: Tool.make({
           description:
             "Search file contents by regular expression within the active Location or an absolute managed tool-output file. Use a path to narrow the search, include to filter files by glob, and limit to bound the match count. Returns concise file resources, line numbers, and bounded line previews.",
@@ -133,5 +164,5 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/grep",
   layer,
-  deps: [ToolRegistry.node, FSUtil.node, Ripgrep.node, Location.node, PermissionV2.node],
+  deps: [ToolRegistry.node, FSUtil.node, Ripgrep.node, Location.node, PermissionV2.node, LocationMutation.node],
 })

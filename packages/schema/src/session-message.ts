@@ -161,6 +161,41 @@ export const AssistantContent = Schema.Union([AssistantText, AssistantReasoning,
 )
 export type AssistantContent = AssistantText | AssistantReasoning | AssistantTool
 
+export const Usage = Schema.Struct({
+  version: Schema.Literal(1),
+  input: Schema.Finite.pipe(optional),
+  output: Schema.Finite.pipe(optional),
+  reasoning: Schema.Finite.pipe(optional),
+  cacheRead: Schema.Finite.pipe(optional),
+  cacheWrite: Schema.Finite.pipe(optional),
+  total: Schema.Finite.pipe(optional),
+  cost: Schema.Finite.pipe(optional),
+  upstreamCost: Schema.Finite.pipe(optional),
+  responseID: Schema.String.pipe(optional),
+  responseModel: Schema.String.pipe(optional),
+  responseProvider: Schema.String.pipe(optional),
+  costSource: Schema.Literals(["reported", "estimated", "unknown"]),
+  prices: Model.Cost.pipe(optional),
+  request: Schema.Struct({
+    systemCharacters: Schema.Int,
+    messageCharacters: Schema.Int,
+    toolCharacters: Schema.Int,
+    cacheKey: Schema.String,
+  }).pipe(optional),
+}).annotate({ identifier: "Session.Message.Usage" })
+export type Usage = typeof Usage.Type
+
+export const UsageEntry = Schema.Struct({
+  id: ID,
+  kind: Schema.Literals(["model", "jev"]).pipe(optional),
+  promptID: ID.pipe(optional),
+  model: Model.Ref,
+  usage: Usage.pipe(optional),
+  finish: Schema.String.pipe(optional),
+  time: Schema.Struct({ created: DateTimeUtcFromMillis, completed: DateTimeUtcFromMillis.pipe(optional) }),
+}).annotate({ identifier: "Session.Message.UsageEntry" })
+export type UsageEntry = typeof UsageEntry.Type
+
 export interface Assistant extends Schema.Schema.Type<typeof Assistant> {}
 export const Assistant = Schema.Struct({
   ...Base,
@@ -175,6 +210,7 @@ export const Assistant = Schema.Struct({
   }).pipe(optional),
   finish: Schema.String.pipe(optional),
   cost: Schema.Finite.pipe(optional),
+  usage: Usage.pipe(optional),
   tokens: Schema.Struct({
     input: Schema.Finite,
     output: Schema.Finite,

@@ -4,6 +4,13 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { InvalidRequestError } from "@opencode-ai/protocol/errors"
 import { response } from "../location"
+import { engineAction, engineStatus } from "@opencode-ai/core/util/native-command"
+import { Document } from "@opencode-ai/core/document"
+
+const operation = <A>(run: (signal: AbortSignal) => Promise<A>) => Effect.tryPromise({
+  try: run,
+  catch: (error) => new InvalidRequestError({ kind: "local_engine", message: error instanceof Error ? error.message : "Engine operation failed" }),
+})
 
 const authorize = <A, R>(effect: Effect.Effect<A, Integration.AuthorizationError, R>) =>
   effect.pipe(
@@ -19,6 +26,15 @@ const authorize = <A, R>(effect: Effect.Effect<A, Integration.AuthorizationError
 export const IntegrationHandler = HttpApiBuilder.group(Api, "server.integration", (handlers) =>
   Effect.gen(function* () {
     return handlers
+      .handle("integration.toolsList", () => Effect.promise(engineStatus))
+      .handle("integration.toolsAction", (ctx) => operation(async () => {
+        await engineAction(ctx.params.engineID, ctx.payload.action)
+        return engineStatus()
+      }))
+      .handle("integration.docsList", () => Effect.promise(Document.docsSources))
+      .handle("integration.docsIndex", (ctx) => operation((signal) => Document.docsIndex(ctx.payload, false, signal)))
+      .handle("integration.docsRemove", (ctx) => operation((signal) => Document.docsIndex(ctx.payload, true, signal)))
+      .handle("integration.docsSearch", (ctx) => operation((signal) => Document.docsSearch(ctx.payload, signal)))
       .handle(
         "integration.list",
         Effect.fn(function* () {

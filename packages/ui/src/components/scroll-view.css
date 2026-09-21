@@ -3,6 +3,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -10,13 +11,19 @@
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
-  overflow-y: auto;
+  overflow: auto;
   scrollbar-width: none;
   outline: none;
 }
 
 .scroll-view__viewport::-webkit-scrollbar {
   display: none;
+}
+
+.scroll-view__content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .scroll-view__thumb {
@@ -28,6 +35,7 @@
   cursor: default;
   user-select: none;
   pointer-events: auto;
+  touch-action: none;
   opacity: 0;
 }
 
@@ -41,7 +49,6 @@
   width: 4px;
   border-radius: 9999px;
   background-color: var(--border-weak-base);
-  backdrop-filter: blur(4px);
   transition: background-color 150ms ease;
 }
 
@@ -64,4 +71,23 @@
 
 .scroll-view__thumb[data-visible="true"] {
   opacity: 1;
+}
+
+.scroll-view__thumb[data-orientation="horizontal"] {
+  inset: auto auto 0 0;
+  height: 12px;
+}
+
+.scroll-view__thumb[data-orientation="horizontal"]::after {
+  inset: 50% 0 auto;
+  width: 100%;
+  height: 4px;
+  transform: translateY(-50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-view__thumb,
+  .scroll-view__thumb::after {
+    transition: none;
+  }
 }

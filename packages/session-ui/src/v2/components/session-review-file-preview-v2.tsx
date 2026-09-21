@@ -1,5 +1,6 @@
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import type { SelectedLineRange } from "@pierre/diffs"
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { DiffChanges } from "@opencode-ai/ui/v2/diff-changes-v2"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
@@ -271,8 +272,8 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
           <DiffChanges changes={view()} />
         </div>
       </div>
-      <div
-        ref={(el) => {
+      <ScrollView
+        viewportRef={(el) => {
           scrollRef = el
         }}
         data-slot="session-review-v2-diff-scroll"
@@ -287,7 +288,7 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
         >
           {diffViewer()}
         </Show>
-      </div>
+      </ScrollView>
     </>
   )
 }

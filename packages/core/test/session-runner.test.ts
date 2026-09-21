@@ -3,6 +3,7 @@ import {
   LLMClient,
   LLMError,
   LLMEvent,
+  Usage,
   Model,
   TransportReason,
   InvalidRequestReason,
@@ -60,6 +61,11 @@ import { asc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
 
 const requests: LLMRequest[] = []
+const waitForRequests = (count: number) => Effect.promise(async () => {
+  const deadline = Date.now() + 3000
+  while (requests.length < count && Date.now() < deadline) await Bun.sleep(2)
+  expect(requests).toHaveLength(count)
+})
 let response: LLMEvent[] = []
 let responses: LLMEvent[][] | undefined
 let responseStream: Stream.Stream<LLMEvent, LLMError> | undefined
@@ -383,6 +389,7 @@ const replaySessionProjection = (id: SessionV2.ID) =>
     yield* events.remove(id)
     yield* db.delete(SessionInputTable).where(eq(SessionInputTable.session_id, id)).run().pipe(Effect.orDie)
     yield* db.delete(SessionMessageTable).where(eq(SessionMessageTable.session_id, id)).run().pipe(Effect.orDie)
+    yield* db.update(SessionTable).set({ cost: 0, tokens_input: 0, tokens_output: 0, tokens_reasoning: 0, tokens_cache_read: 0, tokens_cache_write: 0 }).where(eq(SessionTable.id, id)).run().pipe(Effect.orDie)
     yield* events.replayAll(
       recorded.map((event) => ({
         id: event.id,
@@ -556,6 +563,28 @@ const verifyPartialFlushOnInterruption = (kind: FragmentKind) =>
   })
 
 describe("SessionRunnerLLM", () => {
+  it.effect("persists final cumulative usage once and retains it after compaction and replay", () => Effect.gen(function* () {
+    yield* setup
+    const session = yield* SessionV2.Service
+    const events = yield* EventV2.Service
+    yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Account for this request" }), resume: false })
+    requests.length = 0
+    const usage = new Usage({ inputTokens: 1000, outputTokens: 120, reasoningTokens: 20, cacheReadInputTokens: 600, cacheWriteInputTokens: 100, totalTokens: 1120, cost: 0.012 })
+    response = [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop", usage: new Usage({ inputTokens: 800 }) }), LLMEvent.finish({ reason: "stop", usage }), LLMEvent.finish({ reason: "stop", usage })]
+    yield* session.resume(sessionID)
+    const records = yield* session.usage(sessionID)
+    expect(records).toHaveLength(1)
+    expect(records[0]?.promptID).toBeDefined()
+    expect(records[0]?.usage).toMatchObject({ input: 1000, output: 120, total: 1120, cacheRead: 600, cacheWrite: 100, cost: 0.012, costSource: "reported" })
+    const compactionID = SessionMessage.ID.create()
+    yield* events.publish(SessionEvent.Compaction.Started, { sessionID, messageID: compactionID, timestamp: DateTime.nowUnsafe(), reason: "manual" })
+    yield* events.publish(SessionEvent.Compaction.Ended, { sessionID, messageID: compactionID, timestamp: DateTime.nowUnsafe(), reason: "manual", text: "summary", recent: "" })
+    yield* replaySessionProjection(sessionID)
+    expect(yield* session.usage(sessionID)).toEqual(records)
+    expect((yield* session.get(sessionID)).cost).toBeCloseTo(0.012)
+    requests.length = 0
+    response = []
+  }))
   it.effect("advertises and executes a globally attached application tool", () =>
     Effect.gen(function* () {
       yield* setup
@@ -624,6 +653,7 @@ describe("SessionRunnerLLM", () => {
 
       const message = yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Run automatically" }) })
 
+      yield* waitForRequests(1)
       expect(requests).toHaveLength(1)
       expect(yield* session.messages({ sessionID })).toMatchObject([
         { id: message.id, type: "user", text: "Run automatically" },
@@ -647,7 +677,7 @@ describe("SessionRunnerLLM", () => {
 
       expect(requests).toHaveLength(1)
       expect(requests[0]?.model).toBe(model)
-      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["echo", "defect"])
+      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["defect", "echo"])
       expect(requests[0]?.messages.map((message) => ({ role: message.role, content: message.content }))).toEqual([
         { role: "user", content: [{ type: "text", text: "First" }] },
         { role: "user", content: [{ type: "text", text: "Second" }] },
@@ -683,6 +713,7 @@ describe("SessionRunnerLLM", () => {
       systemUnavailable = false
       yield* session.prompt({ id: messageID, sessionID, prompt: Prompt.make({ text: "First" }) })
 
+      yield* waitForRequests(1)
       expect(requests).toHaveLength(1)
       expect(requests[0]?.messages.map((message) => message.role)).toEqual(["user"])
     }),
@@ -1430,7 +1461,7 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(sessionID)
 
       expect(requests).toHaveLength(1)
-      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["echo", "defect"])
+      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["defect", "echo"])
       expect(yield* session.context(sessionID)).toMatchObject([
         { type: "user", text: "Use tools" },
         {
@@ -2255,6 +2286,7 @@ describe("SessionRunnerLLM", () => {
       streamStarted = undefined
       yield* Effect.yieldNow
 
+      yield* waitForRequests(2)
       expect(requests).toHaveLength(2)
       expect(userTexts(requests[1]!)).toEqual(["Start working", "Recover with this"])
     }),
@@ -2434,6 +2466,7 @@ describe("SessionRunnerLLM", () => {
       yield* (yield* SessionExecution.Service).wake(sessionID)
       yield* Effect.yieldNow
 
+      yield* waitForRequests(1)
       expect(requests).toHaveLength(1)
       expect(userTexts(requests[0]!)).toEqual(["Wait in queue"])
     }),
@@ -2506,8 +2539,9 @@ describe("SessionRunnerLLM", () => {
       const second = yield* session.resume(otherSessionID).pipe(Effect.forkChild)
       yield* Effect.yieldNow
 
+      yield* waitForRequests(2)
       expect(requests).toHaveLength(2)
-      expect(requests.map((request) => request.providerOptions?.openai?.promptCacheKey)).toEqual([
+      expect(requests.map((request) => request.http?.headers?.["X-Session-Id"])).toEqual([
         sessionID,
         otherSessionID,
       ])
@@ -2580,9 +2614,9 @@ describe("SessionRunnerLLM", () => {
       yield* session.resume(otherLongSessionID)
 
       const keys = requests.map((request) => request.providerOptions?.openai?.promptCacheKey)
-      expect(keys).toEqual([longSessionID.slice(4), otherLongSessionID.slice(4)])
       expect(keys.every((key) => typeof key === "string" && key.length === 64)).toBe(true)
-      expect(keys[0]).not.toBe(keys[1])
+      expect(keys[0]).toBe(keys[1])
+      expect(requests[0]?.providerOptions?.openrouter?.promptCacheKey).toBe(keys[0])
     }),
   )
 

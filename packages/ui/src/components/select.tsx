@@ -1,3 +1,4 @@
+import { ScrollView } from "./scroll-view"
 import { Select as Kobalte } from "@kobalte/core/select"
 import { createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from "solid-js"
 import { pipe, groupBy, entries, map } from "remeda"
@@ -166,7 +167,9 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
           data-component="select-content"
           data-trigger-style={local.triggerVariant}
         >
-          <Kobalte.Listbox data-slot="select-select-content-list" />
+          <ScrollView class="max-h-48">
+            <Kobalte.Listbox data-slot="select-select-content-list" />
+          </ScrollView>
         </Kobalte.Content>
       </Kobalte.Portal>
     </Kobalte>

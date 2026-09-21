@@ -1,3 +1,4 @@
+import { useServerSDK } from "@/context/server-sdk"
 import { Popover as Kobalte } from "@kobalte/core/popover"
 import { Component, ComponentProps, createEffect, createMemo, For, JSX, Show } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -31,6 +32,7 @@ type ModelItem = ReturnType<ModelState["list"]>[number]
 
 const modelKey = (model: ModelItem) => `${model.provider.id}:${model.id}`
 const manageKey = "action:manage"
+const autoKey = "action:jev-auto"
 
 const sortModelGroups = (a: { category: string; items: ModelItem[] }, b: { category: string; items: ModelItem[] }) => {
   const aIndex = popularProviders.indexOf(a.category)
@@ -229,6 +231,7 @@ export function ModelSelectorPopoverV2(props: {
   onClose?: () => void
 }) {
   const dialog = useDialog()
+  const serverSDK = useServerSDK()
   const controller = createModelSelectorController({
     model: props.model,
     provider: () => props.provider,
@@ -242,6 +245,8 @@ export function ModelSelectorPopoverV2(props: {
       groups={controller.groups}
       current={controller.current}
       select={controller.select}
+      onAuto={controller.auto}
+      jevAvailable={serverSDK().jev.available()}
       onManage={() => {
         void import("./dialog-manage-models").then((module) => {
           void dialog.show(() => <module.DialogManageModelsV2 />)
@@ -281,11 +286,16 @@ function createModelSelectorController(input: {
       return Array.from(byProvider, ([category, items]) => ({ category, items })).sort(sortModelGroups)
     },
     current: () => {
+      if (model.auto()) return autoKey
       const value = model.current()
       return value ? modelKey(value) : undefined
     },
     select: (item: ModelItem) => {
       model.set({ modelID: item.id, providerID: item.provider.id }, { recent: true })
+      input.onSelect()
+    },
+    auto: () => {
+      model.setAuto()
       input.onSelect()
     },
   }
@@ -297,6 +307,8 @@ function ModelSelectorPopoverV2View(props: {
   groups: (models: ModelItem[]) => { category: string; items: ModelItem[] }[]
   current: () => string | undefined
   select: (item: ModelItem) => void
+  jevAvailable?: boolean
+  onAuto: () => void
   onManage: () => void
   onClose: () => void
 }) {
@@ -308,7 +320,8 @@ function ModelSelectorPopoverV2View(props: {
 
   const models = createMemo(() => props.models(store.search))
   const groups = createMemo(() => props.groups(models()))
-  const keys = () => [...models().map(modelKey), manageKey]
+  const showAuto = () => props.jevAvailable && (!store.search || language.t("jev.auto").toLowerCase().includes(store.search.toLowerCase()) || "jev".includes(store.search.toLowerCase()))
+  const keys = () => [...(showAuto() ? [autoKey] : []), ...models().map(modelKey), manageKey]
   const initialActive = () => {
     const selected = props.current()
     const options = keys()
@@ -342,12 +355,21 @@ function ModelSelectorPopoverV2View(props: {
     dismiss.afterClose(props.onManage)
   }
   const selectActive = () => {
+    if (store.active === autoKey) {
+      selectAuto()
+      return
+    }
     const item = models().find((item) => modelKey(item) === store.active)
     if (item) {
       selectModel(item)
       return
     }
     if (store.active === manageKey) manage()
+  }
+  const selectAuto = () => {
+    dismiss.preventTriggerRestore()
+    setOpen(false)
+    dismiss.afterClose(props.onAuto)
   }
   const moveActive = (delta: number) => {
     const options = keys()
@@ -439,6 +461,22 @@ function ModelSelectorPopoverV2View(props: {
           <div class="h-px bg-v2-border-border-muted" />
           <ScrollView data-slot="model-selector-scroll" class="max-h-[220px] min-h-0">
             <div class="flex flex-col p-0.5 pt-0">
+              <Show when={props.jevAvailable && store.search.trim() && matchesModelSearch(store.search.trim(), ["Jev", "TypeSafe", "OpenRouter"])}>
+                <div class="flex flex-col gap-1 px-3 py-2 text-12 text-text-weak" data-slot="jev-model-info">
+                  <span class="text-text-strong">{language.t("jev.model")}</span>
+                  <span>{language.t("jev.modelDescription")}</span>
+                </div>
+              </Show>
+              <Show when={showAuto()}>
+                <MenuV2.RadioGroup value={props.current()}>
+                  <MenuV2.RadioItem value={autoKey} data-option-key={autoKey}
+                    classList={{ "!bg-v2-overlay-simple-overlay-hover": store.active === autoKey }}
+                    onMouseEnter={() => setStore("active", autoKey)} onSelect={selectAuto}>
+                    <span>{language.t("jev.auto")}</span>
+                    <TagV2>{language.t("jev.name")}</TagV2>
+                  </MenuV2.RadioItem>
+                </MenuV2.RadioGroup>
+              </Show>
               <Show
                 when={models().length > 0}
                 fallback={

@@ -71,7 +71,7 @@ const unsafeCSS = `
 
 [data-content-buffer] {
   background-image: none;
-  background-color: var(--diffs-bg-context-gutter);
+  background-color: var(--diffs-bg);
 }
 
 ::highlight(opencode-find) {

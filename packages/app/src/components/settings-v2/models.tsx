@@ -7,7 +7,7 @@ import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { type Component, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
-import { useModels } from "@/context/models"
+import { useSettingsModels } from "@/hooks/use-settings-models"
 import { useServerSDK } from "@/context/server-sdk"
 import { popularProviders } from "@/hooks/use-providers"
 import { Persist, persisted } from "@/utils/persist"
@@ -15,13 +15,13 @@ import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import "./settings-v2.css"
 
-type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
+type ModelItem = ReturnType<ReturnType<typeof useSettingsModels>["list"]>[number]
 
 const PROVIDER_ICON_SIZE = 16
 
 export const SettingsModelsV2: Component = () => {
   const language = useLanguage()
-  const models = useModels()
+  const models = useSettingsModels()
   const serverSdk = useServerSDK()
   const [store, setStore] = persisted(
     Persist.serverGlobal(serverSdk().scope, "settings-v2.models.providers"),
@@ -148,6 +148,7 @@ export const SettingsModelsV2: Component = () => {
                                 <div>
                                   <Switch
                                     checked={models.visible(key)}
+                                    disabled={models.disabled(key)}
                                     onChange={(checked) => {
                                       models.setVisibility(key, checked)
                                     }}

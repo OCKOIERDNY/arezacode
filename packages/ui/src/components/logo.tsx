@@ -1,4 +1,5 @@
 import { For, type ComponentProps } from "solid-js"
+import { Portal } from "solid-js/web"
 import flower from "../assets/areza-flower.svg"
 import "./loading-splash.css"
 
@@ -62,11 +63,12 @@ export const LoadingSplash = () => {
   const startup = document.getElementById("startup-splash")
   if (startup && !startup.dataset.ready) return null
   return (
-    <div data-component="startup-splash">
-      <div role="progressbar" aria-label="ArezaCode">
+    <Portal>
+      <div data-component="startup-splash">
+        <div data-slot="startup-progress" role="progressbar" aria-label="ArezaCode" />
         <Splash />
       </div>
-    </div>
+    </Portal>
   )
 }
 

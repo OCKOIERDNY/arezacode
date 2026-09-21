@@ -51,6 +51,9 @@ const Replied = define({
 })
 export const Event = { Asked, Replied, Definitions: inventory(Asked, Replied) }
 
+export const ApprovalMode = Schema.Literals(["default", "ask", "auto", "full"])
+export type ApprovalMode = typeof ApprovalMode.Type
+
 export const Effect = Schema.Literals(["allow", "deny", "ask"]).annotate({ identifier: "PermissionV2.Effect" })
 export type Effect = typeof Effect.Type
 

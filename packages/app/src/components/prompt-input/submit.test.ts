@@ -12,6 +12,7 @@ const sessionCreateInputs: Array<{
   model?: { id: string; providerID: string; variant?: string }
   location?: { directory: string }
 }> = []
+const approvalChanges: Array<{ server: string; sessionID: string; mode: string }> = []
 const enabledAutoAccept: Array<{ server: string; sessionID: string; directory: string }> = []
 const optimistic: Array<{
   directory?: string
@@ -167,6 +168,13 @@ beforeAll(async () => {
     return { usePermission: () => ({ currentServerState: () => state(permissionServer) }) }
   })
 
+  mock.module("@/context/server-sdk", () => ({
+    useServerSDK: () => () => {
+      const server = permissionServer
+      return { approval: { set: async (sessionID: string, mode: string) => { approvalChanges.push({ server, sessionID, mode }) } } }
+    },
+  }))
+
   mock.module("@/context/server", () => ({
     useServer: () => ({ key: "server-key" }),
   }))
@@ -284,6 +292,7 @@ beforeEach(() => {
   createdSessions.length = 0
   sessionCreateInputs.length = 0
   enabledAutoAccept.length = 0
+  approvalChanges.length = 0
   optimistic.length = 0
   optimisticSeeded.length = 0
   promoted.length = 0
@@ -421,6 +430,43 @@ describe("prompt submit worktree selection", () => {
     expect(enabledAutoAccept).toEqual([{ server: "server-a", sessionID: "session-1", directory: "/repo/worktree-a" }])
   })
 
+  test("binds the approval mode and server when sending a new chat", async () => {
+    let release = () => {}
+    createSessionGate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let selectedApproval: "ask" | "full" = "ask"
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => true,
+      approvalMode: () => selectedApproval,
+      mode: () => "shell",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      newSessionWorktree: () => selected,
+      onNewSessionWorktreeReset: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    const result = submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    permissionServer = "server-b"
+    selectedApproval = "full"
+    release()
+    await result
+
+    expect(enabledAutoAccept).toEqual([])
+    expect(approvalChanges).toEqual([{ server: "server-a", sessionID: "session-1", mode: "ask" }])
+  })
+
   test("promotes drafts using the selected project's server", async () => {
     search = { draftId: "draft-1" }
     const submit = createPromptSubmit({
@@ -520,6 +566,7 @@ describe("prompt submit worktree selection", () => {
 
     await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
 
+    await Bun.sleep(0)
     expect(sentCommands).toEqual([
       {
         sessionID: "session-1",

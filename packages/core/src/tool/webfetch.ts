@@ -11,6 +11,8 @@ import { PermissionV2 } from "../permission"
 import { collectBoundedResponseBody } from "./http-body"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
+import { Document } from "../document"
+import { Integration } from "@opencode-ai/schema/integration"
 import { Tools } from "./tools"
 
 export const name = "webfetch"
@@ -123,6 +125,26 @@ const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
+        docs_search: Tool.make({
+          description: "Search the local Grounded Docs index for an exact library version. Returns documentation excerpts with source URLs. Sources are indexed in Settings > Tools. Use docs_sources to list available versions.",
+          input: Integration.DocsQuery,
+          output: Schema.String,
+          toModelOutput: ({ output }) => [{ type: "text", text: output }],
+          execute: (input, context) => Effect.gen(function* () {
+            yield* permission.assert({ action: "docs_search", resources: [input.library], save: ["*"], sessionID: context.sessionID, agent: context.agent })
+            return yield* Effect.tryPromise({ try: (signal) => Document.docsSearch(input, signal), catch: (error) => new ToolFailure({ message: error instanceof Error ? error.message : "Documentation lookup failed" }) })
+          }).pipe(Effect.mapError((error) => new ToolFailure({ message: error.message }))),
+        }),
+        docs_sources: Tool.make({
+          description: "List official documentation sources and exact versions indexed locally by Grounded Docs.",
+          input: Schema.Struct({}),
+          output: Schema.String,
+          toModelOutput: ({ output }) => [{ type: "text", text: output }],
+          execute: (_input, context) => Effect.gen(function* () {
+            yield* permission.assert({ action: "docs_search", resources: ["*"], save: ["*"], sessionID: context.sessionID, agent: context.agent })
+            return yield* Effect.promise(async () => JSON.stringify(await Document.docsSources()))
+          }).pipe(Effect.mapError((error) => new ToolFailure({ message: error.message }))),
+        }),
         [name]: Tool.make({
           description,
           input: Input,

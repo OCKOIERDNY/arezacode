@@ -1,14 +1,108 @@
 export * as AutomaticChecks from "./automatic-checks"
 
 import { createHash, randomUUID } from "node:crypto"
-import { lstat, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises"
+import { lstat, mkdir, readFile, realpath, rename, writeFile, readdir, rm } from "node:fs/promises"
 import path from "node:path"
 import { Global } from "./global"
-import { nativeBinary, nativeCommand } from "./util/native-command"
+import { Jev } from "./jev"
+import { Entire } from "./entire"
+import type { SessionMessage } from "./session/message"
+import { engineCommand, engineEnabled, engineEnvironment, engineResult, engineVersions, nativeBinary, nativeCommand } from "./util/native-command"
 
 const scans = new Map<string, Promise<string>>()
-const results = new Map<string, string>()
+const results = new Map<string, string[]>()
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex")
+const reuseChecks = new Map<string, { before: string; at: number; candidates: Array<{ path: string; hash: string }>; blocks: Map<string, string> }>()
+const sourceFile = (target: string) => /\.(?:[cm]?[jt]sx?|vue|svelte|py|php|rs|go|swift)$/.test(target) && !/(?:^|[/.])(?:test|spec|generated|vendor)(?:[/.]|$)/.test(target)
+const codeBlocks = (text: string) => {
+  const lines = text.split("\n").map((line) => line.trim()).filter((line) => line.length > 3 && !/^(?:import |\/\/|#)/.test(line))
+  return lines.flatMap((_, index) => {
+    const block = lines.slice(index, index + 12).join("\n")
+    return index + 12 <= lines.length && block.length >= 240 ? [hash(block)] : []
+  })
+}
+
+export async function rememberReuse(sessionID: string, target: string, before: string, candidates: Array<{ path: string; content: string }>) {
+  const blocks = new Map<string, string>()
+  candidates.forEach((candidate) => {
+    if (candidate.content.trim().length >= 80) blocks.set(hash(candidate.content.trim()), candidate.path)
+    codeBlocks(candidate.content).forEach((block) => blocks.set(block, candidate.path))
+  })
+  const key = `${sessionID}:${target}`
+  reuseChecks.delete(key)
+  reuseChecks.set(key, { before: hash(before), at: Date.now(), candidates: candidates.map((candidate) => ({ path: candidate.path, hash: hash(candidate.content) })), blocks })
+  while (reuseChecks.size > 32) reuseChecks.delete(reuseChecks.keys().next().value!)
+}
+
+export async function guardReuse(sessionID: string, target: string, before: string, after: string) {
+  if (!sourceFile(target) || before === after || !(await engineEnabled("ponytail"))) return
+  const existing = new Set(before.split("\n").map((line) => line.trim()))
+  const added = after.split("\n").filter((line) => line.trim() && !existing.has(line.trim()))
+  const declaration = added.some((line) => /^(?:export\s+(?:default\s+)?)?(?:async\s+)?(?:function|class)\s|^export\s+const\s|^const\s+[A-Z]\w*\s*=/.test(line))
+  if (before && added.length < 40 && !declaration) return
+  const check = reuseChecks.get(`${sessionID}:${target}`)
+  if (!check || check.before !== hash(before) || Date.now() - check.at > 600_000)
+    throw new Error(`Ponytail reuse check required before creating or substantially expanding ${target}. Call reuse_check for this target and search for the existing feature, shared UI components, and native library support. Then reuse the existing owner or make a justified targeted change.`)
+  for (const candidate of check.candidates) {
+    const content = await readFile(candidate.path, "utf8").catch(() => undefined)
+    if (content === undefined || hash(content) !== candidate.hash)
+      throw new Error("Reuse evidence changed. Run reuse_check again before writing.")
+  }
+  const old = new Set(codeBlocks(before))
+  const duplicate = [hash(after.trim()), ...codeBlocks(after).filter((block) => !old.has(block))].map((block) => check.blocks.get(block)).find(Boolean)
+  if (duplicate) throw new Error(`Duplicate implementation detected in ${duplicate}. Reuse or extend that implementation instead of copying it into ${target}.`)
+}
+
+export async function session(directory: string, sessionID: string) {
+  let baseline = await files(directory).catch(() => undefined)
+  let notice = ""
+  let userID = ""
+  let modified = false
+  await Entire.ensure(directory).catch(() => { notice = "Entire is unavailable. Session checkpoints will not be recorded." })
+  const record = async (event: Parameters<typeof Entire.recordV2>[2], context: readonly SessionMessage.Message[]) => {
+    await Entire.recordV2(directory, sessionID, event, context).catch(() => { notice += "\nEntire checkpoint recording failed. No checkpoint is claimed for this turn." })
+  }
+  return {
+    before: async (context: readonly SessionMessage.Message[]) => {
+      const user = context.findLast((message) => message.type === "user")
+      if (user && user.id !== userID) {
+        if (userID) await record("turn-end", context.slice(0, context.indexOf(user)))
+        if (!userID) await record("session-start", context)
+        await record("turn-start", context)
+        userID = user.id
+        Jev.remember(sessionID, user.text)
+        if (await engineEnabled("ponytail")) await engineResult("ponytail", "Build hook active: reuse preflight and mechanical tool checks enabled. Guidance supplied; compliance is verified separately.")
+      }
+      return notice
+    },
+    after: async (_context: readonly SessionMessage.Message[], signal?: AbortSignal) => {
+      const security = process.env.AREZACODE_SEMGREP !== "0" && await engineEnabled("semgrep")
+      const ponytail = await engineEnabled("ponytail")
+      if (baseline && (security || ponytail)) {
+        try {
+          const current = await files(directory)
+          const changed = new Map([...current.files].filter(([name, value]) => baseline!.files.get(name) !== value))
+          if (changed.size || baseline.files.size !== current.files.size) {
+            modified = true
+            notice = security ? await scan(current.root, changed, sessionID, signal) : ""
+            if (ponytail) {
+              notice += "\nPonytail review hook: inspect the current diff and untracked files, reuse shared owners/components, check dependency additions against native support, and run the relevant configured project_check. Incremental scans cover only the latest changed files."
+              await engineResult("ponytail", "Review hook supplied after edits. Reuse evidence and configured checks still require verification.")
+            }
+          }
+          baseline = current
+        } catch {
+          notice = "Automatic Semgrep failed or is unavailable. Changed files have not passed a security scan."
+        }
+      }
+    },
+    finish: async (context: readonly SessionMessage.Message[]) => {
+      if (modified && baseline && process.env.AREZACODE_SEMGREP !== "0" && await engineEnabled("semgrep")) await scan(baseline.root, baseline.files, sessionID).catch(() => engineResult("semgrep", "Final changed-file scan failed; coverage is incomplete."))
+      if (userID) await record("turn-end", context)
+      await record("session-end", context)
+    },
+  }
+}
 
 export async function files(directory: string) {
   const root = (await nativeCommand("git", ["rev-parse", "--show-toplevel"], { cwd: directory })).trim()
@@ -33,7 +127,7 @@ export async function files(directory: string) {
   return { root, files: new Map(entries.filter((entry) => entry !== undefined)) }
 }
 
-export function scan(root: string, changed: Map<string, string>) {
+export function scan(root: string, changed: Map<string, string>, sessionID?: string, signal?: AbortSignal) {
   if (!changed.size) return Promise.resolve("")
   const oversized = [...changed].filter(([, hash]) => hash.startsWith("oversized:"))
   const targets = [...changed].filter(([, hash]) => !hash.startsWith("oversized:")).map(([name]) => name)
@@ -41,17 +135,28 @@ export function scan(root: string, changed: Map<string, string>) {
     ? `Semgrep skipped ${oversized.length} changed files larger than 1 MiB; coverage is incomplete.`
     : ""
   if (!targets.length) return Promise.resolve(incomplete)
+  const format = async (findings: string[], errors: number) => [
+    findings.length ? `Automatic Semgrep findings (${findings.length}):\n${(await Jev.prioritize(findings, sessionID)).join("\n")}` : "",
+    errors ? `Semgrep reported ${errors} scan errors; coverage is incomplete.` : "",
+    incomplete,
+  ].filter(Boolean).join("\n")
   const previous = scans.get(root) ?? Promise.resolve("")
   const task = previous
     .catch(() => "")
     .then(async () => {
-      const binary = await nativeBinary("semgrep")
+      signal?.throwIfAborted()
+      if (!(await engineEnabled("semgrep"))) return ""
+      const unchanged = async () => (await Promise.all(targets.map(async (name) => {
+        const content = await readFile(path.join(root, name)).catch(() => undefined)
+        return content !== undefined && hash(content) === changed.get(name)
+      }))).every(Boolean)
+      if (!(await unchanged())) throw new Error("Files changed before scanning; refresh the scan inputs")
       const directory = path.join(Global.Path.cache, "automatic-semgrep")
       await mkdir(directory, { recursive: true, mode: 0o700 })
       const rules = path.join(directory, "default.yaml")
       const cached = await readFile(rules, "utf8").catch(() => undefined)
       if (!cached) {
-        const response = await fetch("https://semgrep.dev/c/p/default", { signal: AbortSignal.timeout(30_000) })
+        const response = await fetch("https://semgrep.dev/c/p/default", { signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])]) })
         if (!response.ok) throw new Error("Semgrep rules could not be downloaded; scan did not run")
         const text = await response.text()
         if (text.length > 8 * 1024 * 1024 || !/(?:"rules"|rules)\s*:/.test(text))
@@ -60,11 +165,21 @@ export function scan(root: string, changed: Map<string, string>) {
         await writeFile(temporary, text, { mode: 0o600 })
         await rename(temporary, rules)
       }
-      const key = hash(root + hash(await readFile(rules)) + JSON.stringify([...changed].sort()))
+      const binary = await nativeBinary("semgrep")
+      const dependencies = await Promise.all(["package.json", "bun.lock", "bun.lockb", "pyproject.toml", "uv.lock", "Cargo.lock", ".semgrepignore"].map((file) => readFile(path.join(root, file)).then(hash).catch(() => "")))
+      const key = hash(JSON.stringify([root, engineVersions.semgrep, binary, await lstat(binary).then((info) => [info.size, info.mtimeMs]), hash(await readFile(rules)), dependencies, [...changed].sort()]))
       const hit = results.get(key)
-      if (hit !== undefined) return hit
-      const output = await nativeCommand(
-        binary,
+      if (hit !== undefined) return format(hit, 0)
+      const persisted = await readCache("semgrep", key)
+      if (persisted) {
+        const parsed: unknown = await Promise.resolve(persisted).then(JSON.parse).catch(() => undefined)
+        if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+          await engineResult("semgrep", "Reused a complete scan with identical files, rules, dependencies, and tool version.")
+          return format(parsed, 0)
+        }
+      }
+      const output = await engineCommand(
+        "semgrep",
         [
           "scan",
           "--config",
@@ -79,7 +194,7 @@ export function scan(root: string, changed: Map<string, string>) {
           "--",
           ...targets.map((file) => path.join(root, file)),
         ],
-        { cwd: root, timeout: 120_000 },
+        { cwd: root, timeout: 120_000, signal },
       )
       const parsed: unknown = JSON.parse(output)
       if (
@@ -105,18 +220,14 @@ export function scan(root: string, changed: Map<string, string>) {
           `${path.relative(root, result.path)}:${result.start?.line ?? 1} [${result.extra.severity ?? "WARNING"}] ${result.check_id}: ${result.extra.message}`,
         ]
       })
-      const status = [
-        findings.length ? `Automatic Semgrep findings (${findings.length}):\n${findings.slice(0, 30).join("\n")}` : "",
-        parsed.errors.length ? `Semgrep reported ${parsed.errors.length} scan errors; coverage is incomplete.` : "",
-        incomplete,
-      ]
-        .filter(Boolean)
-        .join("\n")
+      if (!(await unchanged())) throw new Error("Files changed during scanning; results were not cached")
       if (!parsed.errors.length) {
-        results.set(key, status)
+        results.set(key, findings)
         if (results.size > 100) results.delete(results.keys().next().value!)
+        await writeCache("semgrep", key, JSON.stringify(findings))
       }
-      return status
+      await engineResult("semgrep", `${findings.length} findings; ${parsed.errors.length} scan errors`)
+      return format(findings, parsed.errors.length)
     })
   scans.set(root, task)
   return task.finally(() => {
@@ -124,20 +235,28 @@ export function scan(root: string, changed: Map<string, string>) {
   })
 }
 
-export async function compress(text: string) {
+export async function compress(text: string, signal?: AbortSignal) {
+  signal?.throwIfAborted()
   if (text.length < 8000 || text.length > 4 * 1024 * 1024 || process.env.AREZACODE_HEADROOM === "0") return
+  if (!(await engineEnabled("headroom"))) return
   const executable = await realpath(await nativeBinary("headroom"))
+  const key = hash(JSON.stringify([engineVersions.headroom, executable, await lstat(executable).then((info) => [info.size, info.mtimeMs]), "gpt-4o:protect_recent=0:kompress=disabled", text]))
+  const cached = await readCache("headroom", key)
+  if (cached && cached.length < text.length * 0.9 && !/<<ccr:|\[.*headroom_retrieve/.test(cached)) {
+    await engineResult("headroom", "Reused compressed output with identical input, settings, and tool version.")
+    return cached
+  }
   const first = (await readFile(executable, "utf8")).split("\n")[0]
   const python = first.startsWith("#!/") ? first.slice(2).trim() : undefined
   if (!python || !path.isAbsolute(python) || !path.basename(python).startsWith("python"))
     throw new Error("Headroom Python environment is unavailable")
-  const output = await nativeCommand(
-    python,
+  const output = await engineCommand(
+    "headroom",
     [
       "-c",
       "import json,sys\nfrom headroom import compress\nvalue=compress([{'role':'tool','tool_call_id':'output','content':sys.stdin.read()}], model='gpt-4o', protect_recent=0, kompress_model='disabled')\nprint(json.dumps(value.messages[0]['content']))",
     ],
-    { input: text, timeout: 15_000, env: { ...process.env, HF_HUB_OFFLINE: "1", HF_HUB_DISABLE_TELEMETRY: "1" } },
+    { interpreter: python, input: text, timeout: 15_000, signal, env: engineEnvironment({ HF_HUB_OFFLINE: "1", HF_HUB_DISABLE_TELEMETRY: "1" }) },
   )
   const result: unknown = JSON.parse(output)
   if (
@@ -147,5 +266,25 @@ export async function compress(text: string) {
     /<<ccr:|\[.*headroom_retrieve/.test(result)
   )
     return
+  await writeCache("headroom", key, result)
   return result
+}
+
+async function readCache(engine: "headroom" | "semgrep", key: string) {
+  const file = path.join(Global.Path.cache, "mechanical", engine, key)
+  const info = await lstat(file).catch(() => undefined)
+  if (!info?.isFile() || info.size > 4 * 1024 * 1024 || Date.now() - info.mtimeMs > 7 * 86400_000) return
+  return readFile(file, "utf8").catch(() => undefined)
+}
+
+async function writeCache(engine: "headroom" | "semgrep", key: string, text: string) {
+  const directory = path.join(Global.Path.cache, "mechanical", engine)
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  const temporary = path.join(directory, `${key}.${randomUUID()}.tmp`)
+  await writeFile(temporary, text, { mode: 0o600 })
+  await rename(temporary, path.join(directory, key))
+  const files = await readdir(directory)
+  if (files.length <= 200) return
+  const entries = await Promise.all(files.filter((name) => /^[a-f0-9]{64}$/.test(name)).map(async (name) => ({ name, time: await lstat(path.join(directory, name)).then((info) => info.mtimeMs).catch(() => 0) })))
+  await Promise.all(entries.sort((a, b) => b.time - a.time).slice(200).map((entry) => rm(path.join(directory, entry.name), { force: true })))
 }

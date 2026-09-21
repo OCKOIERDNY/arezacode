@@ -1,6 +1,7 @@
 import { Select as Kobalte } from "@kobalte/core/select"
 import { Show, createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from "solid-js"
 import { Icon } from "./icon"
+import { ScrollView } from "../../components/scroll-view"
 import "./select-v2.css"
 
 function groupOptions<T>(options: T[], groupBy?: (x: T) => string): { category: string; options: T[] }[] {
@@ -48,6 +49,7 @@ export type SelectV2Props<T> = Omit<
   numeric?: boolean
   children?: (item: T) => JSX.Element
   valueClass?: string
+  icon?: JSX.Element
 }
 
 export function SelectV2<T>(props: SelectV2Props<T>) {
@@ -69,6 +71,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
     "numeric",
     "disabled",
     "valueClass",
+    "icon",
     "placement",
     "gutter",
     "sameWidth",
@@ -175,6 +178,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
           [local.class ?? ""]: !!local.class,
         }}
       >
+        {local.icon}
         <div data-slot="select-v2-value">
           <Kobalte.Value<T> data-slot="select-v2-value-text" class={local.valueClass}>
             {(st) => {
@@ -190,7 +194,9 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content data-component="menu-v2-content" data-slot="select-v2-content">
-          <Kobalte.Listbox data-slot="select-v2-listbox" />
+          <ScrollView class="select-v2-scroll">
+            <Kobalte.Listbox data-slot="select-v2-listbox" />
+          </ScrollView>
         </Kobalte.Content>
       </Kobalte.Portal>
     </Kobalte>

@@ -1,3 +1,4 @@
+import { Permission } from "@opencode-ai/schema/permission"
 import { SessionMessage } from "@opencode-ai/schema/session-message"
 import { SessionInput } from "@opencode-ai/schema/session-input"
 import { PromptInput } from "@opencode-ai/schema/prompt-input"
@@ -129,6 +130,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
       HttpApiEndpoint.post("session.create", "/api/session", {
         payload: Schema.Struct({
           id: Session.ID.pipe(Schema.optional),
+          approvalMode: Permission.ApprovalMode.pipe(Schema.optional),
           agent: Agent.ID.pipe(Schema.optional),
           model: Model.Ref.pipe(Schema.optional),
           location: Location.Ref.pipe(Schema.optional),
@@ -168,6 +170,14 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             description: "Retrieve a session by ID.",
           }),
         ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.setApproval", "/api/session/:sessionID/approval", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ mode: Permission.ApprovalMode }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      }).middleware(sessionLocationMiddleware),
     )
     .add(
       HttpApiEndpoint.post("session.switchAgent", "/api/session/:sessionID/agent", {
@@ -287,6 +297,13 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         .annotateMerge(
           OpenApi.annotations({ identifier: "v2.session.revert.commit", summary: "Commit staged revert" }),
         ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.usage", "/api/session/:sessionID/usage", {
+        params: { sessionID: Session.ID },
+        success: Schema.Array(SessionMessage.UsageEntry),
+        error: SessionNotFoundError,
+      }).middleware(sessionLocationMiddleware).annotateMerge(OpenApi.annotations({ identifier: "v2.session.usage", summary: "Get usage for every provider attempt, including compacted history" })),
     )
     .add(
       HttpApiEndpoint.get("session.context", "/api/session/:sessionID/context", {

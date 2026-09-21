@@ -86,7 +86,7 @@ import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { sessionPanelLayout } from "@/pages/session/session-panel-layout"
 import { SessionReviewEmptyChangesV2 } from "@opencode-ai/session-ui/v2/session-review-empty-changes-v2"
 import { SessionReviewEmptyNoGitV2 } from "@opencode-ai/session-ui/v2/session-review-empty-no-git-v2"
-import { SessionReviewV2SidebarToggle } from "@opencode-ai/session-ui/v2/session-review-v2"
+import { SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN, SessionReviewV2SidebarToggle } from "@opencode-ai/session-ui/v2/session-review-v2"
 import { ReviewPanelV2 } from "@/pages/session/v2/review-panel-v2"
 import { createReviewPanelV2State } from "@/pages/session/v2/review-panel-v2-state"
 import { reviewDiffDirectory, reviewDiffNeedsLoad, reviewRootDirectory } from "@/pages/session/v2/review-diff-kinds"
@@ -1755,6 +1755,8 @@ export default function Page() {
       setFollowup("failed", input.sessionID, undefined)
 
       const ok = await sendFollowupDraft({
+        scope: sdk().scope,
+        jev: serverSDK().jev,
         api: sdk().api.session,
         sync: sync(),
         serverSync: serverSync(),
@@ -2298,7 +2300,9 @@ export default function Page() {
   const startupReady = createMemo<boolean>(
     (previous) =>
       previous ||
-      (!store.deferRender &&
+      (layout.ready() &&
+        settings.ready() &&
+        !store.deferRender &&
         messagesReady() &&
         prompt.ready() &&
         local.session.ready() &&
@@ -2383,7 +2387,7 @@ export default function Page() {
                 onCollapseChange={layout.projectSidebar.previewCollapse}
                 onCollapse={layout.projectSidebar.close}
                 onResizeEnd={(width, startWidth) => {
-                  if (!newSessionDesign() || width < (sessionPanelAvailable() ?? Infinity) - 64) return
+                  if (!newSessionDesign() || width < (sessionPanelAvailable() ?? Infinity) - SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN) return
                   view().reviewPanel.close()
                   view().terminal.close()
                   layout.fileTree.close()

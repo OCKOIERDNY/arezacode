@@ -2,8 +2,9 @@ export * as SessionV2 from "./session"
 export * from "./session/schema"
 
 import { DateTime, Effect, Layer, Schema, Context, Stream } from "effect"
+import { Permission } from "@opencode-ai/schema/permission"
 import { ListAnchor } from "@opencode-ai/schema/session"
-import { and, asc, desc, eq, gt, like, lt, or, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gt, like, lt, or, sql, type SQL } from "drizzle-orm"
 import { ProjectV2 } from "./project"
 import { WorkspaceV2 } from "./workspace"
 import { ModelV2 } from "./model"
@@ -12,6 +13,7 @@ import { SessionMessage } from "./session/message"
 import { Prompt } from "./session/prompt"
 import { PromptInput } from "@opencode-ai/schema/prompt-input"
 import { EventV2 } from "./event"
+import { EventTable } from "./event/sql"
 import { Database } from "./database/database"
 import { SessionProjector } from "./session/projector"
 import { SessionMessageTable, SessionTable } from "./session/sql"
@@ -36,6 +38,7 @@ import { Snapshot } from "./snapshot"
 import { SessionRevert } from "./session/revert"
 import { Revert } from "@opencode-ai/schema/revert"
 import { FSUtil } from "./fs-util"
+import { Jev } from "./jev"
 import { SessionDurable } from "@opencode-ai/schema/durable-event-manifest"
 
 export const RevertState = Revert.State
@@ -77,6 +80,7 @@ export const ListInput = Schema.Union([ListDirectoryInput, ListProjectInput, Lis
 export type ListInput = typeof ListInput.Type
 
 type CreateInput = {
+  approvalMode?: Permission.ApprovalMode
   id?: SessionSchema.ID
   agent?: AgentV2.ID
   model?: ModelV2.Ref
@@ -113,7 +117,9 @@ export type Error = NotFoundError | MessageDecodeError | OperationUnavailableErr
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<SessionSchema.Info[]>
   readonly create: (input: CreateInput) => Effect.Effect<SessionSchema.Info>
+  readonly setApproval: (input: { sessionID: SessionSchema.ID; mode: Permission.ApprovalMode }) => Effect.Effect<void, NotFoundError>
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info, NotFoundError>
+  readonly usage: (sessionID: SessionSchema.ID) => Effect.Effect<SessionMessage.UsageEntry[], NotFoundError>
   readonly messages: (input: {
     sessionID: SessionSchema.ID
     limit?: number
@@ -227,6 +233,7 @@ const layer = Layer.effect(
           workspaceID: input.location.workspaceID ? WorkspaceV2.ID.make(input.location.workspaceID) : undefined,
           title: `New session - ${new Date(now).toISOString()}`,
           agent: input.agent,
+          metadata: input.approvalMode ? { approvalMode: input.approvalMode } : undefined,
           model: input.model
             ? {
                 id: ModelV2.ID.make(input.model.id),
@@ -259,6 +266,14 @@ const layer = Layer.effect(
         if (projected.type === "existing") return projected.session
         // TODO: Restore recorded sessions onto replacement synchronized workspaces in a future API slice.
         return yield* result.get(sessionID).pipe(Effect.orDie)
+      }),
+      setApproval: Effect.fn("V2Session.setApproval")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        yield* events.publish(SessionEvent.ApprovalChanged, {
+          sessionID: input.sessionID,
+          mode: input.mode,
+          timestamp: DateTime.nowUnsafe(),
+        }, { location: session.location })
       }),
       get: Effect.fn("V2Session.get")(function* (sessionID) {
         const session = yield* store.get(sessionID)
@@ -300,6 +315,38 @@ const layer = Layer.effect(
           Effect.orDie,
         )
         return (direction === "previous" ? rows.toReversed() : rows).map((row) => fromRow(row))
+      }),
+      usage: Effect.fn("V2Session.usage")(function* (sessionID) {
+        yield* result.get(sessionID)
+        const rows = yield* db.select({
+          type: EventTable.type,
+          data: sql<string>`json_remove(${EventTable.data}, '$.prompt')`,
+        }).from(EventTable).where(and(eq(EventTable.aggregate_id, sessionID), or(...[SessionEvent.Prompted, SessionEvent.Step.Started, SessionEvent.Step.Ended, SessionEvent.Step.Failed].map((event) => like(EventTable.type, `${event.type}.%`))))).orderBy(asc(EventTable.seq)).all().pipe(Effect.orDie)
+        const entries = new Map<SessionMessage.ID, SessionMessage.UsageEntry>()
+        let promptID: SessionMessage.ID | undefined
+        let currentID: SessionMessage.ID | undefined
+        const decode = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({
+          timestamp: SessionEvent.Step.Started.data.fields.timestamp,
+          messageID: SessionMessage.ID.pipe(Schema.optional),
+          assistantMessageID: SessionMessage.ID.pipe(Schema.optional),
+          model: ModelV2.Ref.pipe(Schema.optional),
+          usage: SessionMessage.Usage.pipe(Schema.optional),
+          finish: Schema.String.pipe(Schema.optional),
+        })))
+        for (const row of rows) {
+          const data = yield* decode(row.data).pipe(Effect.orDie)
+          if (row.type.startsWith(SessionEvent.Prompted.type + ".")) { promptID = data.messageID; continue }
+          const id = data.assistantMessageID ?? currentID
+          if (!id) continue
+          if (row.type.startsWith(SessionEvent.Step.Started.type + ".") && data.model) {
+            currentID = id
+            if (!entries.has(id)) entries.set(id, { id, promptID, kind: "model", model: data.model, usage: data.usage, time: { created: data.timestamp } })
+            continue
+          }
+          const previous = entries.get(id)
+          if (previous) entries.set(id, { ...previous, usage: data.usage ?? previous.usage, finish: row.type.startsWith(SessionEvent.Step.Failed.type + ".") ? "error" : data.finish, time: { ...previous.time, completed: data.timestamp } })
+        }
+        return [...entries.values(), ...yield* Effect.promise(() => Jev.usage(sessionID))].sort((a, b) => DateTime.toEpochMillis(a.time.created) - DateTime.toEpochMillis(b.time.created))
       }),
       messages: Effect.fn("V2Session.messages")(function* (input) {
         yield* result.get(input.sessionID)

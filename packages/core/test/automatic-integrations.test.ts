@@ -6,6 +6,28 @@ import { AutomaticChecks } from "../src/automatic-checks"
 import { Document } from "../src/document"
 import { Entire } from "../src/entire"
 import { nativeBinary, nativeCommand } from "../src/util/native-command"
+import { DateTime } from "effect"
+import { SessionMessage } from "../src/session/message"
+import { ModelV2 } from "../src/model"
+import { ProviderV2 } from "../src/provider"
+
+test("Ponytail blocks missing, stale, cross-session, and duplicate reuse evidence", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "areza-reuse-test-"))
+  try {
+    const target = path.join(directory, "new-feature.tsx")
+    const owner = path.join(directory, "shared.tsx")
+    const content = "export function SharedPanel() {\n" + Array.from({ length: 14 }, (_, index) => `  const label${index} = 'meaningful shared component content ${index}'`).join("\n") + "\n  return null\n}\n"
+    await writeFile(owner, content)
+    await expect(AutomaticChecks.guardReuse("session-a", target, "", content)).rejects.toThrow("reuse_check")
+    await AutomaticChecks.rememberReuse("session-a", target, "", [{ path: owner, content }])
+    await expect(AutomaticChecks.guardReuse("session-b", target, "", content)).rejects.toThrow("reuse_check")
+    await expect(AutomaticChecks.guardReuse("session-a", target, "", content)).rejects.toThrow("Duplicate implementation")
+    await expect(AutomaticChecks.guardReuse("session-a", target, "", content.replace("SharedPanel", "CopiedPanel"))).rejects.toThrow("Duplicate implementation")
+    await AutomaticChecks.guardReuse("session-a", target, "", "export { SharedPanel } from './shared'\n")
+    await writeFile(owner, content + "export const changed = true\n")
+    await expect(AutomaticChecks.guardReuse("session-a", target, "", "export const fresh = true\n")).rejects.toThrow("evidence changed")
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
 
 test("MarkItDown converts a real DOCX, caches it, and rejects empty/corrupt documents", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "areza-document-test-"))
@@ -21,6 +43,7 @@ test("MarkItDown converts a real DOCX, caches it, and rejects empty/corrupt docu
     expect(first).toContain("Automatic document conversion")
     expect(first).toContain("The model did not invoke a converter.")
     expect(await Document.convert({ path: source, name: source })).toBe(first)
+    expect(await Document.attachment({ uri: `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${Buffer.from(await readFile(source)).toString("base64")}`, mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", name: "example.docx" })).toContain("Full converted document:")
     expect(Document.page("first\nsecond\nthird", 2, 1)).toEqual({
       content: "second",
       offset: 2,
@@ -63,6 +86,15 @@ test("Semgrep detects terminal edits and rescans a corrected file", async () => 
     const findings = await AutomaticChecks.scan(dirty.root, dirty.files)
     expect(findings).toContain("unsafe.py")
     expect(findings).toContain("Automatic Semgrep findings")
+    const replay = JSON.parse(await nativeCommand(process.execPath, ["-e", `
+      import { AutomaticChecks } from ${JSON.stringify(path.resolve(import.meta.dir, "../src/automatic-checks.ts"))}
+      import { engineStatus } from ${JSON.stringify(path.resolve(import.meta.dir, "../src/util/native-command.ts"))}
+      const state = await AutomaticChecks.files(${JSON.stringify(directory)})
+      const output = await AutomaticChecks.scan(state.root, state.files)
+      console.log(JSON.stringify({ output, status: (await engineStatus()).find((item) => item.id === "semgrep") }))
+    `]))
+    expect(replay.output).toBe(findings)
+    expect(replay.status.lastResult).toContain("Reused a complete scan")
     await writeFile(path.join(directory, "unsafe.py"), "print('safe')\n")
     const fixed = await AutomaticChecks.files(directory)
     expect(fixed.files.get("unsafe.py")).not.toBe(dirty.files.get("unsafe.py"))
@@ -80,6 +112,14 @@ test("Headroom compresses real output without provider routing or retrieval mark
   expect(compressed).toBeDefined()
   expect(compressed!.length).toBeLessThan(output.length)
   expect(compressed).not.toContain("<<ccr:")
+  const replay = JSON.parse(await nativeCommand(process.execPath, ["-e", `
+    import { AutomaticChecks } from ${JSON.stringify(path.resolve(import.meta.dir, "../src/automatic-checks.ts"))}
+    import { engineStatus } from ${JSON.stringify(path.resolve(import.meta.dir, "../src/util/native-command.ts"))}
+    const output = await AutomaticChecks.compress(${JSON.stringify(output)})
+    console.log(JSON.stringify({ output, status: (await engineStatus()).find((item) => item.id === "headroom") }))
+  `]))
+  expect(replay.output).toBe(compressed)
+  expect(replay.status.lastResult).toContain("Reused compressed output")
   expect(await AutomaticChecks.compress("short output")).toBeUndefined()
 }, 30_000)
 
@@ -158,3 +198,43 @@ test("Entire records a native desktop turn without committing or pushing the wor
     await rm(directory, { recursive: true, force: true })
   }
 }, 60_000)
+
+test("V2 automations scan edits, clear corrected findings and record checkpoints without committing", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "areza-v2-automations-"))
+  try {
+    await nativeCommand("git", ["init", "-q", directory])
+    await nativeCommand("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "baseline"], { cwd: directory })
+    const head = await nativeCommand("git", ["rev-parse", "HEAD"], { cwd: directory })
+    const automation = await AutomaticChecks.session(directory, "ses_v2_native")
+    const context: SessionMessage.Message[] = [{ type: "user", id: SessionMessage.ID.make("msg_v2_native"), text: "Fix unsafe input", time: { created: DateTime.makeUnsafe(Date.now()) } }]
+    await automation.before(context)
+    await writeFile(path.join(directory, "unsafe.py"), "import subprocess\nfrom flask import request\ndef run():\n    subprocess.call(request.args.get('command'), shell=True)\n")
+    await automation.after(context)
+    expect(await automation.before(context)).toContain("unsafe.py")
+    await writeFile(path.join(directory, "unsafe.py"), "print('safe')\n")
+    context.push(SessionMessage.Assistant.make({
+      id: SessionMessage.ID.make("msg_v2_assistant"), type: "assistant", agent: "build",
+      model: { id: ModelV2.ID.make("test"), providerID: ProviderV2.ID.make("test") },
+      time: { created: DateTime.makeUnsafe(Date.now()) },
+      content: [SessionMessage.AssistantTool.make({ type: "tool", id: "edit", name: "edit",
+        time: { created: DateTime.makeUnsafe(Date.now()) },
+        state: SessionMessage.ToolStateCompleted.make({ status: "completed", input: { path: path.join(directory, "unsafe.py") }, content: [{ type: "text", text: "Fixed unsafe input" }], structured: {} }),
+      })],
+    }))
+    await automation.after(context)
+    expect(await automation.before(context)).not.toContain("Automatic Semgrep findings")
+    await automation.finish(context)
+    expect(await nativeCommand("git", ["rev-parse", "HEAD"], { cwd: directory })).toBe(head)
+    expect(JSON.parse(await readFile(path.join(directory, ".entire/tmp/ses_v2_native.json"), "utf8")).messages[0].info.role).toBe("user")
+    expect(JSON.parse(await readFile(path.join(directory, ".entire/tmp/ses_v2_native.json"), "utf8")).messages[1].parts[0].state.output).toBe("Fixed unsafe input")
+    expect(await nativeCommand("git", ["for-each-ref", "--format=%(refname)", "refs/heads/entire"], { cwd: directory })).toContain("entire/")
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 180_000)
+
+test("Grounded Docs rejects private hosts and never substitutes another documentation version", async () => {
+  await expect(Document.docsIndex({ library: "test", version: "1.0.0", url: "https://127.0.0.1/private" })).rejects.toThrow("Private")
+  await expect(Document.docsIndex({ library: "test", version: "1.0.0", url: "file:///etc/passwd" })).rejects.toThrow("HTTPS")
+  await expect(Document.docsSearch({ library: "unindexed-test-library", version: "1.0.0", query: "test" })).rejects.toThrow("has not been indexed")
+})

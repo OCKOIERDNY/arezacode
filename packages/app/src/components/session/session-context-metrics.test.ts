@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message } from "@opencode-ai/sdk/v2/client"
-import { getSessionContext } from "./session-context-metrics"
+import { getSessionContext, usageTotal } from "./session-context-metrics"
 
 const assistant = (
   id: string,
@@ -38,6 +38,13 @@ const user = (id: string) => {
 }
 
 describe("getSessionContext", () => {
+  test("sums inclusive usage once and keeps missing and zero-price data distinct", () => {
+    const entries = [{ usage: { version: 1 as const, input: 1000, output: 120, total: 1120, cacheRead: 600, cacheWrite: 100, reasoning: 20, cost: 0, costSource: "reported" as const } }, { usage: { version: 1 as const, costSource: "unknown" as const } }]
+    expect(usageTotal(entries, "total")).toEqual({ value: 1120, missing: 1 })
+    expect(usageTotal(entries, "input")).toEqual({ value: 1000, missing: 1 })
+    expect(usageTotal(entries, "cost", "reported")).toEqual({ value: 0, missing: 1 })
+    expect(usageTotal(entries, "cost", "estimated")).toEqual({ value: undefined, missing: 2 })
+  })
   test("computes token totals and usage from latest assistant with tokens", () => {
     const messages = [
       user("u1"),
@@ -61,7 +68,7 @@ describe("getSessionContext", () => {
 
     expect(ctx?.message.id).toBe("a2")
     expect(ctx?.total).toBe(500)
-    expect(ctx?.input).toBe(300)
+    expect(ctx?.input).toBe(350)
     expect(ctx?.usage).toBe(50)
     expect(ctx?.providerLabel).toBe("OpenAI")
     expect(ctx?.modelLabel).toBe("GPT-4.1")

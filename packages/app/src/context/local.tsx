@@ -15,7 +15,7 @@ import { useSync } from "./sync"
 import { useServerSDK } from "./server-sdk"
 import { ScopedKey, type ServerScope } from "@/utils/server-scope"
 
-export type ModelKey = { providerID: string; modelID: string; variant?: string }
+export type ModelKey = { providerID: string; modelID: string; variant?: string; auto?: boolean }
 
 type State = {
   agent?: string
@@ -256,7 +256,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const model = current()
       return {
         agent: agent.current()?.name,
-        model: model ? { providerID: model.provider.id, modelID: model.id } : undefined,
+        model: model ? { providerID: model.provider.id, modelID: model.id, auto: scope()?.model?.auto } : undefined,
         variant: selected(),
       } satisfies State
     }
@@ -278,6 +278,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const recent = createMemo(() => models.recent.list().map(models.find).filter(Boolean))
 
     const model = {
+      auto: () => scope()?.model?.auto ?? false,
+      setAuto() {
+        const item = current()
+        if (item) write({ model: { providerID: item.provider.id, modelID: item.id, auto: true } })
+      },
       ready: models.ready,
       current,
       recent,

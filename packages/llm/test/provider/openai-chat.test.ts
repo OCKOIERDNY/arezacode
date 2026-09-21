@@ -29,6 +29,13 @@ const request = LLM.request({
 })
 
 describe("OpenAI Chat route", () => {
+  it.effect("preserves OpenRouter terminal usage without double-counting cache or reasoning", () => Effect.gen(function* () {
+    const usage = { prompt_tokens: 1000, completion_tokens: 120, total_tokens: 1120, cost: 0.012, cost_details: { upstream_inference_cost: 0.01 }, prompt_tokens_details: { cached_tokens: 600, cache_write_tokens: 100 }, completion_tokens_details: { reasoning_tokens: 20 } }
+    const response = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(sseEvents(deltaChunk({ content: "Done" }), deltaChunk({}, "stop"), usageChunk(usage), usageChunk(usage)))))
+    expect(response.usage).toMatchObject({ inputTokens: 1000, nonCachedInputTokens: 300, outputTokens: 120, reasoningTokens: 20, cacheReadInputTokens: 600, cacheWriteInputTokens: 100, totalTokens: 1120, cost: 0.012, upstreamCost: 0.01 })
+    expect(response.usage?.visibleOutputTokens).toBe(100)
+    expect(response.events.filter((event) => event.type === "step-finish")).toHaveLength(1)
+  }))
   it.effect("prepares OpenAI Chat payload", () =>
     Effect.gen(function* () {
       // Pass the OpenAIChat payload type so `prepared.body` is statically
@@ -493,6 +500,7 @@ describe("OpenAI Chat route", () => {
       const response = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)))
       const usage = new Usage({
         inputTokens: 5,
+        responseID: "chatcmpl_fixture",
         outputTokens: 2,
         nonCachedInputTokens: 4,
         cacheReadInputTokens: 1,

@@ -56,6 +56,11 @@ export class Usage extends Schema.Class<Usage>("LLM.Usage")({
   cacheWriteInputTokens: Schema.optional(Schema.Number),
   reasoningTokens: Schema.optional(Schema.Number),
   totalTokens: Schema.optional(Schema.Number),
+  cost: Schema.optional(Schema.Number),
+  upstreamCost: Schema.optional(Schema.Number),
+  responseID: Schema.optional(Schema.String),
+  responseModel: Schema.optional(Schema.String),
+  responseProvider: Schema.optional(Schema.String),
   providerMetadata: Schema.optional(ProviderMetadata),
 }) {
   /**

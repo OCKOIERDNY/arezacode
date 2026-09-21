@@ -103,6 +103,34 @@ function waitForRequest() {
 }
 
 describe("PermissionV2", () => {
+  it.effect("enforces approval modes, preserves denials, and inherits a parent's mode", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "*", resource: "*", effect: "allow" }, { action: "edit", resource: "secret", effect: "deny" }])
+      const { db } = yield* Database.Service
+      const service = yield* PermissionV2.Service
+      const saved = yield* PermissionSaved.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "bash", resources: ["*"] })
+      for (const mode of ["ask", "auto", "full"] as const) {
+        yield* db.update(SessionTable).set({ metadata: { approvalMode: mode } }).where(eq(SessionTable.id, SessionV2.ID.make("ses_test"))).run().pipe(Effect.orDie)
+        for (const action of ["read", "edit", "bash", "webfetch", "external_directory"]) {
+          const id = PermissionV2.ID.create()
+          const result = yield* service.ask(assertion({ id, action }))
+          expect(result.effect).toBe(mode === "full" || (mode === "auto" && ["read", "edit"].includes(action)) ? "allow" : "ask")
+          if (result.effect === "ask") {
+            expect((yield* service.get(id))?.metadata?.approvalMode).toBe(mode)
+          }
+        }
+        expect((yield* service.ask(assertion({ id: PermissionV2.ID.create(), action: "edit", resources: ["secret"] }))).effect).toBe("deny")
+      }
+      yield* db.insert(SessionTable).values({
+        id: SessionV2.ID.make("ses_child"), parent_id: SessionV2.ID.make("ses_test"),
+        project_id: Project.ID.global, slug: "child", directory: "/project", title: "child", version: "test", agent: "test",
+      }).run().pipe(Effect.orDie)
+      yield* db.update(SessionTable).set({ metadata: { approvalMode: "ask" } }).where(eq(SessionTable.id, SessionV2.ID.make("ses_test"))).run().pipe(Effect.orDie)
+      expect((yield* service.ask(assertion({ id: PermissionV2.ID.create(), sessionID: SessionV2.ID.make("ses_child"), action: "bash" }))).effect).toBe("ask")
+    }),
+  )
+
   it.effect("returns the evaluated effect and only queues prompts", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "read", resource: "*", effect: "allow" }])

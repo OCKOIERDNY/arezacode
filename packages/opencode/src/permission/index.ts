@@ -1,3 +1,5 @@
+import { approvalEffect, resolveApprovalMode } from "@opencode-ai/core/permission/approval"
+import { SessionStore } from "@opencode-ai/core/session/store"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
 import { InstanceState } from "@/effect/instance-state"
@@ -43,6 +45,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
+    const sessions = yield* SessionStore.Service
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* (ctx) {
         void ctx
@@ -67,10 +70,16 @@ const layer = Layer.effect(
     const ask = Effect.fn("Permission.ask")(function* (input: PermissionV1.AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
       const { ruleset, ...request } = input
+      const session = yield* sessions.get(request.sessionID)
+      const mode = yield* resolveApprovalMode(session, sessions)
+      const approval = approvalEffect(mode, request.permission)
       let needsAsk = false
 
       for (const pattern of request.patterns) {
-        const rule = evaluate(request.permission, pattern, ruleset, approved)
+        const configured = evaluate(request.permission, pattern, ruleset)
+        const rule = approval
+          ? { ...configured, action: configured.action === "deny" ? "deny" as const : approval }
+          : evaluate(request.permission, pattern, ruleset, approved)
         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
         if (rule.action === "deny") {
           return yield* new PermissionV1.DeniedError({
@@ -89,7 +98,7 @@ const layer = Layer.effect(
         sessionID: request.sessionID,
         permission: request.permission,
         patterns: request.patterns,
-        metadata: request.metadata,
+        metadata: { ...request.metadata, ...(approval ? { approvalMode: mode } : {}) },
         always: request.always,
         tool: request.tool,
       }
@@ -151,7 +160,7 @@ const layer = Layer.effect(
       }
 
       for (const [id, item] of pending.entries()) {
-        if (item.info.sessionID !== existing.info.sessionID) continue
+        if (item.info.sessionID !== existing.info.sessionID || item.info.metadata.approvalMode) continue
         const ok = item.info.patterns.every(
           (pattern) => evaluate(item.info.permission, pattern, approved).action === "allow",
         )
@@ -218,6 +227,6 @@ export function visibleTools<T>(tools: Record<string, T>, ruleset: PermissionV1.
   return Object.fromEntries(Object.entries(tools).filter(([name]) => !hidden.has(name)))
 }
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node, SessionStore.node] })
 
 export * as Permission from "."

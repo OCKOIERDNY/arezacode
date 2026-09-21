@@ -129,8 +129,8 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
           )
           const result = yield* execute(decoded as Schema.Schema.Type<Parameters>, ctx)
           if (result.metadata.truncated !== undefined) {
-            if (result.metadata.truncated || result.output.length < 8000) return result
-            const compressed = yield* truncate.compress(result.output)
+            if (result.metadata.truncated || result.output.length < 2000) return result
+            const compressed = yield* truncate.compress(result.output, { sessionID: ctx.sessionID })
             if (!compressed || !compressed.truncated) return result
             return {
               ...result,
@@ -139,7 +139,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
             }
           }
           const agent = yield* agents.get(ctx.agent)
-          const truncated = yield* truncate.output(result.output, {}, agent)
+          const truncated = yield* truncate.output(result.output, { sessionID: ctx.sessionID }, agent)
           return {
             ...result,
             output: truncated.content,

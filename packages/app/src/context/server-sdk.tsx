@@ -4,7 +4,7 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { type Accessor, batch, createMemo, createResource, onCleanup, onMount } from "solid-js"
-import { createApiForServer, createSdkForServer, type ServerApi } from "@/utils/server"
+import { createApprovalApiForServer, createApiForServer, createSdkForServer, type ServerApi } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
 import { ServerConnection, useServer } from "./server"
@@ -13,6 +13,7 @@ import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
 import { detectServerProtocol, type ServerProtocol } from "@/utils/server-protocol"
 import { createCompatibleApi, type CompatibleApi } from "@/utils/server-compat"
+import { createJevClient, createToolsClient } from "@/utils/jev"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -173,7 +174,10 @@ type ServerSDKBase = {
   url: string
   client: ReturnType<typeof createSdkForServer>
   api: CompatibleApi
+  approval: ReturnType<typeof createApprovalApiForServer>
   currentApi: ServerApi
+  jev: ReturnType<typeof createJevClient>
+  tools: ReturnType<typeof createToolsClient>
   event: {
     on: ServerEventEmitter["on"]
     listen: ServerEventEmitter["listen"]
@@ -357,6 +361,9 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     client: sdk,
     api,
     currentApi,
+    approval: createApprovalApiForServer({ server: server.http, fetch: platform.fetch }),
+    jev: createJevClient(server.http, platform.fetch ?? fetch),
+    tools: createToolsClient(server.http, platform.fetch ?? fetch),
     event: {
       on: emitter.on.bind(emitter),
       listen: emitter.listen.bind(emitter),
@@ -424,6 +431,7 @@ function createDirSdkContext(directory: string, serverSDK: ServerSDKBase) {
 
   return {
     scope: serverSDK.scope,
+    jev: serverSDK.jev,
     protocol: serverSDK.protocol,
     directory,
     client,

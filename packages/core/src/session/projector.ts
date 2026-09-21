@@ -181,7 +181,24 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
             .find((message): message is SessionMessage.Shell => message.type === "shell" && message.callID === callID)
         })
       },
-      updateAssistant: updateMessage,
+      updateAssistant: (message) => Effect.gen(function* () {
+        if (event.type !== SessionEvent.Step.Ended.type && event.type !== SessionEvent.Step.Failed.type) return yield* updateMessage(message)
+        const previous = yield* adapter.getAssistant(message.id)
+        const delta = {
+          cost: (message.cost ?? 0) - (previous?.cost ?? 0),
+          tokens: {
+            input: (message.tokens?.input ?? 0) - (previous?.tokens?.input ?? 0),
+            output: (message.tokens?.output ?? 0) - (previous?.tokens?.output ?? 0),
+            reasoning: (message.tokens?.reasoning ?? 0) - (previous?.tokens?.reasoning ?? 0),
+            cache: {
+              read: (message.tokens?.cache.read ?? 0) - (previous?.tokens?.cache.read ?? 0),
+              write: (message.tokens?.cache.write ?? 0) - (previous?.tokens?.cache.write ?? 0),
+            },
+          },
+        }
+        yield* updateMessage(message)
+        if ([delta.cost, delta.tokens.input, delta.tokens.output, delta.tokens.reasoning, delta.tokens.cache.read, delta.tokens.cache.write].some((value) => value !== 0)) yield* applyUsage(db, event.data.sessionID, delta, 1)
+      }),
       updateShell: updateMessage,
       appendMessage,
     }
@@ -325,6 +342,17 @@ const layer = Layer.effectDiscard(
         if (previous) yield* applyUsage(db, row.session_id, previous, -1)
         if (next) yield* applyUsage(db, sessionID, next)
       }),
+    )
+    yield* events.project(SessionEvent.ApprovalChanged, (event) =>
+      db
+        .update(SessionTable)
+        .set({
+          metadata: sql`json_set(coalesce(${SessionTable.metadata}, '{}'), '$.approvalMode', ${event.data.mode})`,
+          time_updated: DateTime.toEpochMillis(event.data.timestamp),
+        })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie),
     )
     yield* events.project(SessionEvent.AgentSwitched, (event) =>
       db

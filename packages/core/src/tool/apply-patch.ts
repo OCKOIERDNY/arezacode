@@ -163,6 +163,7 @@ const layer = Layer.effectDiscard(
                       if (change.type === "add") {
                         const result = yield* files.create({
                           target: change.target,
+                          sessionID: context.sessionID,
                           content:
                             change.contents.endsWith("\n") || change.contents === ""
                               ? change.contents
@@ -178,11 +179,12 @@ const layer = Layer.effectDiscard(
                       }
                       const result = yield* files.writeIfUnchanged({
                         target: change.target,
+                        sessionID: context.sessionID,
                         expected: change.source,
                         content: change.content,
                       })
                       applied.push({ type: change.type, resource: result.resource, target: result.target })
-                    }).pipe(Effect.mapError(() => fail(change.path))),
+                    }).pipe(Effect.mapError((error) => error instanceof FileMutation.ReuseError ? new ToolFailure({ message: `${error.message}${applied.length ? ` Already applied: ${applied.map((item) => item.resource).join(", ")}` : ""}` }) : fail(change.path))),
                   { discard: true },
                 )
                 return { applied, files: patchFiles }

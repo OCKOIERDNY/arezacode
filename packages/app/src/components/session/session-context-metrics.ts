@@ -1,4 +1,13 @@
 import type { AssistantMessage, Message } from "@opencode-ai/sdk/v2/client"
+import type { SessionMessage } from "@opencode-ai/schema/session-message"
+import { sessionUsage } from "@/utils/session-message"
+
+export const recordedUsage = sessionUsage
+
+export function usageTotal(entries: readonly { usage?: SessionMessage.Usage }[], key: "input" | "output" | "reasoning" | "cacheRead" | "cacheWrite" | "total" | "cost", source?: "reported" | "estimated") {
+  const values = entries.flatMap((entry) => entry.usage?.[key] !== undefined && (!source || entry.usage.costSource === source) ? [entry.usage[key]] : [])
+  return { value: values.length ? values.reduce((sum, value) => sum + value, 0) : undefined, missing: entries.length - values.length }
+}
 
 type Provider = {
   id: string
@@ -20,12 +29,14 @@ type Context = {
   providerLabel: string
   modelLabel: string
   limit: number | undefined
-  input: number
+  input: number | undefined
   total: number
   usage: number | null
 }
 
 const tokenTotal = (msg: AssistantMessage) => {
+  const usage = recordedUsage(msg)
+  if (usage) return usage.total ?? ((usage.input ?? 0) + (usage.output ?? 0))
   return msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
 }
 
@@ -54,7 +65,7 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Context | 
     providerLabel: provider?.name ?? message.providerID,
     modelLabel: model?.name ?? message.modelID,
     limit,
-    input: message.tokens.input,
+    input: recordedUsage(message)?.input ?? message.tokens.input + message.tokens.cache.read + message.tokens.cache.write,
     total,
     usage: limit ? Math.round((total / limit) * 100) : null,
   }

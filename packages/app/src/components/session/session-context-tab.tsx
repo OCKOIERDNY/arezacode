@@ -1,4 +1,4 @@
-import { createMemo, createEffect, on, onCleanup, For, Show } from "solid-js"
+import { createMemo, createEffect, createResource, createSignal, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { useSync } from "@/context/sync"
 import { checksum } from "@opencode-ai/core/util/encode"
@@ -17,8 +17,9 @@ import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
+import { useServerSDK } from "@/context/server-sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { getSessionContext } from "./session-context-metrics"
+import { getSessionContext, usageTotal } from "./session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
 
@@ -34,7 +35,7 @@ function Stat(props: { label: string; value: JSX.Element }) {
   return (
     <div class="flex flex-col gap-1">
       <div class="text-12-regular text-text-weak">{props.label}</div>
-      <div class="text-12-medium text-text-strong">{props.value}</div>
+      <div class="text-12-medium text-text-strong [overflow-wrap:anywhere]">{props.value}</div>
     </div>
   )
 }
@@ -98,6 +99,7 @@ export function SessionContextTab() {
   const sync = useSync()
   const language = useLanguage()
   const sdk = useSDK()
+  const serverSDK = useServerSDK()
   const providers = useProviders(() => sdk().directory)
   const { params, view } = useSessionLayout()
 
@@ -130,19 +132,28 @@ export function SessionContextTab() {
     { equals: same },
   )
 
-  const usd = createMemo(
-    () =>
-      new Intl.NumberFormat(language.intl(), {
-        style: "currency",
-        currency: "USD",
-      }),
-  )
-
   const ctx = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
+  const usageKey = createMemo(() => params.id ? JSON.stringify([serverSDK().scope, params.id, messages().filter((message) => message.role === "assistant" && message.time.completed).at(-1)?.id ?? ""]) : false)
+  const [usageResource] = createResource(
+    usageKey,
+    async (key) => ({ key, entries: await serverSDK().tools.sessionUsage(params.id!) }),
+    { initialValue: { key: "", entries: [] } },
+  )
+  const usageEntries = () => usageResource.error || usageResource.latest.key !== usageKey() ? [] : usageResource.latest.entries
+  const [usageLimit, setUsageLimit] = createSignal(50)
+  const money = (value: number | undefined) => value === undefined ? "—" : new Intl.NumberFormat(language.intl(), { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value)
+  const usageKeys = ["input", "output", "reasoning", "cacheRead", "cacheWrite", "total"] as const
+  const usageValue = (entries: ReturnType<typeof usageEntries>, key: typeof usageKeys[number]) => {
+    const total = usageTotal(entries, key)
+    const value = formatter().number(total.value)
+    return total.missing && total.value !== undefined ? language.t("context.accounting.partial", { value, count: total.missing }) : value
+  }
+  const models = createMemo(() => [...new Set(usageEntries().map((entry) => `${entry.model.providerID}/${entry.model.id}`))].map((model) => ({ model, entries: usageEntries().filter((entry) => `${entry.model.providerID}/${entry.model.id}` === model) })))
+  const prompts = createMemo(() => [...new Set(usageEntries().flatMap((entry) => entry.promptID ? [entry.promptID] : []))].slice(-usageLimit()).map((id) => ({ model: `${language.t("context.accounting.prompt")} ${id}`, entries: usageEntries().filter((entry) => entry.promptID === id) })))
 
   const cost = createMemo(() => {
-    return usd().format(info()?.cost ?? 0)
+    return money(usageTotal(usageEntries(), "cost").value)
   })
 
   const counts = createMemo(() => {
@@ -308,6 +319,46 @@ export function SessionContextTab() {
       onScroll={handleScroll}
     >
       <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
+        <section class="flex flex-col gap-4" data-testid="session-usage-accounting" aria-busy={usageResource.loading}>
+          <div class="text-14-medium text-text-strong">{language.t("context.accounting.title")}</div>
+          <p class="text-12-regular text-text-weak">{language.t("context.accounting.note")}</p>
+          <Show when={usageResource.error}><p role="alert" class="text-12-regular text-text-weak">{language.t("context.accounting.error")}</p></Show>
+          <div class="grid grid-cols-2 @[32rem]:grid-cols-3 gap-4">
+            <Stat label={language.t("context.accounting.requests")} value={usageResource.loading ? "—" : usageEntries().length} />
+            <For each={usageKeys}>{(key) => <Stat label={language.t(`context.accounting.${key}`)} value={usageValue(usageEntries(), key)} />}</For>
+            <Stat label={language.t("context.accounting.reported")} value={money(usageTotal(usageEntries(), "cost", "reported").value)} />
+            <Stat label={language.t("context.accounting.estimated")} value={money(usageTotal(usageEntries(), "cost", "estimated").value)} />
+            <Stat label={language.t("context.accounting.unknown")} value={usageTotal(usageEntries(), "cost").missing} />
+          </div>
+          <For each={[...models(), ...prompts()]}>{(group) => { const [open, setOpen] = createSignal(false); return <details class="rounded-md border border-border-base p-3" onToggle={(event) => setOpen(event.currentTarget.open)}>
+            <summary class="cursor-pointer text-12-medium text-text-strong">{group.model} · {group.entries.length} {language.t("context.accounting.requests")}</summary>
+            <Show when={open()}><div class="grid grid-cols-2 gap-3 pt-3">
+              <For each={usageKeys}>{(key) => <Stat label={language.t(`context.accounting.${key}`)} value={usageValue(group.entries, key)} />}</For>
+              <Stat label={language.t("context.accounting.reported")} value={money(usageTotal(group.entries, "cost", "reported").value)} />
+              <Stat label={language.t("context.accounting.estimated")} value={money(usageTotal(group.entries, "cost", "estimated").value)} />
+            </div></Show>
+          </details> }}</For>
+          <div class="text-12-medium text-text-strong">{language.t("context.accounting.attempts")}</div>
+          <Show when={usageEntries().length > usageLimit()}><Button size="small" variant="ghost" onClick={() => setUsageLimit((limit) => limit + 50)}>{language.t("context.accounting.older")}</Button></Show>
+          <For each={usageEntries().slice(-usageLimit())}>{(entry, index) => { const [open, setOpen] = createSignal(false); return <details class="rounded-md border border-border-base p-3" onToggle={(event) => setOpen(event.currentTarget.open)}>
+            <summary class="cursor-pointer text-12-regular text-text-base">{index() + 1}. {entry.model.id} · {formatter().time(entry.time.created)} · {money(entry.usage?.cost)}</summary>
+            <Show when={open()}><div class="grid grid-cols-2 gap-3 pt-3">
+              <Stat label={language.t("context.accounting.request")} value={entry.id} />
+              <Stat label={language.t("context.accounting.responseID")} value={entry.usage?.responseID ?? "—"} />
+              <Stat label={language.t("context.accounting.actualModel")} value={entry.usage?.responseModel ?? entry.model.id} />
+              <Stat label={language.t("context.accounting.actualProvider")} value={entry.usage?.responseProvider ?? "—"} />
+              <Stat label={language.t("context.accounting.prompt")} value={entry.promptID ?? "—"} />
+              <For each={usageKeys}>{(key) => <Stat label={language.t(`context.accounting.${key}`)} value={formatter().number(entry.usage?.[key])} />}</For>
+              <Stat label={language.t("context.accounting.source")} value={language.t(`context.accounting.${entry.usage?.costSource ?? "unknown"}`)} />
+              <Stat label={language.t("context.accounting.upstream")} value={money(entry.usage?.upstreamCost)} />
+              <Stat label={language.t("context.accounting.finish")} value={entry.finish ?? "—"} />
+              <Stat label={language.t("context.accounting.version")} value={entry.usage?.version ?? "—"} />
+            </div>
+            <Show when={entry.usage?.prices}>{(prices) => <div class="pt-3 text-12-regular text-text-weak">{language.t("context.accounting.prices", { input: prices().input, output: prices().output, read: prices().cache.read, write: prices().cache.write })}</div>}</Show>
+            <Show when={entry.usage?.request}>{(request) => <div class="pt-3 text-12-regular text-text-weak">{language.t("context.accounting.characters", { system: request().systemCharacters, messages: request().messageCharacters, tools: request().toolCharacters })}</div>}</Show>
+            </Show>
+          </details> }}</For>
+        </section>
         <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
           <For each={stats}>
             {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
@@ -341,7 +392,7 @@ export function SessionContextTab() {
                 )}
               </For>
             </div>
-            <div class="hidden text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
+            <div class="text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
           </div>
         </Show>
 

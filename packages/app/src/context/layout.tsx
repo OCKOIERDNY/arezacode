@@ -338,7 +338,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
       }),
     )
-    const [projectSidebar, setProjectSidebar] = persisted(
+    const [projectSidebar, setProjectSidebar, , projectSidebarReady] = persisted(
       Persist.global("project-sidebar.v1"),
       createStore({ opened: true }),
     )
@@ -650,7 +650,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
 
     return {
       route,
-      ready,
+      ready: Object.assign(() => ready() && projectSidebarReady(), {
+        promise: Promise.all([ready.promise, projectSidebarReady.promise]),
+      }),
       home: {
         selection: createMemo(() => store.home.selection),
         setSelection(selection: HomeProjectSelection) {

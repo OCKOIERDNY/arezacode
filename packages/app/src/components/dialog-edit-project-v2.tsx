@@ -1,5 +1,6 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@opencode-ai/ui/v2/dialog-v2"
+import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@opencode-ai/ui/v2/dialog-v2"
 import { DividerV2 } from "@opencode-ai/ui/v2/divider-v2"
 import { Field } from "@opencode-ai/ui/v2/field-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
@@ -24,7 +25,7 @@ export function DialogEditProjectV2(props: { project: LocalProject; server: Serv
           <DialogTitle>{language.t("dialog.project.edit.title")}</DialogTitle>
         </DialogHeader>
         <DividerV2 />
-        <DialogBody class="flex max-h-[min(560px,calc(100vh-160px))] w-full flex-col gap-6 overflow-y-auto px-4 pt-4 pb-1">
+        <ScrollView data-slot="dialog-body" class="max-h-[min(560px,calc(100vh-160px))] w-full" viewportClass="flex flex-col gap-6 px-4 pt-4 pb-1">
           <Field>
             <Field.Label>{language.t("dialog.project.edit.name")}</Field.Label>
             <TextInputV2
@@ -141,7 +142,7 @@ export function DialogEditProjectV2(props: { project: LocalProject; server: Serv
               onInput={(event) => model.setStore("startup", event.currentTarget.value)}
             />
           </Field>
-        </DialogBody>
+        </ScrollView>
         <DialogFooter>
           <ButtonV2 type="button" variant="neutral" disabled={model.save.isPending} onClick={model.close}>
             {language.t("common.cancel")}

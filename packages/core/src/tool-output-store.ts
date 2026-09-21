@@ -1,6 +1,7 @@
 export * as ToolOutputStore from "./tool-output-store"
 
 import { AutomaticChecks } from "./automatic-checks"
+import { Jev } from "./jev"
 
 import path from "path"
 import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
@@ -149,9 +150,10 @@ const layer = Layer.effect(
               catch: (cause) => new StorageError({ operation: "encode", cause }),
             })
           : text.map((item) => item.text).join("")
-      const compressed = yield* Effect.tryPromise(() => AutomaticChecks.compress(contextual)).pipe(
+      const ranked = yield* Effect.promise(() => Jev.context(contextual, input.sessionID))
+      const compressed = ranked ?? (yield* Effect.tryPromise((signal) => AutomaticChecks.compress(contextual, signal)).pipe(
         Effect.catch(() => Effect.succeed(undefined)),
-      )
+      ))
       if (
         compressed &&
         Buffer.byteLength(compressed) < outputLimits.maxBytes &&
@@ -164,7 +166,7 @@ const layer = Layer.effect(
             content: [
               {
                 type: "text" as const,
-                text: `${compressed}\n\nHeadroom compressed this output. Full original: ${outputPath}. Use Read for omitted detail.`,
+                text: `${compressed}\n\n${ranked ? "Jev selected relevant excerpts." : "Headroom compressed this output."} Full original: ${outputPath}. Use Read for omitted detail.`,
               },
               ...media,
             ],

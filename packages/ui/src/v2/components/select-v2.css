@@ -241,9 +241,6 @@
   list-style: none;
   min-width: 0;
   width: 100%;
-  max-height: 12rem;
-  overflow-x: hidden;
-  overflow-y: auto;
   outline: none;
   white-space: nowrap;
 
@@ -254,6 +251,10 @@
   > *:not([role="presentation"]) + *:not([role="presentation"]) {
     margin-top: 2px;
   }
+}
+
+.select-v2-scroll {
+  max-height: 12rem;
 }
 
 [data-slot="select-v2-listbox"] [data-component="menu-v2-item"],

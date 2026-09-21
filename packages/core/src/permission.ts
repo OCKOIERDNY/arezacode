@@ -9,6 +9,7 @@ import { AgentV2 } from "./agent"
 import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
+import { approvalEffect, resolveApprovalMode } from "./permission/approval"
 import { PermissionSaved } from "./permission/saved"
 
 export { Effect, Rule, Ruleset } from "@opencode-ai/schema/permission"
@@ -141,7 +142,7 @@ const layer = Layer.effect(
       const session = yield* sessions.get(sessionID)
       if (!session) return yield* new SessionV2.NotFoundError({ sessionID })
       const agent = yield* agents.resolve(agentID ?? session.agent)
-      return agent?.permissions ?? missingAgentPermissions
+      return { rules: agent?.permissions ?? missingAgentPermissions, mode: yield* resolveApprovalMode(session, sessions) }
     })
 
     function denied(input: AssertInput, rules: Permission.Ruleset) {
@@ -153,8 +154,11 @@ const layer = Layer.effect(
     }
 
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
-      const rules = yield* configured(input.sessionID, input.agent)
+      const config = yield* configured(input.sessionID, input.agent)
+      const rules = config.rules
       if (denied(input, rules)) return { effect: "deny" as const, rules }
+      const approval = approvalEffect(config.mode, input.action)
+      if (approval) return { effect: approval, rules, mode: config.mode }
       const all = [...rules, ...(yield* savedRules())]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
       const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
@@ -189,7 +193,7 @@ const layer = Layer.effect(
 
     const ask = EffectRuntime.fn("PermissionV2.ask")(function* (input: AssertInput) {
       const result = yield* evaluateInput(input)
-      const value = request(input)
+      const value = request({ ...input, metadata: { ...input.metadata, approvalMode: result.mode } })
       if (result.effect === "ask") yield* create(value, input.agent)
       return { id: value.id, effect: result.effect }
     })
@@ -204,7 +208,7 @@ const layer = Layer.effect(
             })
           }
           if (result.effect === "allow") return
-          const item = yield* create(request(input), input.agent)
+          const item = yield* create(request({ ...input, metadata: { ...input.metadata, approvalMode: result.mode } }), input.agent)
           return yield* restore(Deferred.await(item.deferred)).pipe(
             EffectRuntime.catchTag("PermissionV2.DeclinedError", (error) => EffectRuntime.die(error)),
             EffectRuntime.ensuring(
@@ -261,12 +265,12 @@ const layer = Layer.effect(
           const rememberedRules = yield* savedRules()
           for (const [id, item] of pending) {
             const input = { ...item.request }
-            const rules = yield* configured(item.request.sessionID, item.agent).pipe(
+            const config = yield* configured(item.request.sessionID, item.agent).pipe(
               EffectRuntime.catchTag("Session.NotFoundError", () => EffectRuntime.succeed(undefined)),
             )
-            if (!rules) continue
-            if (denied(input, rules)) continue
-            const effective = [...rules, ...rememberedRules]
+            if (!config || (config.mode && config.mode !== "default")) continue
+            if (denied(input, config.rules)) continue
+            const effective = [...config.rules, ...rememberedRules]
             if (
               !item.request.resources.every(
                 (resource) => evaluate(item.request.action, resource, effective).effect === "allow",

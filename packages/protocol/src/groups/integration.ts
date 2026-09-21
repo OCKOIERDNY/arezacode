@@ -8,6 +8,23 @@ import { LocationQuery, locationQueryOpenApi } from "./location"
 const Inputs = Schema.Record(Schema.String, Schema.String)
 
 export const IntegrationGroup = HttpApiGroup.make("server.integration")
+  .add(HttpApiEndpoint.get("integration.toolsList", "/api/tools", { success: Schema.Array(Integration.EngineStatus) }))
+  .add(HttpApiEndpoint.post("integration.toolsAction", "/api/tools/:engineID", {
+    params: { engineID: Integration.EngineID }, payload: Integration.EngineAction,
+    success: Schema.Array(Integration.EngineStatus), error: InvalidRequestError,
+  }))
+  .add(HttpApiEndpoint.get("integration.docsList", "/api/tools/docs/sources", {
+    success: Schema.Array(Schema.Struct({ ...Integration.DocsSource.fields, indexedAt: Schema.Number.pipe(Schema.optional), error: Schema.String.pipe(Schema.optional) })),
+  }))
+  .add(HttpApiEndpoint.post("integration.docsIndex", "/api/tools/docs/sources", {
+    payload: Integration.DocsSource, success: Schema.String, error: InvalidRequestError,
+  }))
+  .add(HttpApiEndpoint.delete("integration.docsRemove", "/api/tools/docs/sources", {
+    payload: Integration.DocsSource, success: Schema.String, error: InvalidRequestError,
+  }))
+  .add(HttpApiEndpoint.post("integration.docsSearch", "/api/tools/docs/search", {
+    payload: Integration.DocsQuery, success: Schema.String, error: InvalidRequestError,
+  }))
   .add(
     HttpApiEndpoint.get("integration.list", "/api/integration", {
       query: LocationQuery,

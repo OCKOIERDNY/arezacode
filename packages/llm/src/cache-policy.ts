@@ -97,7 +97,7 @@ const markMessages = (
 }
 
 export const applyCachePolicy = (request: LLMRequest): LLMRequest => {
-  if (!RESPECTS_INLINE_HINTS.has(request.model.route.id)) return request
+  if (!RESPECTS_INLINE_HINTS.has(request.model.route.id) && !(request.model.route.id === "openrouter" && request.model.id.startsWith("anthropic/"))) return request
   const policy = resolve(request.cache)
   if (!policy.tools && !policy.system && !policy.messages) return request
 

@@ -12,6 +12,7 @@ import { ApplicationTools } from "./application-tools"
 import { definition, permission, settle, validateName, type AnyTool, type RegistrationError } from "./tool"
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
+import { engineEnabled } from "../util/native-command"
 
 export type ExecuteInput = {
   readonly sessionID: SessionSchema.ID
@@ -111,8 +112,12 @@ const registryLayer = Layer.effect(
         }
         for (const [name, registration] of registrations)
           if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
+        if (!(yield* Effect.promise(() => engineEnabled("grounded")))) {
+          registrations.delete("docs_search")
+          registrations.delete("docs_sources")
+        }
         return {
-          definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)),
+          definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)).sort((a, b) => a.name.localeCompare(b.name)),
           settle: (input) => {
             const registration = registrations.get(input.call.name)
             if (registration) return settleWith(input, registration.identity)

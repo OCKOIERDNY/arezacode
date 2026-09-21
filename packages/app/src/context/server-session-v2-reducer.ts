@@ -1,4 +1,5 @@
 import type { OpenCodeEvent, SessionMessageInfo, SessionPendingMessage } from "@opencode-ai/client/promise"
+import { sessionUsage } from "@/utils/session-message"
 
 type Assistant = Extract<SessionMessageInfo, { type: "assistant" }>
 type Compaction = Extract<SessionMessageInfo, { type: "compaction" }>
@@ -134,6 +135,7 @@ export function createV2SessionReducer() {
                     ...item,
                     agent: event.data.agent,
                     model: event.data.model,
+                    usage: sessionUsage(event.data),
                     retry: undefined,
                     error: undefined,
                     finish: undefined,
@@ -153,6 +155,7 @@ export function createV2SessionReducer() {
               metadata: event.metadata,
               agent: event.data.agent,
               model: event.data.model,
+              ...{ usage: sessionUsage(event.data) },
               content: [],
               snapshot: event.data.snapshot ? { start: event.data.snapshot } : undefined,
               time: { created: event.created },
@@ -166,6 +169,7 @@ export function createV2SessionReducer() {
           ...item,
           finish: event.data.finish,
           cost: event.data.cost,
+          usage: sessionUsage(event.data),
           tokens: event.data.tokens,
           snapshot:
             event.data.snapshot || event.data.files
@@ -180,6 +184,7 @@ export function createV2SessionReducer() {
           error: event.data.error,
           retry: undefined,
           cost: event.data.cost ?? item.cost,
+          usage: sessionUsage(event.data) ?? sessionUsage(item),
           tokens: event.data.tokens ?? item.tokens,
           snapshot:
             event.data.snapshot || event.data.files

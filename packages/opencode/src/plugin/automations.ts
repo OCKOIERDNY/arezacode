@@ -7,6 +7,7 @@ import { AutomaticChecks } from "@opencode-ai/core/automatic-checks"
 import { Document } from "@opencode-ai/core/document"
 import { Global } from "@opencode-ai/core/global"
 import { Entire } from "@opencode-ai/core/entire"
+import { Jev } from "@opencode-ai/core/jev"
 
 export const AutomationsPlugin: Plugin = async ({ directory, worktree, client }) => {
   const baselines = new Map<string, Awaited<ReturnType<typeof AutomaticChecks.files>>>()
@@ -51,7 +52,7 @@ export const AutomationsPlugin: Plugin = async ({ directory, worktree, client })
       await baseline(input.sessionID)
       for (const part of [...output.parts]) {
         if (part.type !== "file" || !Document.documentType(part.filename ?? "", part.mime)) continue
-        const text = await (async () => {
+        const extracted = await (async () => {
           const url = new URL(part.url)
           if (url.protocol === "file:")
             return Document.convert({ path: fileURLToPath(url), name: part.filename ?? url.pathname, mime: part.mime })
@@ -67,10 +68,12 @@ export const AutomationsPlugin: Plugin = async ({ directory, worktree, client })
           () =>
             `Document conversion failed for ${part.filename ?? "attachment"}. No text was extracted. Check that MarkItDown and the document's format dependencies are installed.`,
         )
+        const ranked = await Jev.context(extracted, input.sessionID)
+        const text = ranked ?? extracted
         const target = path.join(Global.Path.data, "tool-output", `tool_${randomUUID()}`)
-        if (text.length > 50_000) {
+        if (ranked || extracted.length > 50_000) {
           await mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
-          await writeFile(target, text, { mode: 0o600 })
+          await writeFile(target, extracted, { mode: 0o600 })
         }
         output.parts.push({
           id: `prt_${randomUUID()}`,
@@ -79,7 +82,7 @@ export const AutomationsPlugin: Plugin = async ({ directory, worktree, client })
           type: "text",
           synthetic: true,
           metadata: { convertedDocument: part.id },
-          text: `Document: ${part.filename ?? "attachment"}\n${text.slice(0, 50_000)}${text.length > 50_000 ? `\nFull converted text: ${target}. Use Read for remaining content.` : ""}`,
+          text: `Document: ${part.filename ?? "attachment"}\n${text.slice(0, 50_000)}${ranked || extracted.length > 50_000 ? `\nFull converted text: ${target}. Use Read for remaining content.` : ""}`,
         })
       }
       if (!started.has(input.sessionID)) {
@@ -95,8 +98,11 @@ export const AutomationsPlugin: Plugin = async ({ directory, worktree, client })
     "tool.execute.before": async (input) => {
       await baseline(input.sessionID)
     },
-    "tool.execute.after": async (input) => {
+    "tool.execute.after": async (input, output) => {
       dirty.add(input.sessionID)
+      if (input.tool !== "bash" && input.tool !== "shell") return
+      const ranked = await Jev.testFindings(output.output, input.sessionID)
+      if (ranked) output.output = ranked
     },
     "experimental.chat.messages.transform": async (_, output) => {
       const current = output.messages.at(-1)
@@ -107,7 +113,7 @@ export const AutomationsPlugin: Plugin = async ({ directory, worktree, client })
         if (!before) return "Automatic Semgrep unavailable: this workspace has no readable Git baseline."
         const after = await AutomaticChecks.files(directory)
         const changed = new Map([...after.files].filter(([name, hash]) => before.files.get(name) !== hash))
-        const findings = await AutomaticChecks.scan(after.root, changed)
+        const findings = await AutomaticChecks.scan(after.root, changed, sessionID)
         baselines.set(sessionID, after)
         return findings
       })().catch(() => "Automatic Semgrep failed or is unavailable. These changes have not passed a security scan.")

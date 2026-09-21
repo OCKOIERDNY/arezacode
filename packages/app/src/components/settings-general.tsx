@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { Component, Show, createMemo, createResource, onMount, type JSX } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -740,7 +741,7 @@ export const SettingsGeneral: Component = () => {
   )
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
+    <ScrollView viewportClass="flex flex-col px-4 pb-10 sm:px-10 sm:pb-10" class="h-full">
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex flex-col gap-1 pt-6 pb-8">
           <h2 class="text-16-medium text-text-strong">{language.t("settings.tab.general")}</h2>
@@ -772,7 +773,7 @@ export const SettingsGeneral: Component = () => {
           <AdvancedSection />
         </Show>
       </div>
-    </div>
+    </ScrollView>
   )
 }
 

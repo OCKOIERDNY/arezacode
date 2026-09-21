@@ -11,6 +11,7 @@ import { FileAttachment, Prompt } from "./prompt"
 import { SessionID } from "./session-id"
 import { Location } from "./location"
 import { SessionMessage } from "./session-message"
+import { Permission } from "./permission"
 import { Revert } from "./revert"
 
 export { FileAttachment }
@@ -50,6 +51,12 @@ const stepSettlementOptions = {
 
 export const UnknownError = SessionMessage.UnknownError
 export type UnknownError = SessionMessage.UnknownError
+
+export const ApprovalChanged = Event.define({
+  type: "session.next.approval.changed",
+  ...options,
+  schema: { ...Base, mode: Permission.ApprovalMode },
+})
 
 export const AgentSwitched = Event.define({
   type: "session.next.agent.switched",
@@ -155,6 +162,7 @@ export namespace Step {
       agent: Schema.String,
       model: Model.Ref,
       snapshot: Schema.String.pipe(optional),
+      usage: SessionMessage.Usage.pipe(optional),
     },
   })
   export type Started = typeof Started.Type
@@ -167,6 +175,7 @@ export namespace Step {
       assistantMessageID: SessionMessage.ID,
       finish: Schema.String,
       cost: Schema.Finite,
+      usage: SessionMessage.Usage.pipe(optional),
       tokens: Schema.Struct({
         input: Schema.Finite,
         output: Schema.Finite,
@@ -189,6 +198,7 @@ export namespace Step {
       ...Base,
       assistantMessageID: SessionMessage.ID,
       error: UnknownError,
+      usage: SessionMessage.Usage.pipe(optional),
     },
   })
   export type Failed = typeof Failed.Type
@@ -446,6 +456,7 @@ export namespace RevertEvent {
 }
 
 export const DurableDefinitions = Event.inventory(
+  ApprovalChanged,
   AgentSwitched,
   ModelSwitched,
   Moved,
@@ -477,6 +488,7 @@ export const DurableDefinitions = Event.inventory(
 )
 
 export const Definitions = Event.inventory(
+  ApprovalChanged,
   AgentSwitched,
   ModelSwitched,
   Moved,

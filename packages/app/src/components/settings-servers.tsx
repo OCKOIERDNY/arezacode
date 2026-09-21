@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { Show, type Component } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { ServerConnectionForm, ServerConnectionList, useServerManagementController } from "./dialog-select-server"
@@ -7,7 +8,7 @@ export const SettingsServers: Component = () => {
   const controller = useServerManagementController()
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
+    <ScrollView viewportClass="flex flex-col px-4 pb-10 sm:px-10 sm:pb-10" class="h-full">
       <div class="flex flex-col flex-1 min-h-0 max-w-[720px]">
         <Show
           when={controller.isFormMode()}
@@ -28,6 +29,6 @@ export const SettingsServers: Component = () => {
           </div>
         </Show>
       </div>
-    </div>
+    </ScrollView>
   )
 }

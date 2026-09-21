@@ -1,3 +1,6 @@
+import { Database } from "@opencode-ai/core/database/database"
+import { SessionTable } from "@opencode-ai/core/session/sql"
+import { eq } from "drizzle-orm"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { test, expect } from "bun:test"
 import os from "os"
@@ -15,7 +18,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 const env = AppNodeBuilder.build(
-  LayerNode.group([Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node]),
+  LayerNode.group([Database.node, Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node]),
   [[InstanceStore.bootstrapNode, noopBootstrap]],
 )
 const it = testEffect(env)
@@ -1171,4 +1174,39 @@ it.instance(
       if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
     }),
   { git: true },
+)
+
+
+it.instance("approval modes govern the desktop permission path", () =>
+  Effect.gen(function* () {
+    const context = yield* TestInstance
+    const instances = yield* InstanceStore.Service
+    const instance = yield* instances.load({ directory: context.directory })
+    const { db } = yield* Database.Service
+    const sessionID = SessionID.make("ses_approval_legacy")
+    yield* db.insert(SessionTable).values({
+      id: sessionID, project_id: instance.project.id, slug: "approval", directory: context.directory,
+      title: "approval", version: "test", metadata: { approvalMode: "ask" },
+    }).run().pipe(Effect.orDie)
+    const input = { sessionID, permission: "bash", patterns: ["pwd"], metadata: {}, always: ["*"], ruleset: [{ permission: "*", pattern: "*", action: "allow" as const }] }
+    const first = yield* ask(input).pipe(Effect.forkScoped)
+    const pending = yield* waitForPending(1)
+    expect(pending[0].metadata.approvalMode).toBe("ask")
+    yield* reply({ requestID: pending[0].id, reply: "always" })
+    yield* Fiber.join(first)
+    const second = yield* ask(input).pipe(Effect.forkScoped)
+    expect(yield* waitForPending(1)).toHaveLength(1)
+    yield* rejectAll()
+    yield* Fiber.await(second)
+    yield* db.update(SessionTable).set({ metadata: { approvalMode: "auto" } }).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+    yield* ask({ ...input, permission: "edit", ruleset: [] })
+    const command = yield* ask(input).pipe(Effect.forkScoped)
+    expect(yield* waitForPending(1)).toHaveLength(1)
+    yield* rejectAll()
+    yield* Fiber.await(command)
+    yield* db.update(SessionTable).set({ metadata: { approvalMode: "full" } }).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+    yield* ask(input)
+    const denied = yield* ask({ ...input, ruleset: [{ permission: "*", pattern: "*", action: "deny" }] }).pipe(Effect.exit)
+    expect(Exit.isFailure(denied)).toBe(true)
+  }), { git: true },
 )

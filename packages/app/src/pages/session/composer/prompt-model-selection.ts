@@ -51,6 +51,11 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
   )
 
   const selection = {
+    auto: () => prompt.model.current()?.auto ?? false,
+    setAuto() {
+      const model = current()
+      if (model) prompt.model.set({ providerID: model.provider.id, modelID: model.id, auto: true })
+    },
     ready: models.ready,
     current,
     recent: recentModels,

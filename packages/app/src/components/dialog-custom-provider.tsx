@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -176,7 +177,7 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
   }
 
   return (
-    <div class="flex flex-col gap-6 px-2.5 pb-3 overflow-y-auto max-h-[60vh]">
+    <ScrollView viewportClass="flex flex-col gap-6 px-2.5 pb-3" class="max-h-[60vh]">
       <div class="px-2.5 flex gap-4 items-center">
         <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
         <div class="text-16-medium text-text-strong">{language.t("provider.custom.title")}</div>
@@ -325,6 +326,6 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
           {saveMutation.isPending ? language.t("common.saving") : language.t("common.submit")}
         </Button>
       </form>
-    </div>
+    </ScrollView>
   )
 }

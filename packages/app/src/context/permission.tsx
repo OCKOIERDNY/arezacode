@@ -296,6 +296,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
+    if (permission.metadata?.approvalMode) return false
     return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory)
   }
 
@@ -305,6 +306,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   async function shouldAutoRespondResolved(permission: PermissionRequest, directory?: string) {
+    if (permission.metadata?.approvalMode) return false
     const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
     if (override !== undefined) return override
     if (input.sync.session.lineage.peek(permission.sessionID)) return shouldAutoRespond(permission, directory)

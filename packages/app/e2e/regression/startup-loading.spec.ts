@@ -58,6 +58,12 @@ for (const opened of [false, true]) {
     try {
       await expect.poll(() => messageRequests).toBeGreaterThan(0)
       await expect(splash).toHaveCount(1)
+      await expect(splash).toHaveCSS("position", "fixed")
+      expect(await splash.boundingBox()).toEqual({ x: 0, y: 0, ...page.viewportSize()! })
+      expect(await splash.getByRole("progressbar").boundingBox()).toEqual({
+        x: 0, y: 0, width: page.viewportSize()!.width, height: 2,
+      })
+      expect(await page.evaluate(() => document.elementFromPoint(20, 100)?.closest('[data-component="startup-splash"]') !== null)).toBe(true)
       await expect
         .poll(() => splash.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth))
         .toBeGreaterThan(0)
@@ -90,6 +96,52 @@ for (const opened of [false, true]) {
     }
   })
 }
+
+test("fallback loading covers the sidebar outside the panel container", async ({ page }) => {
+  const metadata = Promise.withResolvers<void>()
+  await mockOpenCodeServer(page, {
+    sessions: fixture.sessions.filter((session) => session.id === fixture.sourceID),
+    provider: fixture.provider,
+    directory: fixture.directory,
+    project: fixture.project,
+    pageMessages,
+  })
+  await page.route(`**/session/${fixture.targetID}`, async (route) => {
+    if (route.request().isNavigationRequest()) return route.fallback()
+    await metadata.promise
+    return route.fulfill({
+      json: fixture.sessions.find((session) => session.id === fixture.targetID),
+      headers: { "access-control-allow-origin": "*" },
+    })
+  })
+  await page.addInitScript(({ server }) => {
+    localStorage.setItem("opencode.settings.dat:defaultServerUrl", server)
+    localStorage.setItem("opencode.global.dat:server", JSON.stringify({ list: [server] }))
+    localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
+  }, { server })
+  try {
+    await page.goto(`/server/${base64Encode(server)}/session/${fixture.sourceID}`)
+    await expect(page.locator('[data-component="startup-splash"]:visible')).toHaveCount(0)
+    await expect(page.getByRole("heading", { name: fixture.expected.sourceTitle })).toBeVisible()
+    await page.evaluate((href) => {
+      window.history.pushState({}, "", href)
+      window.dispatchEvent(new PopStateEvent("popstate"))
+    }, `/server/${base64Encode(server)}/session/${fixture.targetID}`)
+    const splash = page.locator('[data-component="startup-splash"]:visible')
+    await expect(splash).toHaveCount(1)
+    expect(await splash.evaluate((element) => !!element.closest("#root"))).toBe(false)
+    expect(await splash.boundingBox()).toEqual({ x: 0, y: 0, ...page.viewportSize()! })
+    expect(await page.evaluate(() => document.elementFromPoint(20, 100)?.closest('[data-component="startup-splash"]') !== null)).toBe(true)
+    await page.screenshot({ path: "/tmp/areza-startup-full-window.png" })
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    await expect(splash.locator("img")).toHaveCSS("animation-name", "none")
+    expect(await splash.getByRole("progressbar").evaluate((element) => getComputedStyle(element, "::after").animationName)).toBe("none")
+    metadata.resolve()
+    await expect(splash).toHaveCount(0)
+  } finally {
+    metadata.resolve()
+  }
+})
 
 test("waits for a restored file without waiting for the hidden review renderer", async ({ page }) => {
   const content = Promise.withResolvers<void>()

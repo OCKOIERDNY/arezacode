@@ -49,6 +49,22 @@ const location = Location.Ref.make({ directory: AbsolutePath.make("/project") })
 const id = SessionV2.ID.create()
 
 describe("SessionV2.create", () => {
+  it.effect("persists approval changes without losing other session metadata", () =>
+    Effect.gen(function* () {
+      const service = yield* SessionV2.Service
+      const session = yield* service.create({ location, approvalMode: "ask" })
+      expect(session.approvalMode).toBe("ask")
+      const { db } = yield* Database.Service
+      yield* db.update(SessionTable).set({ metadata: { approvalMode: "ask", retained: true } }).where(eq(SessionTable.id, session.id)).run().pipe(Effect.orDie)
+      yield* service.setApproval({ sessionID: session.id, mode: "full" })
+      expect((yield* service.get(session.id)).approvalMode).toBe("full")
+      const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, session.id)).get().pipe(Effect.orDie)
+      expect(row?.metadata).toEqual({ approvalMode: "full", retained: true })
+      yield* service.setApproval({ sessionID: session.id, mode: "default" })
+      expect((yield* service.get(session.id)).approvalMode).toBe("default")
+    }),
+  )
+
   it.effect("creates a fresh projected session when the ID is omitted", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service

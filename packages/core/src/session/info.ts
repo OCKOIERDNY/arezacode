@@ -1,3 +1,5 @@
+import { Permission } from "@opencode-ai/schema/permission"
+import { Schema } from "effect"
 import { DateTime } from "effect"
 import { AgentV2 } from "../agent"
 import { Location } from "../location"
@@ -16,6 +18,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
     id: SessionSchema.ID.make(row.id),
     projectID: ProjectV2.ID.make(row.project_id),
     title: row.title,
+    approvalMode: Schema.is(Permission.ApprovalMode)(row.metadata?.approvalMode) ? row.metadata.approvalMode : undefined,
     parentID: row.parent_id ? SessionSchema.ID.make(row.parent_id) : undefined,
     agent: row.agent ? AgentV2.ID.make(row.agent) : undefined,
     model: row.model

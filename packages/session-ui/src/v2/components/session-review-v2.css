@@ -8,21 +8,13 @@
 }
 
 [data-component="session-review-v2"] [data-slot="session-review-v2-body"] {
-  display: flex;
   flex: 1;
   min-height: 0;
-  overflow-x: auto;
+}
+
+[data-slot="session-review-v2-body"] > .scroll-view__viewport {
+  display: flex;
   overflow-y: hidden;
-
-  &::-webkit-scrollbar {
-    height: 10px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    border: 2px solid var(--v2-background-bg-base);
-    border-radius: 999px;
-    background: var(--v2-border-border-muted);
-  }
 }
 
 [data-component="session-review-v2-sidebar-root"] {
@@ -186,26 +178,6 @@
 
 [data-component="session-review-v2-sidebar-root"] [data-slot="session-review-v2-sidebar-tree"] .scroll-view__viewport {
   padding: 4px 8px 12px;
-}
-
-[data-component="session-review-v2-sidebar-root"] [data-slot="session-review-v2-sidebar-tree"] .scroll-view__thumb {
-  width: 16px;
-}
-
-[data-component="session-review-v2-sidebar-root"]
-  [data-slot="session-review-v2-sidebar-tree"]
-  .scroll-view__thumb::after {
-  width: 6px;
-  background-color: var(--v2-border-border-muted, var(--border-weak-base));
-}
-
-[data-component="session-review-v2-sidebar-root"]
-  [data-slot="session-review-v2-sidebar-tree"]
-  .scroll-view__thumb:hover::after,
-[data-component="session-review-v2-sidebar-root"]
-  [data-slot="session-review-v2-sidebar-tree"]
-  .scroll-view__thumb[data-dragging="true"]::after {
-  background-color: var(--v2-border-border-strong, var(--border-strong-base));
 }
 
 [data-component="session-review-v2"] [data-slot="session-review-v2-preview"] {
@@ -430,7 +402,7 @@
 [data-component="session-review-v2"] [data-slot="session-review-v2-diff-scroll"] {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   --line-comment-z: 5;
   --line-comment-popover-z: 30;
   --line-comment-open-z: 6;

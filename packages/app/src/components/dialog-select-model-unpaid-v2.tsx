@@ -1,4 +1,5 @@
-import { DialogBody, DialogHeader, DialogTitle, DialogV2 } from "@opencode-ai/ui/v2/dialog-v2"
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
+import { DialogHeader, DialogTitle, DialogV2 } from "@opencode-ai/ui/v2/dialog-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/v2/badge-v2"
@@ -74,7 +75,7 @@ export const DialogSelectModelUnpaidV2: Component<{ model?: ModelState }> = (pro
       <DialogHeader closeLabel={language.t("common.close")}>
         <DialogTitle>{language.t("dialog.model.select.title")}</DialogTitle>
       </DialogHeader>
-      <DialogBody class="max-h-[calc(100vh_-_68px)] min-h-0 flex-none gap-0 overflow-y-auto px-2 pb-2">
+      <ScrollView data-slot="dialog-body" class="max-h-[calc(100vh_-_68px)] min-h-0 flex-none" viewportClass="px-2 pb-2">
         <div ref={listEl} class="flex min-h-0 flex-col">
           <div data-section="free-models" class="flex w-full flex-col items-start pb-3">
             <div class="flex h-8 w-full flex-none select-none flex-row items-center px-3 pb-2">
@@ -170,7 +171,7 @@ export const DialogSelectModelUnpaidV2: Component<{ model?: ModelState }> = (pro
             </div>
           </div>
         </div>
-      </DialogBody>
+      </ScrollView>
     </DialogV2>
   )
 }

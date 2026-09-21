@@ -11,6 +11,8 @@ type Input = {
   readonly agent: string
   readonly model: ModelV2.Ref
   readonly snapshot?: string
+  readonly prices?: readonly (typeof ModelV2.Cost.Type)[]
+  readonly request?: SessionMessage.Usage["request"]
 }
 
 const safe = (value: number | undefined) => Math.max(0, Number.isFinite(value) ? (value ?? 0) : 0)
@@ -20,10 +22,38 @@ const tokens = (usage: Usage | undefined) => {
   const read = safe(usage?.cacheReadInputTokens)
   const write = safe(usage?.cacheWriteInputTokens)
   return {
-    input: safe(usage?.nonCachedInputTokens),
+    input: safe(usage?.nonCachedInputTokens ?? (usage?.inputTokens === undefined ? undefined : usage.inputTokens - read - write)),
     output: safe(usage?.visibleOutputTokens),
     reasoning,
     cache: { read, write },
+  }
+}
+
+export function accountUsage(usage: Usage | undefined, input: Pick<Input, "prices" | "request"> = {}): SessionMessage.Usage {
+  const finite = (value: number | undefined) => value !== undefined && Number.isFinite(value) && value >= 0 ? value : undefined
+  const prices = input.prices?.filter((price) => !price.tier || price.tier.size < (usage?.inputTokens ?? 0))
+    .toSorted((a, b) => (b.tier?.size ?? 0) - (a.tier?.size ?? 0))[0]
+  const counts = tokens(usage)
+  const reported = finite(usage?.cost)
+  const estimated = prices && usage?.inputTokens !== undefined && usage.outputTokens !== undefined
+    ? (counts.input * prices.input + safe(usage.outputTokens) * prices.output + counts.cache.read * prices.cache.read + counts.cache.write * prices.cache.write) / 1_000_000
+    : undefined
+  return {
+    version: 1,
+    input: finite(usage?.inputTokens),
+    output: finite(usage?.outputTokens),
+    reasoning: finite(usage?.reasoningTokens),
+    cacheRead: finite(usage?.cacheReadInputTokens),
+    cacheWrite: finite(usage?.cacheWriteInputTokens),
+    total: finite(usage?.totalTokens),
+    cost: reported ?? finite(estimated),
+    upstreamCost: finite(usage?.upstreamCost),
+    responseID: usage?.responseID,
+    responseModel: usage?.responseModel,
+    responseProvider: usage?.responseProvider,
+    costSource: reported !== undefined ? "reported" : finite(estimated) !== undefined ? "estimated" : "unknown",
+    prices: reported === undefined ? prices : undefined,
+    request: input.request,
   }
 }
 
@@ -69,7 +99,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
   let assistantActive = false
   let assistantFailed = false
   let providerFailed = false
-  let stepSettlement: { readonly finish: string; readonly tokens: ReturnType<typeof tokens> } | undefined
+  let stepSettlement: { readonly finish: string; readonly tokens: ReturnType<typeof tokens>; readonly usage: SessionMessage.Usage } | undefined
 
   const startAssistant = Effect.fnUntraced(function* () {
     if (assistantMessageID !== undefined) return assistantMessageID
@@ -80,6 +110,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       assistantMessageID,
       timestamp: yield* timestamp,
       snapshot: input.snapshot,
+      usage: accountUsage(undefined, input),
     })
     return assistantMessageID
   })
@@ -207,6 +238,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       timestamp: yield* timestamp,
       assistantMessageID,
       error: { type: "unknown", message },
+      usage: stepSettlement?.usage ?? accountUsage(undefined, input),
     })
   })
 
@@ -397,9 +429,10 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         yield* flush()
         assistantActive = false
         if (stepSettlement) return yield* Effect.die("Duplicate step finish")
-        stepSettlement = { finish: event.reason, tokens: tokens(event.usage) }
+        stepSettlement = { finish: event.reason, tokens: tokens(event.usage), usage: accountUsage(event.usage, input) }
         return
       case "finish":
+        if (stepSettlement && event.usage) stepSettlement = { ...stepSettlement, tokens: tokens(event.usage), usage: accountUsage(event.usage, input) }
         return
       case "provider-error":
         providerFailed = true

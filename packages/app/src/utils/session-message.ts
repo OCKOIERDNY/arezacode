@@ -7,6 +7,13 @@ import type {
 } from "@opencode-ai/client/promise"
 import type { AssistantMessage, FilePart, Message, Part, ToolPart, UserMessage } from "@opencode-ai/sdk/v2"
 import { Option, Schema } from "effect"
+import { SessionMessage } from "@opencode-ai/schema/session-message"
+
+const decodeUsage = Schema.decodeUnknownOption(SessionMessage.Usage)
+export const sessionUsage = (value: object) => {
+  const usage = Reflect.get(value, "usage")
+  return usage === undefined ? undefined : Option.getOrUndefined(decodeUsage(usage))
+}
 
 const emptyTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
 const emptyModel: { id: string; providerID: string; variant?: string } = { id: "", providerID: "" }
@@ -239,6 +246,7 @@ function userParts(sessionID: string, message: SessionMessageUser): Part[] {
 }
 
 function assistantMessage(sessionID: string, parentID: string, message: SessionMessageAssistant): AssistantMessage {
+  const usage = sessionUsage(message)
   const error = message.error
     ? message.error.type.toLowerCase().includes("abort") || message.error.type.toLowerCase().includes("interrupt")
       ? { name: "MessageAbortedError" as const, data: { message: message.error.message } }
@@ -258,6 +266,7 @@ function assistantMessage(sessionID: string, parentID: string, message: SessionM
     agent: message.agent,
     path: { cwd: "", root: "" },
     cost: message.cost ?? 0,
+    ...(usage ? { usage } : {}),
     tokens: message.tokens ?? emptyTokens,
     finish: message.finish,
   }

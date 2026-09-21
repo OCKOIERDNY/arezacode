@@ -1293,7 +1293,6 @@ export function MessageTimeline(props: {
           width: "100%",
           height: `${item().size}px`,
           overflow: "clip",
-          // Rounded virtual measurements can otherwise clip a framed row's outer paint.
           "overflow-clip-margin": row()._tag === "TurnGap" ? undefined : "0.5px",
         }}
       >
@@ -1409,6 +1408,7 @@ export function MessageTimeline(props: {
                 </HoverCard.Trigger>
                 <HoverCard.Portal>
                   <HoverCard.Content data-component="chat-changes-preview">
+                    <ScrollView class="chat-changes-scroll">
                     <ul aria-label={language.t("session.review.filesChanged", { count: props.diffs.length })}>
                       <For each={props.diffs}>
                         {(diff) => (
@@ -1424,6 +1424,7 @@ export function MessageTimeline(props: {
                         )}
                       </For>
                     </ul>
+                    </ScrollView>
                   </HoverCard.Content>
                 </HoverCard.Portal>
               </HoverCard>

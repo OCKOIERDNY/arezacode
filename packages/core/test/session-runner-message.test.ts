@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Message, Model } from "@opencode-ai/llm"
+import { Message, Model, Usage } from "@opencode-ai/llm"
+import { accountUsage } from "@opencode-ai/core/session/runner/publish-llm-event"
 import * as OpenAIChat from "@opencode-ai/llm/protocols/openai-chat"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -12,6 +13,18 @@ import { DateTime } from "effect"
 const created = DateTime.makeUnsafe(0)
 const id = (value: string) => SessionMessage.ID.make(`msg_${value}`)
 const model = Model.make({ id: "model", provider: "provider", route: OpenAIChat.route })
+
+test("usage keeps missing counts unknown and snapshots estimates separately from provider charges", () => {
+  expect(accountUsage(undefined)).toMatchObject({ version: 1, costSource: "unknown", cost: undefined, input: undefined, total: undefined })
+  const prices = [{ input: 2, output: 10, cache: { read: 0.2, write: 2.5 } }]
+  const usage = new Usage({ inputTokens: 1000, outputTokens: 120, reasoningTokens: 20, cacheReadInputTokens: 600, cacheWriteInputTokens: 100, totalTokens: 1120 })
+  expect(accountUsage(usage, { prices })).toMatchObject({ costSource: "estimated", cost: 0.00217, prices: prices[0], input: 1000, output: 120 })
+  expect(accountUsage(new Usage({ ...usage, cost: 0 }), { prices })).toMatchObject({ costSource: "reported", cost: 0, prices: undefined })
+  expect(accountUsage(new Usage({ cost: Number.NaN }))).toMatchObject({ costSource: "unknown", cost: undefined })
+  const tiers = [...prices, { tier: { type: "context" as const, size: 200_000 }, input: 4, output: 20, cache: { read: 0.4, write: 5 } }]
+  expect(accountUsage(new Usage({ inputTokens: 200_000, outputTokens: 0 }), { prices: tiers }).cost).toBe(0.4)
+  expect(accountUsage(new Usage({ inputTokens: 200_001, outputTokens: 0 }), { prices: tiers }).cost).toBe(0.800004)
+})
 
 describe("toLLMMessages", () => {
   test("omits empty assistant turns", () => {

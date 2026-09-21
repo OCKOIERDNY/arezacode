@@ -8,6 +8,7 @@ import { Project } from "./project"
 import { DateTimeUtcFromMillis, optional, RelativePath } from "./schema"
 import { SessionEvent } from "./session-event"
 import { SessionID } from "./session-id"
+import { Permission } from "./permission"
 import { Revert } from "./revert"
 
 export const ID = SessionID
@@ -38,6 +39,7 @@ export const Info = Schema.Struct({
     archived: DateTimeUtcFromMillis.pipe(optional),
   }),
   title: Schema.String,
+  approvalMode: Permission.ApprovalMode.pipe(optional),
   location: Location.Ref,
   subpath: RelativePath.pipe(optional),
   revert: Revert.State.pipe(optional),

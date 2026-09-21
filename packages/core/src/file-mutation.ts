@@ -5,6 +5,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { dirname } from "path"
 import { KeyedMutex } from "./effect/keyed-mutex"
 import { FSUtil } from "./fs-util"
+import { AutomaticChecks } from "./automatic-checks"
 
 export interface Target {
   readonly canonical: string
@@ -14,11 +15,13 @@ export interface Target {
 export interface WriteInput {
   readonly target: Target
   readonly content: string | Uint8Array
+  readonly sessionID?: string
 }
 
 export interface TextWriteInput {
   readonly target: Target
   readonly content: string
+  readonly sessionID?: string
 }
 
 export interface ConditionalWriteInput extends WriteInput {
@@ -37,6 +40,8 @@ export class TargetExistsError extends Schema.TaggedErrorClass<TargetExistsError
   path: Schema.String,
 }) {}
 
+export class ReuseError extends Schema.TaggedErrorClass<ReuseError>()("FileMutation.ReuseError", { message: Schema.String }) {}
+
 export interface WriteResult {
   readonly operation: "write"
   readonly target: string
@@ -53,14 +58,14 @@ export interface RemoveResult {
 
 export interface Interface {
   /** Create without replacing an existing target. */
-  readonly create: (input: WriteInput) => Effect.Effect<WriteResult, TargetExistsError | FSUtil.Error>
-  readonly write: (input: WriteInput) => Effect.Effect<WriteResult, FSUtil.Error>
+  readonly create: (input: WriteInput) => Effect.Effect<WriteResult, TargetExistsError | ReuseError | FSUtil.Error>
+  readonly write: (input: WriteInput) => Effect.Effect<WriteResult, ReuseError | FSUtil.Error>
   /** Write text while retaining an existing UTF-8 BOM and emitting at most one BOM. */
-  readonly writeTextPreservingBom: (input: TextWriteInput) => Effect.Effect<WriteResult, FSUtil.Error>
+  readonly writeTextPreservingBom: (input: TextWriteInput) => Effect.Effect<WriteResult, ReuseError | FSUtil.Error>
   /** Commit only if an existing target still has the expected bytes. */
   readonly writeIfUnchanged: (
     input: ConditionalWriteInput,
-  ) => Effect.Effect<WriteResult, StaleContentError | FSUtil.Error>
+  ) => Effect.Effect<WriteResult, StaleContentError | ReuseError | FSUtil.Error>
   readonly remove: (input: RemoveInput) => Effect.Effect<RemoveResult, FSUtil.Error>
 }
 
@@ -75,6 +80,10 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
+    const guard = (input: WriteInput, before: string) => input.sessionID ? Effect.tryPromise({
+      try: () => AutomaticChecks.guardReuse(input.sessionID!, input.target.canonical, before, typeof input.content === "string" ? input.content : new TextDecoder().decode(input.content)),
+      catch: (error) => new ReuseError({ message: error instanceof Error ? error.message : "Reuse check failed" }),
+    }) : Effect.void
     const locks = KeyedMutex.makeUnsafe<string>()
     const withTargetLock =
       (target: Target) =>
@@ -99,6 +108,7 @@ const layer = Layer.effect(
       withTargetLock(input.target)(
         Effect.gen(function* () {
           const existed = yield* fs.exists(input.target.canonical)
+          yield* guard(input, existed ? yield* fs.readFileString(input.target.canonical) : "")
           yield* fs.writeWithDirs(input.target.canonical, input.content)
           return writeResult(input.target, existed)
         }),
@@ -112,6 +122,7 @@ const layer = Layer.effect(
           const current = yield* fs
             .readFile(input.target.canonical)
             .pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)))
+          yield* guard(input, current ? new TextDecoder().decode(current) : "")
           yield* fs.writeWithDirs(
             input.target.canonical,
             joinBom(next.text, Boolean(current && hasUtf8Bom(current)) || next.bom),
@@ -124,6 +135,7 @@ const layer = Layer.effect(
     const create = Effect.fn("FileMutation.create")((input: WriteInput) =>
       withTargetLock(input.target)(
         Effect.gen(function* () {
+          yield* guard(input, "")
           const write =
             typeof input.content === "string"
               ? fs.writeFileString(input.target.canonical, input.content, { flag: "wx" })
@@ -148,6 +160,7 @@ const layer = Layer.effect(
           if (!sameBytes(current, input.expected)) {
             return yield* new StaleContentError({ path: input.target.canonical })
           }
+          yield* guard(input, new TextDecoder().decode(current))
           yield* typeof input.content === "string"
             ? fs.writeFileString(input.target.canonical, input.content)
             : fs.writeFile(input.target.canonical, input.content)

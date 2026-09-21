@@ -35,9 +35,8 @@
         background: var(--v2-background-bg-deep, var(--background-base, #181818));
       "
     >
-      <div role="progressbar" aria-label="ArezaCode">
-        <img src="/areza-flower.svg" width="72" height="72" alt="" />
-      </div>
+      <div data-slot="startup-progress" role="progressbar" aria-label="ArezaCode" style="position: absolute; inset: 0 0 auto; height: 2px"></div>
+      <img src="/areza-flower.svg" width="72" height="72" alt="" />
     </div>
     <script src="/src/entry.tsx" type="module"></script>
   </body>

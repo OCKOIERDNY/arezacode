@@ -30,8 +30,12 @@ export type ModelOptions = Omit<RouteDefaultsInput, "providerOptions"> &
     readonly providerOptions?: OpenRouterProviderOptionsInput
   }
 
-const OpenRouterBody = Schema.StructWithRest(Schema.Struct(OpenAIChat.bodyFields), [
-  Schema.Record(Schema.String, Schema.Any),
+const OpenRouterBody = Schema.StructWithRest(Schema.Struct({
+  ...OpenAIChat.bodyFields,
+  messages: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+  tools: Schema.optional(Schema.Array(Schema.Record(Schema.String, Schema.Unknown))),
+}), [
+  Schema.Record(Schema.String, Schema.Unknown),
 ])
 export type OpenRouterBody = Schema.Schema.Type<typeof OpenRouterBody>
 
@@ -45,6 +49,18 @@ export const protocol = Protocol.make({
           (body) =>
             ({
               ...body,
+              ...(request.model.id.startsWith("anthropic/") ? {
+                messages: body.messages.map((message, index) => {
+                  const hint = message.role === "system" && index === body.messages.findLastIndex((item) => item.role === "system")
+                    ? request.system.at(-1)?.cache
+                    : message.role === "user" && index === body.messages.findLastIndex((item) => item.role === "user")
+                      ? request.messages.findLast((item) => item.role === "user")?.content.flatMap((part) => "cache" in part && part.cache ? [part.cache] : []).at(-1)
+                      : undefined
+                  if (!hint || typeof message.content !== "string") return message
+                  return { ...message, content: [{ type: "text", text: message.content, cache_control: { type: "ephemeral", ...(hint.ttlSeconds === 3600 ? { ttl: "1h" } : {}) } }] }
+                }),
+                tools: body.tools?.map((tool, index) => request.tools[index]?.cache ? { ...tool, cache_control: { type: "ephemeral", ...(request.tools[index]?.cache?.ttlSeconds === 3600 ? { ttl: "1h" } : {}) } } : tool),
+              } : {}),
               ...bodyOptions(request.providerOptions?.openrouter),
             }) as OpenRouterBody,
         ),
@@ -96,3 +112,4 @@ export const configure = (input: ModelOptions = {}) => {
 
 export const provider = configure()
 export const model = provider.model
+export * as OpenRouter from "./openrouter"

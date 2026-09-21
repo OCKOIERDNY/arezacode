@@ -114,7 +114,7 @@ const layer = Layer.effectDiscard(
                       ? new ToolFailure({
                           message: "File changed after permission approval. Read it again before editing.",
                         })
-                      : new ToolFailure({ message: `Unable to edit ${input.path}` }),
+                      : new ToolFailure({ message: error instanceof FileMutation.ReuseError ? error.message : `Unable to edit ${input.path}` }),
                   ),
                 )
 
@@ -191,6 +191,7 @@ const layer = Layer.effectDiscard(
                 const result = yield* unableToEdit(
                   files.writeIfUnchanged({
                     target,
+                    sessionID: context.sessionID,
                     expected: source.content,
                     content: joinBom(next.text, source.bom || next.bom),
                   }),

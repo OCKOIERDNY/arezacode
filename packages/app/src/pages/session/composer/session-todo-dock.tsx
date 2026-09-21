@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import type { Todo } from "@opencode-ai/sdk/v2"
 import { AnimatedNumber } from "@opencode-ai/ui/animated-number"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
@@ -223,8 +224,8 @@ function TodoList(props: { todos: Todo[] }) {
 
   return (
     <div class="relative">
-      <div
-        class="px-3 pb-11 flex flex-col gap-1.5 max-h-42 overflow-y-auto no-scrollbar"
+      <ScrollView viewportClass="px-3 pb-11 flex flex-col gap-1.5"
+        class="max-h-42"
         style={{ "overflow-anchor": "none" }}
         onScroll={(e) => {
           setStore("stuck", e.currentTarget.scrollTop > 0)
@@ -264,7 +265,7 @@ function TodoList(props: { todos: Todo[] }) {
             </Checkbox>
           )}
         </Index>
-      </div>
+      </ScrollView>
       <div
         class="pointer-events-none absolute top-0 left-0 right-0 h-4 transition-opacity duration-150"
         style={{

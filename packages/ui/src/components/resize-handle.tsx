@@ -1,4 +1,4 @@
-import { splitProps, type JSX } from "solid-js"
+import { batch, onCleanup, splitProps, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 
 export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElement>, "onResize"> {
@@ -17,6 +17,8 @@ export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElemen
 
 export function ResizeHandle(props: ResizeHandleProps) {
   const [state, setState] = createStore({ dragging: false })
+  let cleanup: (() => void) | undefined
+  onCleanup(() => cleanup?.())
   const [local, rest] = splitProps(props, [
     "direction",
     "edge",
@@ -35,6 +37,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
   const handleMouseDown = (e: MouseEvent) => {
     if (e.detail > 1) return
     e.preventDefault()
+    cleanup?.()
     const edge = local.edge ?? (local.direction === "vertical" ? "start" : "end")
     const start = local.direction === "horizontal" ? e.clientX : e.clientY
     const rtl =
@@ -50,12 +53,27 @@ export function ResizeHandle(props: ResizeHandleProps) {
     const onCollapseChange = local.onCollapseChange
     let current = startSize
     let collapsed = false
+    let frame: number | undefined
 
+    const userSelect = document.body.style.userSelect
+    const overflow = document.body.style.overflow
     document.body.style.userSelect = "none"
     document.body.style.overflow = "hidden"
     setState("dragging", true)
     const cursor = document.body.style.cursor
     document.body.style.cursor = local.direction === "horizontal" ? "col-resize" : "row-resize"
+
+    const resize = () => {
+      frame = undefined
+      batch(() => {
+        const nextCollapsed = local.collapseThreshold !== undefined && current < threshold
+        if (nextCollapsed !== collapsed) {
+          collapsed = nextCollapsed
+          onCollapseChange?.(collapsed)
+        }
+        onResize(Math.min(max, Math.max(min, current)))
+      })
+    }
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const pos = local.direction === "horizontal" ? moveEvent.clientX : moveEvent.clientY
@@ -68,21 +86,15 @@ export function ResizeHandle(props: ResizeHandleProps) {
             ? start - pos
             : pos - start
       current = startSize + delta
-      const nextCollapsed = local.collapseThreshold !== undefined && current < threshold
-      if (nextCollapsed !== collapsed) {
-        collapsed = nextCollapsed
-        onCollapseChange?.(collapsed)
-      }
-      onResize(Math.min(max, Math.max(min, current)))
+      frame ??= requestAnimationFrame(resize)
     }
 
     const onMouseUp = () => {
-      document.body.style.userSelect = ""
-      document.body.style.overflow = ""
-      document.body.style.cursor = cursor
-      setState("dragging", false)
-      document.removeEventListener("mousemove", onMouseMove)
-      document.removeEventListener("mouseup", onMouseUp)
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame)
+        resize()
+      }
+      cleanup?.()
       local.onResizeEnd?.(current, startSize)
 
       if (collapsed) {
@@ -92,8 +104,21 @@ export function ResizeHandle(props: ResizeHandleProps) {
       onCollapseChange?.(false)
     }
 
+    cleanup = () => {
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      frame = undefined
+      document.body.style.userSelect = userSelect
+      document.body.style.overflow = overflow
+      document.body.style.cursor = cursor
+      setState("dragging", false)
+      document.removeEventListener("mousemove", onMouseMove)
+      document.removeEventListener("mouseup", onMouseUp)
+      window.removeEventListener("blur", onMouseUp)
+      cleanup = undefined
+    }
     document.addEventListener("mousemove", onMouseMove)
     document.addEventListener("mouseup", onMouseUp)
+    window.addEventListener("blur", onMouseUp)
   }
 
   return (

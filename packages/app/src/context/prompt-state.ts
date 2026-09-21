@@ -46,6 +46,7 @@ export type ContentPart = TextPart | FileAttachmentPart | AgentPart | ImageAttac
 export type Prompt = ContentPart[]
 
 export type PromptModel = {
+  auto?: boolean
   providerID: string
   modelID: string
   variant?: string | null

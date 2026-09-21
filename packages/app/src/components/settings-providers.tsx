@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
@@ -146,7 +147,7 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
   }
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
+    <ScrollView viewportClass="flex flex-col px-4 pb-10 sm:px-10 sm:pb-10" class="h-full">
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex items-center justify-between gap-4 pt-6 pb-8 max-w-[720px]">
           <h2 class="text-16-medium text-text-strong">{language.t("settings.providers.title")}</h2>
@@ -259,6 +260,6 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
           </Button>
         </div>
       </div>
-    </div>
+    </ScrollView>
   )
 }

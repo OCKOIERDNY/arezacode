@@ -1,3 +1,4 @@
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import type { IntegrationMethod, IntegrationOauthConnectOutput } from "@opencode-ai/client/promise"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -307,7 +308,7 @@ function ProviderPickerV2(props: {
         />
       </div>
       <div class="relative min-h-0 flex-1">
-        <div class="flex size-full min-h-0 flex-col gap-4 overflow-y-auto pb-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <ScrollView viewportClass="flex flex-col gap-4 pb-8" class="size-full min-h-0">
           <For
             each={[
               { title: language.t("dialog.provider.group.popular"), items: popular },
@@ -366,7 +367,7 @@ function ProviderPickerV2(props: {
               {language.t("dialog.provider.empty")}
             </div>
           </Show>
-        </div>
+        </ScrollView>
         <div
           class="pointer-events-none absolute inset-x-0 bottom-0 h-10"
           style={{ background: "linear-gradient(to bottom, transparent, var(--v2-background-bg-layer-01))" }}

@@ -133,6 +133,24 @@ const call = (input: typeof BashTool.Input.Type, id = "call-bash") => ({
 const it = testEffect(Layer.empty)
 
 describe("BashTool", () => {
+  it.live("uses configured mechanical checks and rejects inline scripts without a fallback explanation", () => Effect.acquireUseRelease(
+    Effect.promise(() => tmpdir()),
+    (tmp) => { reset(); return withTool(tmp.path, (registry) => Effect.gen(function* () {
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "package.json"), JSON.stringify({ scripts: { typecheck: "bun --version" } })))
+      const blocked = yield* settleTool(registry, call({ command: "python -c 'print(1)'" }))
+      expect(blocked.result.type).toBe("error")
+      expect(runs).toHaveLength(0)
+      const checked = yield* settleTool(registry, { sessionID, ...toolIdentity, call: { type: "tool-call", id: "mechanical-check", name: "project_check", input: { operation: "typecheck" } } })
+      expect(checked.result.type).toBe("content")
+      expect(runs[0]?.command).toBe("bun")
+      expect(runs[0]?.shell).toBeUndefined()
+      expect(assertions.some((entry) => entry.action === "bash")).toBe(true)
+      const unsupported = yield* settleTool(registry, { sessionID, ...toolIdentity, call: { type: "tool-call", id: "mechanical-missing", name: "project_check", input: { operation: "lint" } } })
+      expect(unsupported.result.type).toBe("error")
+      expect(runs).toHaveLength(1)
+    })) },
+    (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+  ))
   it.live("registers and returns structured successful output from the active Location", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -141,8 +159,8 @@ describe("BashTool", () => {
         return withTool(tmp.path, (registry) =>
           Effect.gen(function* () {
             const definitions = yield* toolDefinitions(registry)
-            expect(definitions.map((tool) => tool.name)).toEqual(["bash"])
-            expect(definitions[0]?.inputSchema).not.toHaveProperty("properties.background")
+            expect(definitions.map((tool) => tool.name)).toEqual(["bash", "project_check"])
+            expect(definitions.find((tool) => tool.name === "bash")?.inputSchema).not.toHaveProperty("properties.background")
             expect(definitions[0]?.inputSchema).not.toHaveProperty("properties.description")
             expect(definitions[0]?.outputSchema).not.toHaveProperty("properties.output")
             expect(definitions[0]?.outputSchema).not.toHaveProperty("properties.command")

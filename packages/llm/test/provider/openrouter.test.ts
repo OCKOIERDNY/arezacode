@@ -6,6 +6,13 @@ import * as OpenRouter from "../../src/providers/openrouter"
 import { it } from "../lib/effect"
 
 describe("OpenRouter", () => {
+  it.effect("adds Claude cache breakpoints and respects cache none", () => Effect.gen(function* () {
+    const model = OpenRouter.configure({ apiKey: "test-key" }).model("anthropic/claude-sonnet-4")
+    const prepared = yield* LLMClient.prepare(LLM.request({ model, system: "Stable instructions", prompt: "Task" }))
+    expect(prepared.body).toMatchObject({ messages: [{ role: "system", content: [{ text: "Stable instructions", cache_control: { type: "ephemeral" } }] }, { role: "user", content: [{ text: "Task", cache_control: { type: "ephemeral" } }] }] })
+    const disabled = yield* LLMClient.prepare(LLM.request({ model, system: "Stable instructions", prompt: "Task", cache: "none" }))
+    expect(JSON.stringify(disabled.body)).not.toContain("cache_control")
+  }))
   it.effect("prepares OpenRouter models through the OpenAI-compatible Chat route", () =>
     Effect.gen(function* () {
       const model = OpenRouter.configure({ apiKey: "test-key" }).model("openai/gpt-4o-mini")
