@@ -110,6 +110,36 @@ test("moves busy through retry and recovery to final idle content", async ({ pag
   await expect(page.locator('[data-timeline-row="DiffSummary"]')).toBeVisible()
 })
 
+test("single-file edits use one compact summary with an expandable review", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" })
+  await setupTimeline(page, {
+    messages: [userMessage(undefined, { summary: { diffs: [{
+      file: "src/layout.tsx", additions: 9, deletions: 6,
+      patch: "@@ -1 +1 @@\n-export const enabled = false\n+export const enabled = true",
+    }] } }), assistantMessage([textPart("prt_final", "Updated the layout and verified the changes.")])],
+    settings: { newLayoutDesigns: true },
+  })
+  const card = page.locator("[data-completed-card]")
+  await expect(card).toContainText("Edited layout.tsx")
+  await expect(card).toContainText("+9")
+  await expect(card).toContainText("-6")
+  await expect(card.locator('[data-slot="session-turn-diffs-label"]')).toHaveAttribute("title", "src/layout.tsx")
+  await expect(card.locator('[data-slot="accordion-trigger"]')).toHaveCount(0)
+  await expect(card.getByRole("button", { name: "Undo", exact: true })).toBeVisible()
+  const review = card.getByRole("button", { name: "Review", exact: true })
+  await expect(review).toHaveAttribute("aria-expanded", "false")
+  await page.screenshot({ path: "/tmp/areza-single-edit-card.png" })
+  await review.click()
+  await expect(card.locator('[data-slot="session-turn-diff-view"]')).toBeVisible()
+  await expect(review).toHaveAttribute("aria-expanded", "true")
+  await review.click()
+  await expect(card.locator('[data-slot="session-turn-diff-view"]')).toHaveCount(0)
+  await page.setViewportSize({ width: 960, height: 760 })
+  await expect(review).toBeVisible()
+  await expect(card.getByRole("button", { name: "Undo", exact: true })).toBeVisible()
+  await page.screenshot({ path: "/tmp/areza-single-edit-card-narrow.png" })
+})
+
 test("completed turns fold work and show a compact edited files card", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" })
   const assistant = assistantMessage([

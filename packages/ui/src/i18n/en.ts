@@ -59,6 +59,7 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.worked": "Worked for {{duration}}",
   "ui.sessionTurn.diffs.edited.one": "Edited {{count}} file",
   "ui.sessionTurn.diffs.edited.other": "Edited {{count}} files",
+  "ui.sessionTurn.diffs.editedFile": "Edited {{file}}",
   "ui.sessionTurn.diffs.review": "Review",
   "ui.sessionTurn.diffs.undo": "Undo",
   "ui.sessionTurn.diffs.showMore": "Show {{count}} more files",

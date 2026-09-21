@@ -163,23 +163,55 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: () => vo
       data-slot="session-turn-diffs"
       data-component="session-turn-diffs-group"
       data-completed-card
+      data-single-file={props.diffs.length === 1 || undefined}
       data-show-all={showAll() || undefined}
     >
       <div data-slot="session-turn-diffs-header">
-        <span data-slot="session-turn-diffs-label">
-          {language.plural("ui.sessionTurn.diffs.edited", props.diffs.length)}
-        </span>
-        <DiffChanges changes={props.diffs} />
+        <Show
+          when={props.diffs.length === 1}
+          fallback={
+            <>
+              <span data-slot="session-turn-diffs-label">
+                {language.plural("ui.sessionTurn.diffs.edited", props.diffs.length)}
+              </span>
+              <DiffChanges changes={props.diffs} />
+            </>
+          }
+        >
+          <span data-slot="session-turn-diff-icon" aria-hidden="true">
+            <Icon name="review" size="large" />
+          </span>
+          <div data-slot="session-turn-diff-summary">
+            <span data-slot="session-turn-diffs-label" title={props.diffs[0].file}>
+              {language.t("ui.sessionTurn.diffs.editedFile", { file: getFilename(props.diffs[0].file) })}
+            </span>
+            <DiffChanges changes={props.diffs} />
+          </div>
+        </Show>
         <Show when={props.onUndo}>
           <Button variant="ghost" size="small" class="ml-auto" title={language.t("ui.message.revertMessage")} onClick={() => props.onUndo?.()}>
             {language.t("ui.sessionTurn.diffs.undo")}
             <Icon name="reset" size="small" />
           </Button>
         </Show>
-        <Button variant="secondary" size="small" classList={{ "ml-auto": !props.onUndo }} onClick={() => setState("expanded", [props.diffs[0].file])}>
+        <Button
+          variant="secondary"
+          size="small"
+          classList={{ "ml-auto": !props.onUndo }}
+          aria-expanded={expanded().includes(props.diffs[0].file)}
+          onClick={() => setState("expanded", props.diffs.length === 1 && expanded().length ? [] : [props.diffs[0].file])}
+        >
           {language.t("ui.sessionTurn.diffs.review")}
         </Button>
       </div>
+      <Show
+        when={props.diffs.length !== 1}
+        fallback={
+          <Show when={expanded().includes(props.diffs[0].file)}>
+            <TimelineDiffView diff={props.diffs[0]} />
+          </Show>
+        }
+      >
       <div data-component="session-turn-diffs-content">
         <Accordion
           multiple
@@ -230,6 +262,7 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: () => vo
           </button>
         </Show>
       </div>
+      </Show>
     </div>
   )
 }
