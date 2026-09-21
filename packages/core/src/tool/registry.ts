@@ -112,9 +112,9 @@ const registryLayer = Layer.effect(
         }
         for (const [name, registration] of registrations)
           if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
-        if (!(yield* Effect.promise(() => engineEnabled("grounded")))) {
-          registrations.delete("docs_search")
-          registrations.delete("docs_sources")
+        if (!(yield* Effect.promise(() => engineEnabled("context7")))) {
+          registrations.delete("context7_resolve_library_id")
+          registrations.delete("context7_query_docs")
         }
         return {
           definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)).sort((a, b) => a.name.localeCompare(b.name)),

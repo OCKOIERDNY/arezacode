@@ -4,16 +4,31 @@ import { setupTimelineBenchmark } from "../performance/timeline/session-timeline
 test.use({ colorScheme: "dark" })
 
 test("session usage separates inclusive counts, reported charges and unavailable history", async ({ page }) => {
-  await setupTimelineBenchmark(page, { historyTurns: 2, eventBatch: 1, newLayoutDesigns: true })
+  const fixture = await setupTimelineBenchmark(page, { historyTurns: 2, eventBatch: 1, newLayoutDesigns: true })
   await page.route("**/api/session/*/usage", (route) => route.fulfill({ json: [
     { id: "msg_usage_one", promptID: "msg_prompt_one", model: { providerID: "openrouter", id: "anthropic/claude-sonnet-4" }, time: { created: 1789948800000, completed: 1789948801000 }, finish: "stop", usage: { version: 1, input: 1000, output: 120, reasoning: 20, cacheRead: 600, cacheWrite: 100, total: 1120, cost: 0.012, costSource: "reported", responseID: "gen_example", upstreamCost: 0.01 } },
     { id: "msg_usage_unknown", promptID: "msg_prompt_one", model: { providerID: "openrouter", id: "anthropic/claude-sonnet-4" }, time: { created: 1789948802000, completed: 1789948803000 }, finish: "error", usage: { version: 1, costSource: "unknown" } },
   ] }))
+  fixture.transport.enqueue({ directory: "C:/OpenCode/TimelineStateRegression", payload: { type: "message.updated", properties: { info: {
+    id: "msg_assistant_regression", sessionID: "ses_timeline_state_regression", role: "assistant", parentID: "msg_user_regression",
+    modelID: "claude-opus-4-6", providerID: "opencode", mode: "build", agent: "build", path: { cwd: "C:/OpenCode/TimelineStateRegression", root: "C:/OpenCode/TimelineStateRegression" },
+    time: { created: 1700000001000, completed: 1700000002000 }, tokens: { input: 300, output: 100, reasoning: 20, cache: { read: 600, write: 100 } }, cost: 0.012,
+    usage: { version: 1, input: 1000, output: 120, reasoning: 20, cacheRead: 600, cacheWrite: 100, total: 1120, cost: 0.012, costSource: "reported" },
+  } } } })
   await page.getByRole("button", { name: "View context usage", exact: true }).click()
   const accounting = page.getByTestId("session-usage-accounting")
   await expect(accounting).toBeVisible()
   await expect(accounting).toHaveAttribute("aria-busy", "false")
   await expect(accounting).toContainText("1,120 · 1 unavailable")
+  await expect(accounting).toContainText("Uncached input · includes cache writes")
+  await expect(accounting).toContainText("400 · 1 unavailable")
+  await page.getByRole("button", { name: "View context usage", exact: true }).hover()
+  await expect(page.locator('[data-component="context-usage-breakdown"]')).toContainText("Cache read")
+  await expect(page.locator('[data-component="context-usage-breakdown"]')).toContainText("400")
+  await expect(page.locator('[data-component="context-usage-breakdown"]')).toContainText("600")
+  await page.screenshot({ path: "/tmp/areza-token-breakdown-tooltip.png" })
+  await accounting.hover()
+  await expect(page.locator('[data-component="context-usage-breakdown"]')).not.toBeVisible()
   await expect(accounting).toContainText("$0.012")
   await page.screenshot({ path: "/tmp/areza-final-usage-overview.png" })
   await accounting.locator("summary").filter({ hasText: /^1\./ }).click()
@@ -88,18 +103,12 @@ test("Tools keeps its existing rows and sidebar visible during an engine refresh
   expect(await original?.evaluate((element) => element.isConnected)).toBe(true)
 })
 
-test("Tools manages engines and versioned Grounded Docs sources", async ({ page }) => {
+test("Tools exposes Context7 without documentation-source setup", async ({ page }) => {
   await setupTimelineBenchmark(page, { historyTurns: 2, eventBatch: 1, newLayoutDesigns: true })
   await page.route("**/pty/shells*", (route) => route.fulfill({ json: [] }))
-  const engines = ["markitdown", "headroom", "semgrep", "entire", "grounded", "ponytail"].map((id) => ({ id, version: id === "ponytail" ? "native" : "1.0.0", installed: true, managed: true, enabled: true, running: false, rollback: false, storageBytes: 10 * 1024 * 1024 }))
-  const sources: { library: string; version: string; url: string; indexedAt: number }[] = []
+  const engines = ["markitdown", "headroom", "semgrep", "entire", "context7", "ponytail"].map((id) => ({ id, version: id === "ponytail" ? "native" : "1.0.0", installed: true, managed: true, enabled: true, running: false, rollback: false, storageBytes: 10 * 1024 * 1024 }))
   await page.route("**/api/tools**", async (route) => {
     const url = new URL(route.request().url())
-    if (url.pathname.endsWith("/sources")) {
-      if (route.request().method() === "POST") { sources.push({ ...route.request().postDataJSON(), indexedAt: Date.now() }); return route.fulfill({ json: "Indexed" }) }
-      return route.fulfill({ json: sources })
-    }
-    if (url.pathname.endsWith("/search")) return route.fulfill({ json: "Official documentation excerpt" })
     if (route.request().method() === "POST") {
       const engine = engines.find((item) => url.pathname.endsWith(item.id))!
       engine.enabled = route.request().postDataJSON().action !== "disable"
@@ -115,19 +124,20 @@ test("Tools manages engines and versioned Grounded Docs sources", async ({ page 
   await tools.getByRole("switch", { name: "Headroom", exact: true }).press("Space")
   await expect(tools.getByRole("switch", { name: "Headroom", exact: true })).not.toBeChecked()
   await page.screenshot({ path: "/tmp/areza-tools-settings.png" })
-  await tools.getByRole("textbox", { name: "Library name", exact: true }).fill("bun")
-  await tools.getByRole("textbox", { name: "Library version", exact: true }).fill("1.3.14")
-  await tools.getByRole("textbox", { name: "Official documentation URL", exact: true }).fill("https://bun.sh/docs/")
-  await tools.getByRole("button", { name: "Index source", exact: true }).click()
-  await expect(tools.getByText("bun 1.3.14", { exact: true })).toBeVisible()
-  await tools.getByRole("textbox", { name: "Search indexed documentation", exact: true }).fill("binary data")
-  await tools.getByRole("button", { name: "Search", exact: true }).click()
-  await expect(tools.getByRole("status")).toContainText("Official documentation excerpt")
-  await page.screenshot({ path: "/tmp/areza-grounded-settings.png" })
+  const context7 = tools.getByRole("switch", { name: "Context7", exact: true })
+  await expect(context7).toBeChecked()
+  await expect(tools.getByText("Documentation sources", { exact: true })).toHaveCount(0)
+  await expect(tools.getByText("Grounded Docs", { exact: true })).toHaveCount(0)
+  await context7.press("Space")
+  await expect(context7).not.toBeChecked()
+  await context7.press("Space")
+  await expect(context7).toBeChecked()
+  await page.screenshot({ path: "/tmp/areza-context7-tools.png" })
 })
 
 test("Jev settings, master toggle and automatic/manual model selection", async ({ page }) => {
   const fixture = await setupTimelineBenchmark(page, { historyTurns: 2, eventBatch: 1, newLayoutDesigns: true })
+  await page.route("**/api/tools**", (route) => route.fulfill({ json: [] }))
   await page.route("**/pty/shells*", (route) =>
     route.fulfill({ json: [], headers: { "access-control-allow-origin": "*" } }),
   )
@@ -143,7 +153,7 @@ test("Jev settings, master toggle and automatic/manual model selection", async (
     },
     headers: { "access-control-allow-origin": "*" },
   }))
-  await page.route("**/api/jev", async (route) => {
+  await page.route((url) => url.pathname === "/api/jev", async (route) => {
     if (route.request().method() === "PATCH") {
       const body = route.request().postDataJSON()
       expect(body).not.toHaveProperty("apiKey")
@@ -204,7 +214,10 @@ test("Jev settings, master toggle and automatic/manual model selection", async (
   await expect(modelSwitch).toBeChecked()
   await page.screenshot({ path: "/tmp/areza-jev-openrouter-models.png" })
   await page.getByRole("tab", { name: "General", exact: true }).click()
+  await expect(settings).toHaveCount(0)
+  await page.getByRole("tab", { name: "Tools", exact: true }).click()
   await settings.scrollIntoViewIfNeeded()
+  await expect(settings).toHaveCount(1)
   await expect(settings.getByRole("switch", { name: "Enable all configured Jev features" })).toBeChecked()
   await settings.getByRole("switch", { name: "Enable all configured Jev features" }).press("Space")
   await expect(settings).toHaveCount(0)
@@ -215,10 +228,14 @@ test("Jev settings, master toggle and automatic/manual model selection", async (
   await modelSwitch.press("Space")
   await expect(modelSwitch).toBeChecked()
   await page.getByRole("tab", { name: "General", exact: true }).click()
+  await expect(settings).toHaveCount(0)
+  await page.screenshot({ path: "/tmp/areza-general-without-jev.png" })
+  await page.getByRole("tab", { name: "Tools", exact: true }).click()
   await settings.scrollIntoViewIfNeeded()
   await expect(settings.locator("input[type=password]")).toHaveCount(0)
   await expect(settings.getByRole("switch", { name: "Automatic skill selection" })).toBeChecked()
-  await expect(settings.getByText("Uses your OpenRouter connection from Providers", { exact: true })).toBeVisible()
+  await expect(settings.getByText("OpenRouter connection", { exact: true })).toHaveCount(0)
+  await expect(settings.getByText("TypeSafe: Jev Latest", { exact: true })).toHaveCount(0)
   await page.screenshot({ path: "/tmp/areza-jev-settings.png" })
   await settings.getByRole("switch", { name: "Relevant context selection" }).press("Space")
   await expect(settings.getByRole("switch", { name: "Relevant context selection" })).not.toBeChecked()

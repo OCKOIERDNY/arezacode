@@ -292,14 +292,24 @@ test("overlays project actions with working status until hover or keyboard focus
   await expect(spinner).toBeVisible()
   await expect(menu).toHaveCSS("opacity", "0")
   await expect(newChat).toHaveCSS("opacity", "0")
-  const slot = (await actions.boundingBox())!
+  const slot = (await newChat.boundingBox())!
   const working = (await spinner.boundingBox())!
   expect(working.x).toBeCloseTo(slot.x, 0)
   expect(working.width).toBeCloseTo(slot.width, 0)
+  expect(working.y).toBeCloseTo(slot.y, 0)
+  await expect(spinner).toHaveCSS("transition-duration", "0.22s, 0.22s")
   const width = (await row.boundingBox())!.width
   await page.screenshot({ path: "/tmp/areza-project-working.png" })
+  const slow = await page.addStyleTag({ content: '[data-component="home-project-actions"] > * { transition-duration: 600ms !important; }' })
+  await row.hover()
+  await expect.poll(() => spinner.evaluate((el) => Number(getComputedStyle(el).opacity))).toBeLessThan(1)
+  expect(await spinner.evaluate((el) => Number(getComputedStyle(el).opacity))).toBeGreaterThan(0)
+  await page.screenshot({ path: "/tmp/areza-project-swap-midway.png" })
+  await page.mouse.move(800, 100)
+  await expect(spinner).toHaveCSS("opacity", "1")
   await row.hover()
   await expect(spinner).toBeHidden()
+  await slow.evaluate((el) => el.remove())
   await expect(menu).toHaveCSS("opacity", "1")
   await expect(newChat).toHaveCSS("opacity", "1")
   expect((await row.boundingBox())!.width).toBe(width)
@@ -314,6 +324,8 @@ test("overlays project actions with working status until hover or keyboard focus
   await expect(newChat).toBeFocused()
   await expect(spinner).toBeHidden()
   await expect(newChat).toHaveCSS("opacity", "1")
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await expect(spinner).toHaveCSS("transition-duration", "0s")
 })
 
 test("animates project disclosure and reverses without losing chats", async ({ page }, testInfo) => {

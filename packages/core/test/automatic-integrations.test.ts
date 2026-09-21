@@ -5,7 +5,7 @@ import path from "node:path"
 import { AutomaticChecks } from "../src/automatic-checks"
 import { Document } from "../src/document"
 import { Entire } from "../src/entire"
-import { nativeBinary, nativeCommand } from "../src/util/native-command"
+import { engineStatus, engineAction, nativeBinary, nativeCommand } from "../src/util/native-command"
 import { DateTime } from "effect"
 import { SessionMessage } from "../src/session/message"
 import { ModelV2 } from "../src/model"
@@ -233,8 +233,10 @@ test("V2 automations scan edits, clear corrected findings and record checkpoints
   }
 }, 180_000)
 
-test("Grounded Docs rejects private hosts and never substitutes another documentation version", async () => {
-  await expect(Document.docsIndex({ library: "test", version: "1.0.0", url: "https://127.0.0.1/private" })).rejects.toThrow("Private")
-  await expect(Document.docsIndex({ library: "test", version: "1.0.0", url: "file:///etc/passwd" })).rejects.toThrow("HTTPS")
-  await expect(Document.docsSearch({ library: "unindexed-test-library", version: "1.0.0", query: "test" })).rejects.toThrow("has not been indexed")
+test("Context7 is hosted, replaces Grounded Docs, and cancels requests", async () => {
+  const engines = await engineStatus()
+  expect(engines.some((item) => item.id === "context7" && item.installed && item.version === "remote")).toBe(true)
+  expect(engines.some((item) => String(item.id) === "grounded")).toBe(false)
+  await expect(engineAction("context7", "install")).rejects.toThrow("hosted tool")
+  await expect(Document.context7("query-docs", { libraryId: "/solidjs/solid", query: "createMemo" }, AbortSignal.abort())).rejects.toThrow()
 })

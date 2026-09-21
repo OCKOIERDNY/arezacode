@@ -3,6 +3,118 @@ import { buildInitialStreamEvent, buildStreamDeltaEvents, setupTimelineBenchmark
 
 test.use({ colorScheme: "dark" })
 
+test("tool rows use compact spacing, distinct icons and hover contrast", async ({ page }) => {
+  const fixture = await setupTimelineBenchmark(page, { historyTurns: 2, eventBatch: 1, newLayoutDesigns: true })
+  for (const [index, tool] of ["shell", "read", "grep", ...Array.from({ length: 12 }, () => "shell")].entries()) {
+    fixture.transport.enqueue({ directory: "C:/OpenCode/TimelineStateRegression", payload: {
+      type: "message.part.updated",
+      properties: { part: {
+        id: `prt_800${String(index).padStart(2, "0")}_polish`, sessionID: "ses_timeline_state_regression", messageID: "msg_assistant_regression",
+        type: "tool", callID: `call_polish_${index}`, tool,
+        state: { status: "completed", input: { command: "bun typecheck", filePath: "src/example.ts", pattern: "shared" }, output: "Done", title: "Done", metadata: {}, time: { start: 1700000001000, end: 1700000002000 } },
+      } },
+    } })
+  }
+  const group = page.locator('[data-component="context-tool-group-trigger"]').last()
+  await expect(group).toContainText("Used tools")
+  await group.click()
+  const shells = page.locator('[data-component="tool-trigger"]').filter({ hasText: "Shell" })
+  await expect(shells).toHaveCount(13)
+  const shell = shells.last()
+  await expect(shell).toBeVisible()
+  await fixture.scrollToBottom()
+  await shells.first().click()
+  await shell.click()
+  await fixture.scrollToBottom()
+  await expect(shell.locator('[data-slot="basic-tool-tool-indicator"] svg')).toBeVisible()
+  const title = shell.locator('[data-slot="basic-tool-tool-title"]')
+  await shell.evaluate((element) => element.closest<HTMLElement>('[data-slot="collapsible-trigger"]')?.blur())
+  await page.mouse.move(0, 0)
+  await expect(title).toHaveCSS("color", await shell.evaluate((element) => getComputedStyle(element).color))
+  const normal = await title.evaluate((element) => getComputedStyle(element).color)
+  await shell.hover()
+  await expect.poll(() => title.evaluate((element) => getComputedStyle(element).color)).not.toBe(normal)
+  const row = shell.locator('xpath=ancestor::*[@data-timeline-row="AssistantPart"]')
+  expect(await row.evaluate((element) => parseFloat(getComputedStyle(element).paddingTop))).toBeLessThanOrEqual(2)
+  await page.screenshot({ path: "/tmp/areza-compact-tools-hover.png" })
+  const scroll = page.locator('[data-component="tool-group-scroll"]').last()
+  const viewport = scroll.locator('.scroll-view__viewport')
+  expect((await scroll.boundingBox())!.height).toBeLessThanOrEqual(320)
+  expect(await viewport.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
+  await viewport.evaluate((element) => { element.scrollTop = 0 })
+  const outer = await page.locator('.message-timeline-scroll > .scroll-view__viewport').evaluate((element) => element.scrollTop)
+  await viewport.hover()
+  await page.mouse.wheel(0, 300)
+  await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+  expect(await page.locator('.message-timeline-scroll > .scroll-view__viewport').evaluate((element) => element.scrollTop)).toBeCloseTo(outer, 0)
+  await expect(scroll.locator('.scroll-view__thumb')).toBeVisible()
+  await page.screenshot({ path: "/tmp/areza-compact-tools-expanded.png" })
+  await group.click()
+  await expect(scroll).toBeHidden()
+  await page.screenshot({ path: "/tmp/areza-compact-tools-grouped.png" })
+  fixture.transport.enqueue({ directory: "C:/OpenCode/TimelineStateRegression", payload: {
+    type: "session.status", properties: { sessionID: "ses_timeline_state_regression", status: { type: "busy" } },
+  } })
+  fixture.transport.enqueue({ directory: "C:/OpenCode/TimelineStateRegression", payload: {
+    type: "message.part.updated",
+    properties: { part: {
+      id: "prt_80014_polish", sessionID: "ses_timeline_state_regression", messageID: "msg_assistant_regression",
+      type: "tool", callID: "call_polish_14", tool: "shell",
+      state: { status: "error", input: { command: "bun typecheck" }, error: "Typecheck failed", time: { start: 1700000001000, end: 1700000002000 } },
+    } },
+  } })
+  await expect(group).toContainText("Failed")
+  await group.click()
+  const error = page.locator('[data-kind="tool-error-card"]')
+  const errorTrigger = error.locator('[data-slot="collapsible-trigger"]')
+  if (await errorTrigger.getAttribute("aria-expanded") === "false") await errorTrigger.click()
+  await expect(error).toContainText("Typecheck failed")
+})
+
+test("keeps the review sidebar mounted when committed changes disappear", async ({ page }) => {
+  const diffs = [{ file: "src/committed.ts", before: "before\n", after: "after\n", status: "modified", additions: 1, deletions: 1 }]
+  const fixture = await setupTimelineBenchmark(page, { historyTurns: 3, eventBatch: 1, newLayoutDesigns: true, vcsDiff: diffs })
+  await page.locator('[aria-controls="review-panel"]').click()
+  const sidebar = page.locator('[data-slot="session-review-v2-sidebar"]')
+  const review = page.locator('#review-panel [data-component="session-review-v2"]')
+  await expect(sidebar.getByRole("button", { name: "committed.ts", exact: true })).toBeVisible()
+  await page.locator('[data-component="prompt-input"]').fill("Ready to send")
+  await page.screenshot({ path: "/tmp/areza-lighter-chat-send.png" })
+  await sidebar.evaluate((element) => element.setAttribute("data-mount-probe", "original"))
+  await review.evaluate((element) => element.setAttribute("data-mount-probe", "original"))
+  await page.addStyleTag({ content: '[data-slot="review-diffs-content"] { transition-duration: 600ms !important; }' })
+  diffs.splice(0)
+  fixture.transport.enqueue({ directory: "C:/OpenCode/TimelineStateRegression", payload: { type: "filesystem.changed", properties: { file: "src/committed.ts" } } })
+  const outgoing = sidebar.locator('[data-slot="review-diffs-content"]')
+  await expect(outgoing).toHaveAttribute("data-exiting", "true")
+  await expect(sidebar.getByRole("button", { name: "committed.ts", exact: true })).toHaveCount(1)
+  await expect.poll(() => outgoing.evaluate((element) => Number(getComputedStyle(element).opacity))).toBeLessThan(0.9)
+  expect(await outgoing.evaluate((element) => getComputedStyle(element).transform)).not.toBe("matrix(1, 0, 0, 1, 0, 0)")
+  await page.screenshot({ path: "/tmp/areza-commit-exit.png" })
+  await expect(sidebar.getByRole("button", { name: "committed.ts", exact: true })).toHaveCount(0)
+  await expect(sidebar).toHaveAttribute("data-mount-probe", "original")
+  await expect(review).toHaveAttribute("data-mount-probe", "original")
+  await expect(page.locator('[data-component="session-right-panel"]')).toHaveAttribute("data-opened", "true")
+  await page.screenshot({ path: "/tmp/areza-commit-empty.png" })
+  diffs.push({ file: "src/committed.ts", before: "before\n", after: "after\n", status: "modified", additions: 1, deletions: 1 })
+  fixture.transport.enqueue({ directory: "C:/OpenCode/TimelineStateRegression", payload: { type: "filesystem.changed", properties: { file: "src/committed.ts" } } })
+  await expect(sidebar.getByRole("button", { name: "committed.ts", exact: true })).toBeVisible()
+  diffs.splice(0)
+  fixture.transport.enqueue({ directory: "C:/OpenCode/TimelineStateRegression", payload: { type: "filesystem.changed", properties: { file: "src/committed.ts" } } })
+  await expect(outgoing).toHaveAttribute("data-exiting", "true")
+  diffs.push({ file: "src/committed.ts", before: "before\n", after: "newer\n", status: "modified", additions: 1, deletions: 1 })
+  fixture.transport.enqueue({ directory: "C:/OpenCode/TimelineStateRegression", payload: { type: "filesystem.changed", properties: { file: "src/committed.ts" } } })
+  await expect(outgoing).toHaveAttribute("data-exiting", "false")
+  await expect.poll(() => outgoing.evaluate((element) => getComputedStyle(element).opacity)).toBe("1")
+  await expect(sidebar.getByRole("button", { name: "committed.ts", exact: true })).toBeVisible()
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  diffs.splice(0)
+  fixture.transport.enqueue({ directory: "C:/OpenCode/TimelineStateRegression", payload: { type: "filesystem.changed", properties: { file: "src/committed.ts" } } })
+  await expect(sidebar.getByRole("button", { name: "committed.ts", exact: true })).toHaveCount(0)
+  await expect(outgoing).toHaveAttribute("data-exiting", "false")
+  await expect(sidebar).toHaveAttribute("data-mount-probe", "original")
+})
+
 test("resizing paints the latest pointer position once per frame and preserves the release position", async ({ page }) => {
   await setupTimelineBenchmark(page, { historyTurns: 3, eventBatch: 1, newLayoutDesigns: true })
   const sidebar = page.locator('[data-component="project-sidebar"]')
@@ -38,12 +150,15 @@ test("resizing paints the latest pointer position once per frame and preserves t
 })
 
 test("smoothly returns to the bottom and resumes following, with a reduced-motion fallback", async ({ page }) => {
-  const fixture = await setupTimelineBenchmark(page, { historyTurns: 12, eventBatch: 1, newLayoutDesigns: true })
+  const fixture = await setupTimelineBenchmark(page, { historyTurns: 12, eventBatch: 1, newLayoutDesigns: true, vcsDiff: [{ file: "src/chat.tsx", additions: 12, deletions: 3 }] })
   const latest = page.locator('[data-slot="chat-latest"]')
   await fixture.scrollToBottom()
   await fixture.scroller.hover()
   await page.mouse.wheel(0, -1600)
   await expect(latest).toBeVisible()
+  await expect(latest).toHaveCSS("opacity", "1")
+  await expect(latest).toHaveCSS("border-top-width", "0px")
+  await expect(page.locator('[data-slot="chat-changes"]')).toHaveCSS("border-top-width", "0px")
   await page.screenshot({ path: "/tmp/areza-smooth-scroll-before.png" })
   const positions = await latest.evaluate((button) => {
     const root = document.querySelector<HTMLElement>(".message-timeline-scroll .scroll-view__viewport")!
@@ -62,13 +177,17 @@ test("smoothly returns to the bottom and resumes following, with a reduced-motio
     })
   })
   expect(new Set(positions.filter((top) => top > positions[0]! && top < positions.at(-1)!)).size).toBeGreaterThan(3)
-  await expect(latest).toHaveCount(0)
+  await expect(latest).toHaveCSS("transition-duration", "0.16s, 0.16s, 0.16s")
+  await expect(latest).toBeHidden()
+  await expect(latest).toHaveAttribute("tabindex", "-1")
   await page.screenshot({ path: "/tmp/areza-smooth-scroll-after.png" })
   fixture.transport.enqueue(buildInitialStreamEvent(30))
   fixture.transport.enqueue(buildStreamDeltaEvents(30))
   await expect(fixture.text).toContainText("benchmark-complete")
   await expect.poll(() => fixture.scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThan(3)
   await page.emulateMedia({ reducedMotion: "reduce" })
+  await expect(latest).toHaveCSS("transition-duration", "0s")
+  await expect(fixture.scroller).toHaveCSS("overscroll-behavior-y", "none")
   await fixture.scroller.hover()
   await page.mouse.wheel(0, -1600)
   await expect(latest).toBeVisible()
@@ -153,6 +272,29 @@ test("swaps the sidebars from settings and keeps resize directions correct", asy
     await expect(files).toHaveAttribute("data-opened", "false")
     await filesToggle.click()
     await expect(files).toBeVisible()
+    await expect.poll(() => chat.evaluate((element) => element.getAnimations().length)).toBe(0)
+    const expandedWidth = (await files.boundingBox())!.width
+    await files.evaluate((element) => element.setAttribute("data-mount-probe", "original"))
+    const motion = await filesToggle.evaluate(async (element) => {
+      ;(element as HTMLButtonElement).click()
+      await new Promise(requestAnimationFrame)
+      const panels = document.querySelectorAll('[data-component="session-panel-row"], [data-component="session-chat-panel"], [data-component="session-right-panel"]')
+      return Array.from(panels).flatMap((panel) => panel.getAnimations().filter((animation) => animation.effect!.getTiming().duration === 200).map((animation) => {
+        animation.pause()
+        animation.currentTime = 50
+        return { duration: animation.effect!.getTiming().duration, easing: animation.effect!.getTiming().easing }
+      }))
+    })
+    expect(motion.length).toBeGreaterThanOrEqual(3)
+    for (const animation of motion) expect(animation).toEqual({ duration: 200, easing: "cubic-bezier(0.23, 1, 0.32, 1)" })
+    expect((await files.boundingBox())!.width).toBeCloseTo(expandedWidth, 0)
+    expect((await page.locator('[data-component="session-right-panel-slot"]').boundingBox())!.width).toBeLessThan(expandedWidth)
+    await page.screenshot({ path: `/tmp/areza-${side}-files-closing.png` })
+    await filesToggle.click()
+    await expect(files).toHaveAttribute("data-opened", "true")
+    await expect(files).toHaveAttribute("data-mount-probe", "original")
+    await page.evaluate(() => document.getAnimations().forEach((animation) => animation.play()))
+    await expect.poll(() => chat.evaluate((element) => element.getAnimations().length)).toBe(0)
     await filesToggle.click()
     await expect(files).toBeHidden()
     const edges = () => chat.evaluate((el) => {
@@ -181,6 +323,13 @@ test("swaps the sidebars from settings and keeps resize directions correct", asy
   await expect.poll(async () => (await filesToggle.boundingBox())!.x > (await projectsToggle.boundingBox())!.x).toBe(true)
   await collapseChat("left")
   await checkClosedPanel("left")
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await filesToggle.click()
+  await expect(files).toBeHidden()
+  expect(await files.evaluate((element) => element.getAnimations().length)).toBe(0)
+  await filesToggle.click()
+  await expect(files).toBeVisible()
+  expect(await files.evaluate((element) => element.getAnimations().length)).toBe(0)
 })
 
 test("shows live work, jumps to the latest reply, and previews every changed file", async ({ page }) => {
@@ -202,13 +351,13 @@ test("shows live work, jumps to the latest reply, and previews every changed fil
     payload: { type: "session.status", properties: { sessionID: "ses_timeline_state_regression", status: { type: "busy" } } },
   })
   await fixture.scrollToBottom()
-  await expect(latest).toHaveCount(0)
+  await expect(latest).toBeHidden()
   fixture.transport.enqueue(buildInitialStreamEvent(30))
   await expect(fixture.text).toBeVisible()
   fixture.transport.enqueue(buildStreamDeltaEvents(30))
   await expect(fixture.text).toContainText("benchmark-complete")
   await expect.poll(() => fixture.scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThan(3)
-  await expect(latest).toHaveCount(0)
+  await expect(latest).toBeHidden()
   const spacer = page.locator('[data-timeline-row="bottom-spacer"]')
   expect((await spacer.boundingBox())!.height).toBe(128)
   const dock = (await page.locator('[data-component="session-prompt-dock"]').boundingBox())!
@@ -232,12 +381,13 @@ test("shows live work, jumps to the latest reply, and previews every changed fil
   expect(Math.abs(await fixture.scroller.evaluate((el) => el.scrollTop) - top)).toBeLessThan(3)
   await latest.click()
   await expect.poll(() => fixture.scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThan(3)
-  await expect(latest).toHaveCount(0)
+  await expect(latest).toBeHidden()
   await changes.hover()
   const preview = page.locator('[data-component="chat-changes-preview"]')
   await expect(preview).toBeVisible()
   await expect(preview.getByRole("button")).toHaveCount(30)
   const viewport = preview.locator(".scroll-view__viewport")
+  await expect(viewport).toHaveCSS("padding-inline-end", "12px")
   expect(await viewport.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
   await expect(viewport).toHaveCSS("scrollbar-width", "none")
   await expect(preview.locator(".scroll-view__thumb[data-orientation=vertical]")).toBeVisible()

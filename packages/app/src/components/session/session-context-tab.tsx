@@ -143,7 +143,7 @@ export function SessionContextTab() {
   const usageEntries = () => usageResource.error || usageResource.latest.key !== usageKey() ? [] : usageResource.latest.entries
   const [usageLimit, setUsageLimit] = createSignal(50)
   const money = (value: number | undefined) => value === undefined ? "—" : new Intl.NumberFormat(language.intl(), { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value)
-  const usageKeys = ["input", "output", "reasoning", "cacheRead", "cacheWrite", "total"] as const
+  const usageKeys = ["input", "uncachedInput", "cacheRead", "cacheWrite", "output", "reasoning", "total"] as const
   const usageValue = (entries: ReturnType<typeof usageEntries>, key: typeof usageKeys[number]) => {
     const total = usageTotal(entries, key)
     const value = formatter().number(total.value)
@@ -322,6 +322,7 @@ export function SessionContextTab() {
         <section class="flex flex-col gap-4" data-testid="session-usage-accounting" aria-busy={usageResource.loading}>
           <div class="text-14-medium text-text-strong">{language.t("context.accounting.title")}</div>
           <p class="text-12-regular text-text-weak">{language.t("context.accounting.note")}</p>
+          <p class="text-12-regular text-text-weak">{language.t("context.accounting.cacheNote")}</p>
           <Show when={usageResource.error}><p role="alert" class="text-12-regular text-text-weak">{language.t("context.accounting.error")}</p></Show>
           <div class="grid grid-cols-2 @[32rem]:grid-cols-3 gap-4">
             <Stat label={language.t("context.accounting.requests")} value={usageResource.loading ? "—" : usageEntries().length} />
@@ -348,7 +349,7 @@ export function SessionContextTab() {
               <Stat label={language.t("context.accounting.actualModel")} value={entry.usage?.responseModel ?? entry.model.id} />
               <Stat label={language.t("context.accounting.actualProvider")} value={entry.usage?.responseProvider ?? "—"} />
               <Stat label={language.t("context.accounting.prompt")} value={entry.promptID ?? "—"} />
-              <For each={usageKeys}>{(key) => <Stat label={language.t(`context.accounting.${key}`)} value={formatter().number(entry.usage?.[key])} />}</For>
+              <For each={usageKeys}>{(key) => <Stat label={language.t(`context.accounting.${key}`)} value={usageValue([entry], key)} />}</For>
               <Stat label={language.t("context.accounting.source")} value={language.t(`context.accounting.${entry.usage?.costSource ?? "unknown"}`)} />
               <Stat label={language.t("context.accounting.upstream")} value={money(entry.usage?.upstreamCost)} />
               <Stat label={language.t("context.accounting.finish")} value={entry.finish ?? "—"} />

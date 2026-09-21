@@ -7,6 +7,24 @@
   background: var(--v2-background-bg-base);
 }
 
+[data-slot="review-diffs-content"] {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+[data-slot="review-diffs-content"][data-exiting="true"] {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="review-diffs-content"] {
+    transition: none;
+    transform: none;
+  }
+}
+
 [data-component="session-review-v2"] [data-slot="session-review-v2-body"] {
   flex: 1;
   min-height: 0;

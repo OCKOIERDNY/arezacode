@@ -640,11 +640,9 @@ function HomeProjectRow(
           aria-label={props.language.t("command.session.new")}
           onClick={() => props.onOpenProjectNewSession(props.server, props.project.worktree)}
         />
-        <Show when={props.renderSessions && !props.selected && working()}>
           <span data-component="project-working" role="img" aria-label={props.language.t("common.loading")}>
             <Spinner class="size-4 shrink-0" />
           </span>
-        </Show>
       </div>
     </div>
   )

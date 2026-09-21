@@ -10,7 +10,6 @@ import { usePlatform } from "@/context/platform"
 import { useUpdaterAction } from "../updater-action"
 import { useSettings } from "@/context/settings"
 import { ExternalLink } from "../external-link"
-import { SettingsJev } from "./jev"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { LayoutRetirementNotice, LayoutTransitionToggle } from "./interface-transition"
@@ -568,7 +567,6 @@ export const SettingsGeneralV2: Component<{
         </Show>
 
         <GeneralSection />
-        <SettingsJev />
 
         <AppearanceSection controller={appearance} />
 

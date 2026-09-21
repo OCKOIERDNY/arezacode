@@ -30,10 +30,6 @@ test("exposes every standard HTTP API group", () => {
   expect(Object.keys(client.integrations)).toEqual([
     "toolsList",
     "toolsAction",
-    "docsList",
-    "docsIndex",
-    "docsRemove",
-    "docsSearch",
     "list",
     "get",
     "connectKey",

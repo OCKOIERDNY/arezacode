@@ -19,6 +19,7 @@ import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualIt
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
+import { Collapsible } from "@opencode-ai/ui/collapsible"
 import {
   ContextToolGroup,
   Message,
@@ -145,9 +146,9 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
   )
 }
 
-function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
+function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: () => void | Promise<void> }) {
   const language = useLanguage()
-  const maxFiles = 10
+  const maxFiles = 3
   const [state, setState] = createStore({
     showAll: false,
     expanded: [] as string[],
@@ -161,18 +162,23 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
     <div
       data-slot="session-turn-diffs"
       data-component="session-turn-diffs-group"
+      data-completed-card
       data-show-all={showAll() || undefined}
     >
       <div data-slot="session-turn-diffs-header">
         <span data-slot="session-turn-diffs-label">
-          {language.plural("ui.sessionTurn.diffs.changed", props.diffs.length)}
+          {language.plural("ui.sessionTurn.diffs.edited", props.diffs.length)}
         </span>
         <DiffChanges changes={props.diffs} />
-        <Show when={overflow() > 0}>
-          <span data-slot="session-turn-diffs-toggle" onClick={() => setState("showAll", !showAll())}>
-            {showAll() ? language.t("ui.sessionTurn.diffs.showLess") : language.t("ui.sessionTurn.diffs.showAll")}
-          </span>
+        <Show when={props.onUndo}>
+          <Button variant="ghost" size="small" class="ml-auto" title={language.t("ui.message.revertMessage")} onClick={() => props.onUndo?.()}>
+            {language.t("ui.sessionTurn.diffs.undo")}
+            <Icon name="reset" size="small" />
+          </Button>
         </Show>
+        <Button variant="secondary" size="small" classList={{ "ml-auto": !props.onUndo }} onClick={() => setState("expanded", [props.diffs[0].file])}>
+          {language.t("ui.sessionTurn.diffs.review")}
+        </Button>
       </div>
       <div data-component="session-turn-diffs-content">
         <Accordion
@@ -217,10 +223,11 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
             }}
           </For>
         </Accordion>
-        <Show when={!showAll() && overflow() > 0}>
-          <div data-slot="session-turn-diffs-more" onClick={() => setState("showAll", true)}>
-            {language.t("ui.sessionTurn.diffs.more", { count: String(overflow()) })}
-          </div>
+        <Show when={overflow() > 0}>
+          <button type="button" data-slot="session-turn-diffs-more" aria-expanded={showAll()} onClick={() => setState("showAll", !showAll())}>
+            {showAll() ? language.t("ui.sessionTurn.diffs.showLess") : language.t("ui.sessionTurn.diffs.showMore", { count: overflow() })}
+            <Icon name="chevron-down" size="small" classList={{ "rotate-180": showAll() }} />
+          </button>
         </Show>
       </div>
     </div>
@@ -1016,6 +1023,21 @@ export function MessageTimeline(props: {
             workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
           }
           onSizeChange={onSizeChange}
+          renderPart={(part) => (
+            <Show when={messageByID().get(part.messageID)}>{(message) => (
+              <MessagePart
+                part={part}
+                message={message()}
+                useV2Actions={settings.general.newLayoutDesigns()}
+                defaultOpen={partDefaultOpen(part, settings.general.shellToolPartsExpanded(), settings.general.editToolPartsExpanded())}
+                toolOpen={toolOpen[part.id] ?? partDefaultOpen(part, settings.general.shellToolPartsExpanded(), settings.general.editToolPartsExpanded())}
+                onToolOpenChange={(open) => setToolOpen(part.id, open)}
+                deferToolContent
+                virtualizeDiff={false}
+                onContentRendered={onSizeChange}
+              />
+            )}</Show>
+          )}
         />
       )
     }
@@ -1199,6 +1221,37 @@ export function MessageTimeline(props: {
           </TimelineRowFrame>
         )
       }
+      case "WorkSummary": {
+        const workRow = row as Accessor<TimelineRowByTag<"WorkSummary">>
+        const key = () => `work:${workRow().userMessageID}`
+        const duration = () => {
+          const seconds = Math.round((turnDurationMs(workRow().userMessageID) ?? 0) / 1000)
+          return seconds < 60
+            ? language.t("ui.message.duration.seconds", { count: seconds })
+            : language.t("ui.message.duration.minutesSeconds", { minutes: Math.floor(seconds / 60), seconds: seconds % 60 })
+        }
+        return (
+          <TimelineRowFrame row={workRow}>
+            <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+              <Collapsible class="completed-work" open={toolOpen[key()] === true} onOpenChange={(open) => { setToolOpen(key(), open); onSizeChange?.() }}>
+                <Collapsible.Trigger>
+                  {language.t("ui.sessionTurn.worked", { duration: duration() })}
+                  <Collapsible.Arrow />
+                </Collapsible.Trigger>
+                <Collapsible.Content>
+                  <ScrollView class="completed-work-scroll">
+                    <For each={workRow().groups}>{(group) => (
+                      <div class="py-1">
+                        {renderAssistantPartGroup(() => ({ userMessageID: workRow().userMessageID, group, previousAssistantPart: false }), onSizeChange)}
+                      </div>
+                    )}</For>
+                  </ScrollView>
+                </Collapsible.Content>
+              </Collapsible>
+            </div>
+          </TimelineRowFrame>
+        )
+      }
       case "Thinking": {
         const thinkingRow = row as Accessor<TimelineRowByTag<"Thinking">>
         return (
@@ -1227,7 +1280,10 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={diffSummaryRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <TimelineDiffSummaryRow diffs={diffSummaryRow().diffs} />
+              <TimelineDiffSummaryRow
+                diffs={diffSummaryRow().diffs}
+                onUndo={props.actions?.revert ? () => props.actions?.revert?.({ sessionID: sessionID()!, messageID: diffSummaryRow().userMessageID }) : undefined}
+              />
             </div>
           </TimelineRowFrame>
         )
@@ -1373,10 +1429,12 @@ export function MessageTimeline(props: {
           }
         >
           <div data-component="chat-activity">
-            <Show when={props.scroll.overflow && !props.scroll.bottom}>
               <button
                 type="button"
                 data-slot="chat-latest"
+                data-visible={props.scroll.overflow && !props.scroll.bottom}
+                aria-hidden={!props.scroll.overflow || props.scroll.bottom}
+                tabIndex={props.scroll.overflow && !props.scroll.bottom ? 0 : -1}
                 data-working={sessionStatus().type !== "idle" || undefined}
                 aria-label={language.t("session.messages.jumpToLatest")}
                 onClick={jumpToLatest}
@@ -1385,7 +1443,6 @@ export function MessageTimeline(props: {
                   <Spinner class="size-4" />
                 </Show>
               </button>
-            </Show>
             <Show when={props.diffs.length > 0}>
               <HoverCard
                 open={activity.preview}

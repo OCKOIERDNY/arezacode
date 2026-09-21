@@ -42,6 +42,10 @@ describe("getSessionContext", () => {
     const entries = [{ usage: { version: 1 as const, input: 1000, output: 120, total: 1120, cacheRead: 600, cacheWrite: 100, reasoning: 20, cost: 0, costSource: "reported" as const } }, { usage: { version: 1 as const, costSource: "unknown" as const } }]
     expect(usageTotal(entries, "total")).toEqual({ value: 1120, missing: 1 })
     expect(usageTotal(entries, "input")).toEqual({ value: 1000, missing: 1 })
+    expect(usageTotal(entries, "uncachedInput")).toEqual({ value: 400, missing: 1 })
+    expect(usageTotal([{ usage: { ...entries[0]!.usage, cacheRead: undefined } }], "uncachedInput")).toEqual({ value: undefined, missing: 1 })
+    expect(usageTotal([{ usage: { ...entries[0]!.usage, cacheRead: 1000 } }], "uncachedInput")).toEqual({ value: 0, missing: 0 })
+    expect(usageTotal([{ usage: { ...entries[0]!.usage, cacheRead: 1001 } }], "uncachedInput")).toEqual({ value: undefined, missing: 1 })
     expect(usageTotal(entries, "cost", "reported")).toEqual({ value: 0, missing: 1 })
     expect(usageTotal(entries, "cost", "estimated")).toEqual({ value: undefined, missing: 2 })
   })

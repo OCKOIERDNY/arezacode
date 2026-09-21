@@ -2378,7 +2378,7 @@ export type ProvidersGetOutput = {
 }
 
 export type IntegrationsToolsListOutput = ReadonlyArray<{
-  readonly id: "markitdown" | "headroom" | "semgrep" | "entire" | "grounded" | "ponytail"
+  readonly id: "markitdown" | "headroom" | "semgrep" | "entire" | "context7" | "ponytail"
   readonly version: string
   readonly enabled: boolean
   readonly installed: boolean
@@ -2393,13 +2393,13 @@ export type IntegrationsToolsListOutput = ReadonlyArray<{
 
 export type IntegrationsToolsActionInput = {
   readonly engineID: {
-    readonly engineID: "markitdown" | "headroom" | "semgrep" | "entire" | "grounded" | "ponytail"
+    readonly engineID: "markitdown" | "headroom" | "semgrep" | "entire" | "context7" | "ponytail"
   }["engineID"]
   readonly action: { readonly action: "install" | "enable" | "disable" | "cancel" | "rollback" | "check" }["action"]
 }
 
 export type IntegrationsToolsActionOutput = ReadonlyArray<{
-  readonly id: "markitdown" | "headroom" | "semgrep" | "entire" | "grounded" | "ponytail"
+  readonly id: "markitdown" | "headroom" | "semgrep" | "entire" | "context7" | "ponytail"
   readonly version: string
   readonly enabled: boolean
   readonly installed: boolean
@@ -2411,38 +2411,6 @@ export type IntegrationsToolsActionOutput = ReadonlyArray<{
   readonly lastResult?: string
   readonly updatedAt?: number | "Infinity" | "-Infinity" | "NaN"
 }>
-
-export type IntegrationsDocsListOutput = ReadonlyArray<{
-  readonly library: string
-  readonly version: string
-  readonly url: string
-  readonly indexedAt?: number | undefined
-  readonly error?: string | undefined
-}>
-
-export type IntegrationsDocsIndexInput = {
-  readonly library: { readonly library: string; readonly version: string; readonly url: string }["library"]
-  readonly version: { readonly library: string; readonly version: string; readonly url: string }["version"]
-  readonly url: { readonly library: string; readonly version: string; readonly url: string }["url"]
-}
-
-export type IntegrationsDocsIndexOutput = string
-
-export type IntegrationsDocsRemoveInput = {
-  readonly library: { readonly library: string; readonly version: string; readonly url: string }["library"]
-  readonly version: { readonly library: string; readonly version: string; readonly url: string }["version"]
-  readonly url: { readonly library: string; readonly version: string; readonly url: string }["url"]
-}
-
-export type IntegrationsDocsRemoveOutput = string
-
-export type IntegrationsDocsSearchInput = {
-  readonly library: { readonly library: string; readonly version: string; readonly query: string }["library"]
-  readonly version: { readonly library: string; readonly version: string; readonly query: string }["version"]
-  readonly query: { readonly library: string; readonly version: string; readonly query: string }["query"]
-}
-
-export type IntegrationsDocsSearchOutput = string
 
 export type IntegrationsListInput = {
   readonly location?: {

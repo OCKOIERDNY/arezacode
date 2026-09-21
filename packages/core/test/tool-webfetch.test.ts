@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { Deferred, Duration, Effect, Fiber, Layer, Schema } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
@@ -82,7 +82,7 @@ describe("WebFetchTool registration", () => {
       const registry = yield* ToolRegistry.Service
       const url = "http://example.com/public"
 
-      expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["webfetch"])
+      expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["context7_query_docs", "context7_resolve_library_id", "webfetch"])
       expect(yield* settleTool(registry, call({ url, format: "text", timeout: 4 }))).toEqual({
         result: { type: "text", value: "hello" },
         output: {
@@ -267,12 +267,14 @@ describe("WebFetchTool registration", () => {
   it.effect("times out stalled requests", () =>
     Effect.gen(function* () {
       reset()
-      respond = () => Effect.never
+      const started = yield* Deferred.make<void>()
+      respond = () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))
       const registry = yield* ToolRegistry.Service
       const fiber = yield* executeTool(
         registry,
         call({ url: "https://1.1.1.1/slow", format: "text", timeout: 1 }),
       ).pipe(Effect.forkChild)
+      yield* Deferred.await(started)
       yield* TestClock.adjust(Duration.seconds(1))
 
       expect(yield* Fiber.join(fiber)).toEqual({ type: "error", value: "Unable to fetch https://1.1.1.1/slow" })

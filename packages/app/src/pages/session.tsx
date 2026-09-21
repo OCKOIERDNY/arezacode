@@ -525,6 +525,15 @@ export default function Page() {
     }),
   )
   const rightPanelVisible = () => (isDesktop() ? desktopV2PanelLayout().visible : terminalOpen())
+  const rightPanelGap = () => rightPanelVisible() && (!desktopSessionResizeOpen() || sessionPanelResizedWidth() > 0)
+  const rightPanelWidth = createMemo<number>((previous) => {
+    const available = panelRowWidth()
+    if (!rightPanelVisible() || available === undefined) return previous
+    const chat = desktopSessionResizeOpen()
+      ? sessionPanelResizedWidth()
+      : available - layout.fileTree.width()
+    return Math.max(0, available - chat - (rightPanelGap() ? 16 : 0))
+  }, 0)
   const [warmReview, setWarmReview] = createSignal(false)
   const [reviewContentReady, setReviewContentReady] = createSignal(false)
   const rightPanelPresent = createMemo<boolean>((previous) => previous || rightPanelVisible() || warmReview(), false)
@@ -2322,13 +2331,12 @@ export default function Page() {
       <SessionHeader />
       <div
         ref={panelRow}
+        data-component={newSessionDesign() ? "session-panel-row" : undefined}
+        style={{ "column-gap": newSessionDesign() && !rightPanelGap() ? "0px" : undefined }}
         class="flex-1 min-h-0 flex flex-col md:flex-row"
         classList={{
           "p-2": settings.general.newLayoutDesigns(),
-          "gap-4":
-            settings.general.newLayoutDesigns() &&
-            rightPanelVisible() &&
-            (!desktopSessionResizeOpen() || sessionPanelResizedWidth() > 0),
+          "gap-4": settings.general.newLayoutDesigns() && rightPanelGap(),
         }}
       >
         <Show when={!isDesktop() && !!params.id && !settings.general.newLayoutDesigns()}>{mobileTabs()}</Show>
@@ -2423,68 +2431,75 @@ export default function Page() {
         <Show when={newSessionDesign()}>
           <Show when={rightPanelPresent()}>
             <div
-              classList={{ "md:-order-1": settings.general.sidebarPosition() === "right" }}
-              data-component="session-right-panel"
+              classList={{ "md:-order-1 md:justify-start": settings.general.sidebarPosition() === "right" }}
+              data-component="session-right-panel-slot"
               data-opened={rightPanelVisible()}
-              inert={!rightPanelVisible()}
-              class="min-w-0 h-full flex flex-1 flex-col"
+              class="min-w-0 h-full flex flex-1 justify-end data-[opened=false]:overflow-clip"
             >
-              <Show when={rightPanelReview()}>
-                <div class="min-h-0 flex-1">
-                  <Suspense>
-                    <SessionSidePanel
-                      canReview={canReview}
-                      diffs={reviewDiffs}
-                      diffsReady={reviewReady}
-                      empty={reviewEmptyText}
-                      hasReview={hasReview}
-                      reviewHasFocusableContent={() => hasReview() || reviewV2State.sidebarOpened()}
-                      reviewCount={reviewCount}
-                      reviewPanel={reviewPanelV2}
-                      reviewSidebarToggle={(disabled) => (
-                        <SessionReviewV2SidebarToggle
-                          opened={reviewV2State.sidebarOpened()}
-                          disabled={disabled}
-                          onToggle={reviewV2State.toggleSidebar}
-                        />
-                      )}
-                      fileBrowserState={reviewV2State}
-                      activeDiff={activeReviewFile()}
-                      focusReviewDiff={focusReviewDiff}
-                      reviewSnap={ui.reviewSnap}
-                      size={size}
-                      stacked={desktopV2PanelLayout().stacked}
+              <div
+                data-component="session-right-panel"
+                data-opened={rightPanelVisible()}
+                inert={!rightPanelVisible()}
+                class="min-w-0 h-full flex shrink-0 flex-col"
+                style={{ width: isDesktop() ? `${rightPanelWidth()}px` : "100%" }}
+              >
+                <Show when={rightPanelReview()}>
+                  <div class="min-h-0 flex-1">
+                    <Suspense>
+                      <SessionSidePanel
+                        canReview={canReview}
+                        diffs={reviewDiffs}
+                        diffsReady={reviewReady}
+                        empty={reviewEmptyText}
+                        hasReview={hasReview}
+                        reviewHasFocusableContent={() => hasReview() || reviewV2State.sidebarOpened()}
+                        reviewCount={reviewCount}
+                        reviewPanel={reviewPanelV2}
+                        reviewSidebarToggle={(disabled) => (
+                          <SessionReviewV2SidebarToggle
+                            opened={reviewV2State.sidebarOpened()}
+                            disabled={disabled}
+                            onToggle={reviewV2State.toggleSidebar}
+                          />
+                        )}
+                        fileBrowserState={reviewV2State}
+                        activeDiff={activeReviewFile()}
+                        focusReviewDiff={focusReviewDiff}
+                        reviewSnap={ui.reviewSnap}
+                        size={size}
+                        stacked={desktopV2PanelLayout().stacked}
+                      />
+                    </Suspense>
+                  </div>
+                </Show>
+                <Show when={desktopV2PanelLayout().stacked}>
+                  <div class="relative h-2 shrink-0" onPointerDown={() => size.start()}>
+                    <ResizeHandle
+                      class="!relative !inset-auto !h-full !w-full !transform-none"
+                      direction="vertical"
+                      size={layout.terminal.height()}
+                      min={100}
+                      max={typeof window === "undefined" ? 600 : window.innerHeight * 0.6}
+                      collapseThreshold={50}
+                      onResize={(height) => {
+                        size.touch()
+                        layout.terminal.resize(height)
+                      }}
+                      onCollapse={() => view().terminal.close()}
                     />
-                  </Suspense>
-                </div>
-              </Show>
-              <Show when={desktopV2PanelLayout().stacked}>
-                <div class="relative h-2 shrink-0" onPointerDown={() => size.start()}>
-                  <ResizeHandle
-                    class="!relative !inset-auto !h-full !w-full !transform-none"
-                    direction="vertical"
-                    size={layout.terminal.height()}
-                    min={100}
-                    max={typeof window === "undefined" ? 600 : window.innerHeight * 0.6}
-                    collapseThreshold={50}
-                    onResize={(height) => {
-                      size.touch()
-                      layout.terminal.resize(height)
+                  </div>
+                </Show>
+                <Show when={terminalOpen()}>
+                  <div
+                    classList={{
+                      "min-h-0 shrink-0": desktopV2PanelLayout().stacked,
+                      "min-h-0 flex-1": !desktopV2PanelLayout().stacked,
                     }}
-                    onCollapse={() => view().terminal.close()}
-                  />
-                </div>
-              </Show>
-              <Show when={terminalOpen()}>
-                <div
-                  classList={{
-                    "min-h-0 shrink-0": desktopV2PanelLayout().stacked,
-                    "min-h-0 flex-1": !desktopV2PanelLayout().stacked,
-                  }}
-                >
-                  <TerminalPanelV2 stacked={desktopV2PanelLayout().stacked} />
-                </div>
-              </Show>
+                  >
+                    <TerminalPanelV2 stacked={desktopV2PanelLayout().stacked} />
+                  </div>
+                </Show>
+              </div>
             </div>
           </Show>
         </Show>

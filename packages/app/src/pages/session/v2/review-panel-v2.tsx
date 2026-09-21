@@ -1,4 +1,5 @@
-import { createEffect, createMemo, createResource, createSignal, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, on, Show, type JSX } from "solid-js"
+import { createStore } from "solid-js/store"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import {
@@ -58,7 +59,20 @@ export type ReviewPanelV2Props = {
 export function ReviewPanelV2(props: ReviewPanelV2Props) {
   const sdk = useSDK()
 
-  const diffs = createMemo(() => props.diffs().filter(filterRenderableDiff))
+  const incoming = createMemo(() => props.diffs().filter(filterRenderableDiff))
+  const [display, setDisplay] = createStore({ diffs: incoming(), exiting: false })
+  createEffect(on(incoming, (next) => {
+    if (next.length || !display.diffs.length || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setDisplay({ diffs: next, exiting: false })
+      return
+    }
+    setDisplay("exiting", true)
+  }))
+  const diffs = () => display.diffs
+  const finishExit = (event: TransitionEvent) => {
+    if (event.target !== event.currentTarget || event.propertyName !== "opacity" || !display.exiting) return
+    setDisplay({ diffs: incoming(), exiting: false })
+  }
   const filteredFiles = createMemo(() =>
     filterReviewFiles(
       diffs().map((diff) => diff.file),
@@ -93,7 +107,8 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
     return { source: diff, version, value }
   })
 
-  const activeItem = createMemo(() => {
+  const activeItem = createMemo<RenderDiff | undefined>((previous) => {
+    if (display.exiting) return previous
     const source = sourceActiveItem()
     if (loadedDiff.state !== "ready") return source
     const loaded = loadedDiff()
@@ -133,6 +148,7 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
           title={props.title}
           state={props.state}
           diffsReady={props.diffsReady}
+          exiting={display.exiting}
           onSelectFile={props.onSelectFile}
           diffs={diffs}
           filteredFiles={filteredFiles}
@@ -152,29 +168,38 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
       preview={
         // Key on the file path, not the diff object identity, so refreshed diff data
         // updates the mounted preview instead of remounting the whole viewer.
-        <Show when={activeDiff()} keyed>
-          {(file) => (
-            <Show when={activeItem()}>
-              {(diff) => (
-                <SessionReviewFilePreviewV2
-                  onRendered={() => setRenderedItem(diff())}
-                  file={file}
-                  diff={diff()}
-                  diffStyle={props.diffStyle}
-                  expandMode={props.state.expandMode()}
-                  readFile={readFile}
-                  onLineComment={props.onLineComment}
-                  onLineCommentUpdate={props.onLineCommentUpdate}
-                  onLineCommentDelete={props.onLineCommentDelete}
-                  lineCommentActions={props.lineCommentActions}
-                  comments={props.comments}
-                  focusedComment={props.focusedComment}
-                  onFocusedCommentChange={props.onFocusedCommentChange}
-                />
-              )}
-            </Show>
-          )}
-        </Show>
+        <div
+          data-slot="review-diffs-content"
+          data-exiting={display.exiting}
+          inert={display.exiting}
+          onTransitionEnd={finishExit}
+          onTransitionCancel={finishExit}
+          class="h-full min-h-0"
+        >
+          <Show when={activeDiff()} keyed>
+            {(file) => (
+              <Show when={activeItem()}>
+                {(diff) => (
+                  <SessionReviewFilePreviewV2
+                    onRendered={() => setRenderedItem(diff())}
+                    file={file}
+                    diff={diff()}
+                    diffStyle={props.diffStyle}
+                    expandMode={props.state.expandMode()}
+                    readFile={readFile}
+                    onLineComment={props.onLineComment}
+                    onLineCommentUpdate={props.onLineCommentUpdate}
+                    onLineCommentDelete={props.onLineCommentDelete}
+                    lineCommentActions={props.lineCommentActions}
+                    comments={props.comments}
+                    focusedComment={props.focusedComment}
+                    onFocusedCommentChange={props.onFocusedCommentChange}
+                  />
+                )}
+              </Show>
+            )}
+          </Show>
+        </div>
       }
     />
   )
@@ -184,6 +209,7 @@ function ReviewPanelV2Sidebar(props: {
   title?: JSX.Element
   state: ReviewPanelV2State
   diffsReady: () => boolean
+  exiting: boolean
   onSelectFile: (path: string) => void
   diffs: () => RenderDiff[]
   filteredFiles: () => string[]
@@ -224,44 +250,46 @@ function ReviewPanelV2Sidebar(props: {
       minWidth={SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN}
       maxWidth={SESSION_REVIEW_V2_SIDEBAR_WIDTH_MAX}
     >
-      <Show
-        when={props.diffsReady()}
-        fallback={
-          <div class="px-2 py-2 text-12-regular text-text-weak">
-            {language.t("common.loading")}
-            {language.t("common.loading.ellipsis")}
-          </div>
-        }
-      >
+      <div data-slot="review-diffs-content" data-exiting={props.exiting} inert={props.exiting}>
         <Show
-          when={props.searching()}
+          when={props.diffsReady()}
           fallback={
-            <FileTreeV2
-              allowed={props.filteredFiles()}
-              kinds={props.kinds()}
-              draggable={false}
-              active={props.activeDiff()}
-              onFileClick={(node) => props.onSelectFile(node.path)}
-            />
+            <div class="px-2 py-2 text-12-regular text-text-weak">
+              {language.t("common.loading")}
+              {language.t("common.loading.ellipsis")}
+            </div>
           }
         >
           <Show
-            when={props.filteredFiles().length > 0}
-            fallback={<div class="px-2 py-2 text-12-regular text-text-weak">{language.t("palette.empty")}</div>}
+            when={props.searching()}
+            fallback={
+              <FileTreeV2
+                allowed={props.filteredFiles()}
+                kinds={props.kinds()}
+                draggable={false}
+                active={props.activeDiff()}
+                onFileClick={(node) => props.onSelectFile(node.path)}
+              />
+            }
           >
-            <SessionFileListV2
-              files={props.filteredFiles()}
-              kinds={props.kinds()}
-              active={props.activeDiff()}
-              highlighted={highlightedPath()}
-              onFileClick={(path) => {
-                setExplicitHighlight(path)
-                props.onSelectFile(path)
-              }}
-            />
+            <Show
+              when={props.filteredFiles().length > 0}
+              fallback={<div class="px-2 py-2 text-12-regular text-text-weak">{language.t("palette.empty")}</div>}
+            >
+              <SessionFileListV2
+                files={props.filteredFiles()}
+                kinds={props.kinds()}
+                active={props.activeDiff()}
+                highlighted={highlightedPath()}
+                onFileClick={(path) => {
+                  setExplicitHighlight(path)
+                  props.onSelectFile(path)
+                }}
+              />
+            </Show>
           </Show>
         </Show>
-      </Show>
+      </div>
     </SessionReviewV2Sidebar>
   )
 }

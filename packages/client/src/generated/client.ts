@@ -52,13 +52,6 @@ import type {
   IntegrationsToolsListOutput,
   IntegrationsToolsActionInput,
   IntegrationsToolsActionOutput,
-  IntegrationsDocsListOutput,
-  IntegrationsDocsIndexInput,
-  IntegrationsDocsIndexOutput,
-  IntegrationsDocsRemoveInput,
-  IntegrationsDocsRemoveOutput,
-  IntegrationsDocsSearchInput,
-  IntegrationsDocsSearchOutput,
   IntegrationsListInput,
   IntegrationsListOutput,
   IntegrationsGetInput,
@@ -603,53 +596,6 @@ export function make(options: ClientOptions) {
             method: "POST",
             path: `/api/tools/${encodeURIComponent(input.engineID)}`,
             body: { action: input["action"] },
-            successStatus: 200,
-            declaredStatuses: [400, 409, 401],
-            empty: false,
-          },
-          requestOptions,
-        ),
-      docsList: (requestOptions?: RequestOptions) =>
-        request<IntegrationsDocsListOutput>(
-          {
-            method: "GET",
-            path: `/api/tools/docs/sources`,
-            successStatus: 200,
-            declaredStatuses: [409, 401, 400],
-            empty: false,
-          },
-          requestOptions,
-        ),
-      docsIndex: (input: IntegrationsDocsIndexInput, requestOptions?: RequestOptions) =>
-        request<IntegrationsDocsIndexOutput>(
-          {
-            method: "POST",
-            path: `/api/tools/docs/sources`,
-            body: { library: input["library"], version: input["version"], url: input["url"] },
-            successStatus: 200,
-            declaredStatuses: [400, 409, 401],
-            empty: false,
-          },
-          requestOptions,
-        ),
-      docsRemove: (input: IntegrationsDocsRemoveInput, requestOptions?: RequestOptions) =>
-        request<IntegrationsDocsRemoveOutput>(
-          {
-            method: "DELETE",
-            path: `/api/tools/docs/sources`,
-            body: { library: input["library"], version: input["version"], url: input["url"] },
-            successStatus: 200,
-            declaredStatuses: [400, 409, 401],
-            empty: false,
-          },
-          requestOptions,
-        ),
-      docsSearch: (input: IntegrationsDocsSearchInput, requestOptions?: RequestOptions) =>
-        request<IntegrationsDocsSearchOutput>(
-          {
-            method: "POST",
-            path: `/api/tools/docs/search`,
-            body: { library: input["library"], version: input["version"], query: input["query"] },
             successStatus: 200,
             declaredStatuses: [400, 409, 401],
             empty: false,

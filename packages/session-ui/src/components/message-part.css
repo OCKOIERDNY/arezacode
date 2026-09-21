@@ -27,14 +27,29 @@
   max-width: 100%;
   gap: 0;
 
+  .user-message-attachment-scroll {
+    max-width: min(82%, 64ch);
+    margin-bottom: 8px;
+
+    > .scroll-view__viewport {
+      overflow-y: hidden;
+      overscroll-behavior-x: contain;
+      padding-bottom: 8px;
+    }
+  }
+
   [data-slot="user-message-attachments"] {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     justify-content: flex-end;
     gap: 8px;
-    width: fit-content;
-    max-width: min(82%, 64ch);
+    width: max-content;
+    min-width: 100%;
     margin-inline-start: auto;
+
+    > * {
+      flex-shrink: 0;
+    }
   }
 
   [data-slot="user-message-attachment"] {
@@ -48,6 +63,7 @@
     background: var(--v2-background-bg-layer-02);
     border: 0.5px solid var(--v2-border-border-base);
     cursor: default;
+    padding: 0;
     transition:
       border-color 0.15s ease,
       opacity 0.3s ease;
@@ -60,10 +76,15 @@
       cursor: pointer;
     }
 
+    &:focus-visible {
+      outline: 2px solid var(--text-interactive-base);
+      outline-offset: 2px;
+    }
+
     &[data-type="image"] {
       position: relative;
-      width: 58px;
-      height: 46px;
+      width: 80px;
+      height: 80px;
       border: none;
 
       /* inset box-shadows do not paint over <img> content, so the hairline is an overlay */
@@ -145,7 +166,7 @@
     unicode-bidi: plaintext;
     background: var(--v2-background-bg-layer-02);
     border: none;
-    padding: 8px 12px;
+    padding: 0;
     border-radius: 10px;
 
     [data-highlight="file"] {
@@ -158,6 +179,50 @@
       color: var(--syntax-type);
       direction: ltr;
       unicode-bidi: isolate;
+    }
+
+    [data-highlight="skill"] {
+      color: var(--v2-text-text-accent);
+      direction: ltr;
+      unicode-bidi: isolate;
+
+      [data-component="icon"] {
+        color: inherit;
+        display: inline-flex;
+        vertical-align: -2px;
+        margin-inline-end: 4px;
+      }
+    }
+
+    .user-message-text-scroll {
+      max-height: min(320px, 50vh);
+
+      > .scroll-view__viewport {
+        overscroll-behavior: contain;
+        mask-image: linear-gradient(to bottom, transparent, black var(--message-fade-top, 0px), black calc(100% - var(--message-fade-bottom, 0px)), transparent);
+      }
+    }
+
+    &[data-expanded="true"] .user-message-text-scroll {
+      max-height: none;
+    }
+
+    &[data-fade-top="true"] {
+      --message-fade-top: 24px;
+    }
+
+    &[data-fade-bottom="true"] {
+      --message-fade-bottom: 24px;
+    }
+
+    [data-slot="user-message-text-content"] {
+      padding: 10px 14px;
+    }
+
+    [data-slot="user-message-expand"] {
+      display: flex;
+      justify-content: flex-end;
+      padding: 0 6px 6px;
     }
 
     max-width: 100%;
@@ -640,7 +705,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 0px;
+  gap: 8px;
   cursor: default;
 
   [data-slot="context-tool-group-title"] {
@@ -654,9 +719,17 @@
   }
 }
 
+[data-component="tool-group-scroll"] {
+  max-height: min(320px, 50vh);
+
+  > .scroll-view__viewport {
+    overscroll-behavior: contain;
+  }
+}
+
 [data-component="context-tool-group-list"] {
   padding-top: 0;
-  padding-right: 0;
+  padding-right: 12px;
   padding-bottom: 0;
   padding-left: 12px;
   display: flex;
@@ -1341,7 +1414,7 @@ body[data-new-layout] [data-component="user-message"] {
   font-weight: 440;
 
   [data-slot="user-message-text"] {
-    background: var(--v2-background-bg-layer-01);
+    background: var(--v2-background-bg-layer-03);
   }
 
   [data-slot="user-message-comments"] {

@@ -124,8 +124,8 @@
   button {
     pointer-events: auto;
     cursor: pointer;
-    border: 1px solid var(--border-base);
-    background: var(--surface-raised-base);
+    border: none;
+    background: var(--v2-background-bg-layer-03);
     box-shadow: 0 2px 8px #0002;
   }
 
@@ -135,6 +135,14 @@
     width: 32px;
     height: 32px;
     border-radius: 50%;
+    transition: opacity 160ms ease-out, transform 160ms cubic-bezier(0.23, 1, 0.32, 1), visibility 160ms;
+
+    &[data-visible="false"] {
+      opacity: 0;
+      transform: translateY(6px) scale(0.95);
+      visibility: hidden;
+      pointer-events: none;
+    }
   }
 
   [data-slot="chat-changes"] {
@@ -146,6 +154,88 @@
     border-radius: 16px;
     font-size: 12px;
     white-space: nowrap;
+  }
+}
+
+.message-timeline-scroll > .scroll-view__viewport,
+.completed-work-scroll > .scroll-view__viewport {
+  overscroll-behavior-y: contain;
+}
+
+.completed-work[data-component="collapsible"] {
+  border-bottom: 1px solid var(--border-weak-base);
+  padding: 8px 0;
+
+  > [data-slot="collapsible-trigger"] {
+    width: fit-content;
+    gap: 6px;
+    color: var(--text-weak);
+    background: transparent;
+    cursor: pointer;
+
+    [data-slot="collapsible-arrow"] {
+      opacity: 1;
+    }
+  }
+}
+
+.completed-work-scroll {
+  max-height: min(320px, 50vh);
+}
+
+[data-component="session-turn"] [data-completed-card] {
+  margin-top: 16px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: 12px;
+  overflow: hidden;
+
+  [data-component="accordion"] [data-slot="accordion-item"] {
+    margin-top: 0;
+
+    & + [data-slot="accordion-item"] {
+      border-top: 1px solid var(--border-weak-base);
+    }
+
+    [data-slot="accordion-header"] [data-slot="accordion-trigger"] {
+      border: none;
+      border-radius: 0;
+    }
+
+    &[data-expanded] > [data-slot="accordion-content"] {
+      border: none;
+      border-radius: 0;
+    }
+  }
+
+  [data-slot="session-turn-diffs-header"] {
+    position: static;
+    height: auto;
+    min-height: 64px;
+    padding: 12px;
+    background: var(--v2-background-bg-layer-02);
+  }
+
+  [data-slot="session-turn-diffs-more"] {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    margin: 0;
+    padding: 12px;
+    color: var(--text-base);
+    background: var(--v2-background-bg-layer-02);
+    border: none;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="chat-activity"] [data-slot="chat-latest"] {
+    transition: none;
+  }
+
+  .message-timeline-scroll > .scroll-view__viewport {
+    overscroll-behavior-y: none;
   }
 }
 
@@ -172,6 +262,7 @@
 
   .scroll-view__viewport {
     overscroll-behavior: contain;
+    padding-inline-end: 12px;
   }
 
   button {

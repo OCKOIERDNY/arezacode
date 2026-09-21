@@ -201,6 +201,7 @@ export function createMainWindow(id: string = randomUUID()) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      scrollBounce: true,
     },
   })
 

@@ -61,7 +61,7 @@ describe("SystemContextBuiltIns", () => {
       const context = yield* SystemContextRegistry.Service
       const initialized = yield* SystemContext.initialize(yield* context.load())
 
-      expect(initialized.baseline).toBe(
+      expect(initialized.baseline).toContain(
         [
           "Here is some useful information about the environment you are running in:",
           "<env>",
@@ -70,10 +70,10 @@ describe("SystemContextBuiltIns", () => {
           "  Is directory a git repo: yes",
           `  Platform: ${process.platform}`,
           "</env>",
-          "",
-          `Today's date: ${localDate(timestamp)}`,
         ].join("\n"),
       )
+      expect(initialized.baseline).toContain(`Today's date: ${localDate(timestamp)}`)
+      expect(initialized.baseline).toContain("project_check with operation verify")
     }),
   )
 
@@ -109,7 +109,8 @@ describe("SystemContextBuiltIns", () => {
       yield* TestClock.setTime(timestamp)
       const context = yield* SystemContextRegistry.Service
 
-      expect((yield* SystemContext.initialize(yield* context.load())).baseline).toBe(
+      const baseline = (yield* SystemContext.initialize(yield* context.load())).baseline
+      expect(baseline).toContain(
         [
           "Here is some useful information about the environment you are running in:",
           "<env>",
@@ -118,12 +119,10 @@ describe("SystemContextBuiltIns", () => {
           "  Is directory a git repo: yes",
           `  Platform: ${process.platform}`,
           "</env>",
-          "",
-          `Today's date: ${localDate(timestamp)}`,
-          "",
-          `Instructions from: ${instructionFile}\nBe precise.`,
         ].join("\n"),
       )
+      expect(baseline).toContain(`Today's date: ${localDate(timestamp)}`)
+      expect(baseline).toEndWith(`Instructions from: ${instructionFile}\nBe precise.`)
     }),
   )
 })

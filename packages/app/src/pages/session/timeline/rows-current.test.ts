@@ -15,6 +15,25 @@ mock.module("@opencode-ai/session-ui/message-part", () => ({
 const { Timeline, TimelineRow } = await import("./rows")
 
 describe("current session timeline rows", () => {
+  test("folds completed work while preserving the full final response and live steps", () => {
+    const source = [
+      { id: "user", type: "user", text: "Build it", time: { created: 1 } },
+      {
+        id: "assistant", type: "assistant", agent: "build", model: { id: "model", providerID: "provider" },
+        content: [{ type: "reasoning", text: "Inspecting" }, { type: "text", text: "Done" }, { type: "text", text: "Verified" }],
+        time: { created: 2, completed: 3 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("session", source)
+    const rows = (status: "idle" | "busy") => Timeline.constructSessionMessageRows(
+      source, (id) => normalized.messages.find((message) => message.id === id),
+      (id) => normalized.parts.get(id) ?? [], true, status, true,
+      normalized.messages.filter((message) => message.role === "user"),
+    ).rows
+    expect(rows("idle").map((row) => row._tag)).toEqual(["UserMessage", "WorkSummary", "AssistantPart", "AssistantPart"])
+    expect(rows("busy").map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart", "AssistantPart", "AssistantPart"])
+  })
+
   test("derives turns and tagged rows from chronological current messages", () => {
     const source = [
       { id: "msg_1", type: "user", text: "first", time: { created: 1 } },

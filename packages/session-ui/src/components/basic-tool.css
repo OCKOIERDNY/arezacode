@@ -261,6 +261,38 @@
 }
 
 body[data-new-layout] {
+  [data-timeline-row="AssistantPart"]:has([data-component="tool-trigger"], [data-component="context-tool-group-trigger"]).pt-3 {
+    padding-top: 2px !important;
+  }
+
+  [data-component="collapsible"].tool-collapsible > [data-slot="collapsible-trigger"] {
+    min-height: 28px;
+    height: 28px;
+  }
+
+  [data-component="tool-trigger"],
+  [data-component="context-tool-group-trigger"] {
+    --tool-row-color: var(--v2-text-text-muted);
+    color: var(--tool-row-color);
+
+    [data-slot="basic-tool-tool-title"],
+    [data-slot="basic-tool-tool-subtitle"],
+    [data-slot="basic-tool-tool-arg"],
+    [data-slot="context-tool-group-title"],
+    [data-slot="context-tool-group-summary"],
+    [data-slot="tool-status-done"],
+    [data-component="icon"] {
+      color: var(--tool-row-color);
+      transition: color 120ms ease-out;
+    }
+  }
+
+  [data-slot="collapsible-trigger"]:is(:hover, :focus-within) [data-component="tool-trigger"],
+  [data-slot="collapsible-trigger"]:is(:hover, :focus-within) [data-component="context-tool-group-trigger"],
+  [data-component="tool-trigger"]:is(:hover, :focus-within) {
+    --tool-row-color: var(--v2-text-text-base);
+  }
+
   [data-component="task-tool-card"] {
     gap: 8px;
     padding: 0;
@@ -296,7 +328,7 @@ body[data-new-layout] {
       font-size: 13px;
       line-height: 20px;
       letter-spacing: -0.04px;
-      color: var(--v2-text-text-base);
+      color: var(--tool-row-color, var(--v2-text-text-muted));
       flex: none;
       flex-grow: 0;
     }
@@ -308,7 +340,7 @@ body[data-new-layout] {
       font-size: 13px;
       line-height: 20px;
       letter-spacing: -0.04px;
-      color: var(--v2-text-text-base);
+      color: var(--tool-row-color, var(--v2-text-text-muted));
       font-variation-settings: "slnt" 0;
       flex: none;
       flex-grow: 0;

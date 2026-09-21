@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createMemo, type ComponentProps, type JSX } from "solid-js"
+import { For, Match, Show, Switch, createMemo, type ComponentProps, type JSX } from "solid-js"
 import { ProgressCircle } from "@opencode-ai/ui/progress-circle"
 import { ProgressCircleV2 } from "@opencode-ai/ui/v2/progress-circle-v2"
 import { Button } from "@opencode-ai/ui/button"
@@ -12,7 +12,7 @@ import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
-import { getSessionContext, recordedUsage } from "@/components/session/session-context-metrics"
+import { getSessionContext, recordedUsage, usageTotal } from "@/components/session/session-context-metrics"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { useSettings } from "@/context/settings"
@@ -128,13 +128,21 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   )
 
   const tooltipValue = () => (
-    <div class="flex w-[120px] flex-col gap-2">
+    <div class="flex w-[320px] max-w-[80vw] flex-col gap-2" data-component="context-usage-breakdown">
       <ContextTooltipRow name={language.t("context.usage.cost")} value={cost()} />
       <ContextTooltipRow name={language.t("context.usage.usage")} value={context()?.usage === null || context()?.usage === undefined ? "—" : `${context()?.usage}%`} />
       <ContextTooltipRow
         name={language.t("context.usage.tokens")}
         value={context()?.total.toLocaleString(language.intl()) ?? "—"}
       />
+      <div class="border-t border-v2-border-border-base pt-2 text-v2-text-text-muted">{language.t("context.accounting.latest")}</div>
+      <For each={["input", "uncachedInput", "cacheRead", "cacheWrite", "output", "reasoning"] as const}>{(key) => (
+        <ContextTooltipRow
+          name={language.t(`context.accounting.${key}`)}
+          value={usageTotal([{ usage: context() ? recordedUsage(context()!.message) : undefined }], key).value?.toLocaleString(language.intl()) ?? "—"}
+        />
+      )}</For>
+      <div class="pt-1 text-v2-text-text-muted">{language.t("context.accounting.details")}</div>
     </div>
   )
 

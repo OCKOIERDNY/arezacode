@@ -13,7 +13,7 @@ export const engineVersions = {
   headroom: "0.37.0",
   semgrep: "1.176.0",
   entire: "0.10.6",
-  grounded: "3.0.1",
+  context7: "remote",
   ponytail: "native",
 } as const
 type EngineID = typeof Integration.EngineID.Type
@@ -47,13 +47,12 @@ async function saveEngine(id: EngineID, patch: Partial<typeof Integration.Engine
 }
 
 export async function engineEnabled(id: EngineID) {
-  return engineSettings().then((settings) => settings[id]?.enabled ?? id !== "grounded").catch(() => false)
+  return engineSettings().then((settings) => settings[id]?.enabled ?? true).catch(() => false)
 }
 
 const engineExecutable = (id: EngineID, directory: string) =>
   id === "entire" ? path.join(directory, "entire")
-    : id === "grounded" ? path.join(directory, "node_modules/@arabold/docs-mcp-server/dist/index.js")
-      : path.join(directory, "venv", process.platform === "win32" ? "Scripts" : "bin", id)
+    : path.join(directory, "venv", process.platform === "win32" ? "Scripts" : "bin", id)
 
 export async function engineStatus() {
   const settings = await engineSettings()
@@ -72,13 +71,13 @@ export async function engineStatus() {
   return Promise.all(Object.entries(engineVersions).map(async ([name, version]) => {
     const id = Schema.decodeUnknownSync(Integration.EngineID)(name)
     const current = settings[id]?.current
-    const managed = id === "ponytail" || Boolean(current && await stat(engineExecutable(id, path.join(engineRoot, id, current))).catch(() => undefined))
-    const installed = managed || (id !== "grounded" && Boolean(await which(id, { nothrow: true, path: binaryPath() })))
-    if (id !== "ponytail" && (!sizes.has(id) || Date.now() - sizes.get(id)!.at > 60_000)) {
+    const managed = (id === "ponytail" || id === "context7") || Boolean(current && await stat(engineExecutable(id, path.join(engineRoot, id, current))).catch(() => undefined))
+    const installed = managed || Boolean(await which(id, { nothrow: true, path: binaryPath() }))
+    if (id !== "ponytail" && id !== "context7" && (!sizes.has(id) || Date.now() - sizes.get(id)!.at > 60_000)) {
       const value = await nativeCommand("du", ["-sk", path.join(engineRoot, id)]).catch(() => "0")
       sizes.set(id, { bytes: (Number.parseInt(value, 10) || 0) * 1024, at: Date.now() })
     }
-    return { id, version: current?.split("-")[0] ?? (installed && id !== "ponytail" ? "external" : version), enabled: settings[id]?.enabled ?? id !== "grounded", installed, managed,
+    return { id, version: current?.split("-")[0] ?? (installed && id !== "ponytail" && id !== "context7" ? "external" : version), enabled: settings[id]?.enabled ?? true, installed, managed,
       running: jobs.has(id) || Boolean(active.get(id)?.size), rollback: Boolean(settings[id]?.previous), storageBytes: sizes.get(id)?.bytes ?? 0, ...outcomes.get(id) }
   }))
 }
@@ -95,13 +94,13 @@ export function engineEnvironment(extra: Record<string, string | undefined> = {}
 export async function engineCommand(id: EngineID, args: string[], options: Parameters<typeof nativeCommand>[2] & { interpreter?: string } = {}) {
   if (!(await engineEnabled(id))) throw new Error(`${id} is disabled`)
   const binary = await nativeBinary(id)
-  const command = options.interpreter ?? (id === "grounded" ? await runtime("node", options.signal) : binary)
+  const command = options.interpreter ?? binary
   const controller = new AbortController()
   const controllers = active.get(id) ?? new Set<AbortController>()
   controllers.add(controller)
   active.set(id, controllers)
   try {
-    const result = await nativeCommand(command, id === "grounded" && !options.interpreter ? [binary, ...args] : args, { ...options, env: options.env ?? engineEnvironment({ DOCS_MCP_TELEMETRY: "false" }), signal: AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]) })
+    const result = await nativeCommand(command, args, { ...options, env: options.env ?? engineEnvironment(), signal: AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]) })
     await engineResult(id, args[0] ?? "completed")
     return result
   } catch (error) {
@@ -154,8 +153,8 @@ async function download(url: string, checksum: string, target: string, signal?: 
   await writeFile(target, content, { mode: 0o600 })
 }
 
-async function runtime(name: "uv" | "bun" | "node", signal?: AbortSignal): Promise<string> {
-  const version = name === "uv" ? "0.12.1" : name === "bun" ? "1.3.14" : "22.22.0"
+async function runtime(name: "uv", signal?: AbortSignal): Promise<string> {
+  const version = "0.12.1"
   const root = path.join(engineRoot, "runtime", `${name}-${version}`)
   const executable = path.join(root, name)
   if (await stat(executable).catch(() => undefined)) return executable
@@ -167,21 +166,13 @@ async function runtime(name: "uv" | "bun" | "node", signal?: AbortSignal): Promi
     const stage = `${root}.${randomUUID()}`
     await mkdir(stage, { recursive: true })
     try {
-      const archive = path.join(stage, name === "bun" ? "download.zip" : "download.tar.gz")
+      const archive = path.join(stage, "download.tar.gz")
       const arch = process.arch === "arm64" ? "aarch64" : "x86_64"
-      if (name === "uv") await release("astral-sh/uv", version, `uv-${arch}-${process.platform === "darwin" ? "apple-darwin" : "unknown-linux-gnu"}.tar.gz`, archive, signal)
-      if (name === "bun") await release("oven-sh/bun", `bun-v${version}`, `bun-${process.platform}-${process.arch === "arm64" ? "aarch64" : "x64"}.zip`, archive, signal)
-      if (name === "node") {
-        const file = `node-v${version}-${process.platform}-${process.arch}.tar.gz`
-        const sums = await fetch(`https://nodejs.org/dist/v${version}/SHASUMS256.txt`, { signal }).then((response) => response.text())
-        const checksum = sums.split("\n").find((line) => line.endsWith(`  ${file}`))?.split(" ")[0]
-        if (!checksum) throw new Error("No Node runtime checksum for this platform")
-        await download(`https://nodejs.org/dist/v${version}/${file}`, checksum, archive, signal)
-      }
-      await nativeCommand(name === "bun" ? "unzip" : "tar", name === "bun" ? ["-q", archive, "-d", stage] : ["-xzf", archive, "-C", stage], { signal })
+      await release("astral-sh/uv", version, `uv-${arch}-${process.platform === "darwin" ? "apple-darwin" : "unknown-linux-gnu"}.tar.gz`, archive, signal)
+      await nativeCommand("tar", ["-xzf", archive, "-C", stage], { signal })
       const directory = (await readdir(stage, { withFileTypes: true })).find((item) => item.isDirectory())?.name
       if (!directory) throw new Error("Engine archive has no runtime")
-      await rename(path.join(stage, directory, ...(name === "node" ? ["bin", name] : [name])), path.join(stage, name))
+      await rename(path.join(stage, directory, name), path.join(stage, name))
       await chmod(path.join(stage, name), 0o700)
       await rm(archive)
       await rm(path.join(stage, directory), { recursive: true })
@@ -202,6 +193,7 @@ export async function engineAction(id: EngineID, action: typeof Integration.Engi
     await saveEngine(id, { enabled: action === "enable" })
     return
   }
+  if (id === "context7") throw new Error("Context7 is a hosted tool; enable or disable its connection instead")
   if (jobs.has(id)) return
   const controller = new AbortController()
   const task = (async () => {
@@ -211,9 +203,9 @@ export async function engineAction(id: EngineID, action: typeof Integration.Engi
       if (action === "rollback") {
         if (!settings?.previous) throw new Error("No previous engine installation")
         const executable = engineExecutable(id, path.join(engineRoot, id, settings.previous))
-        await nativeCommand(id === "grounded" ? await runtime("node", controller.signal) : executable,
-          id === "grounded" ? [executable, "--version"] : [id === "entire" ? "version" : "--version"],
-          { signal: controller.signal, env: engineEnvironment({ DOCS_MCP_TELEMETRY: "false" }) })
+        await nativeCommand(executable,
+          [id === "entire" ? "version" : "--version"],
+          { signal: controller.signal, env: engineEnvironment() })
         await saveEngine(id, { current: settings.previous, previous: settings.current })
       }
       if (action === "install" && id !== "ponytail") {
@@ -226,11 +218,6 @@ export async function engineAction(id: EngineID, action: typeof Integration.Engi
             await release("entireio/cli", `v${engineVersions.entire}`, `entire_${process.platform}_${process.arch === "x64" ? "amd64" : process.arch}.tar.gz`, archive, controller.signal)
             await nativeCommand("tar", ["-xzf", archive, "-C", stage], { signal: controller.signal })
             await rm(archive)
-          } else if (id === "grounded") {
-            const bun = await runtime("bun", controller.signal)
-            const node = await runtime("node", controller.signal)
-            await writeFile(path.join(stage, "package.json"), JSON.stringify({ private: true, dependencies: { "@arabold/docs-mcp-server": engineVersions.grounded }, trustedDependencies: ["better-sqlite3", "tree-sitter", "tree-sitter-javascript", "tree-sitter-python"] }))
-            await nativeCommand(bun, ["install"], { cwd: stage, timeout: 300_000, signal: controller.signal, env: engineEnvironment({ PATH: `${path.dirname(node)}${path.delimiter}${process.env.PATH}`, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1" }) })
           } else {
             const uv = await runtime("uv", controller.signal)
             const env = engineEnvironment({ UV_PYTHON_INSTALL_DIR: path.join(engineRoot, "runtime", "python"), UV_NO_PROGRESS: "1" })
@@ -238,8 +225,7 @@ export async function engineAction(id: EngineID, action: typeof Integration.Engi
             await nativeCommand(uv, ["pip", "install", "--python", path.join(stage, "venv/bin/python"), `${id === "headroom" ? "headroom-ai" : id === "markitdown" ? "markitdown[all]" : id}==${engineVersions[id]}`], { env, signal: controller.signal, timeout: 300_000 })
           }
           const executable = engineExecutable(id, stage)
-          const command = id === "grounded" ? await runtime("node", controller.signal) : executable
-          await nativeCommand(command, id === "grounded" ? [executable, "--version"] : [id === "entire" ? "version" : "--version"], { signal: controller.signal, timeout: 30_000, env: engineEnvironment({ DOCS_MCP_TELEMETRY: "false" }) })
+          await nativeCommand(executable, [id === "entire" ? "version" : "--version"], { signal: controller.signal, timeout: 30_000, env: engineEnvironment() })
           await saveEngine(id, { enabled: true, current: revision, previous: settings?.current })
         } catch (error) {
           await rm(stage, { recursive: true, force: true })
@@ -248,9 +234,9 @@ export async function engineAction(id: EngineID, action: typeof Integration.Engi
       }
       if (action === "check" && id !== "ponytail") {
         const executable = await nativeBinary(id)
-        await nativeCommand(id === "grounded" ? await runtime("node", controller.signal) : executable,
-          id === "grounded" ? [executable, "--version"] : [id === "entire" ? "version" : "--version"],
-          { signal: controller.signal, env: engineEnvironment({ DOCS_MCP_TELEMETRY: "false" }) })
+        await nativeCommand(executable,
+          [id === "entire" ? "version" : "--version"],
+          { signal: controller.signal, env: engineEnvironment() })
       }
       await engineResult(id, action)
     } catch (error) {

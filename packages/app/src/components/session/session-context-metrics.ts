@@ -4,8 +4,17 @@ import { sessionUsage } from "@/utils/session-message"
 
 export const recordedUsage = sessionUsage
 
-export function usageTotal(entries: readonly { usage?: SessionMessage.Usage }[], key: "input" | "output" | "reasoning" | "cacheRead" | "cacheWrite" | "total" | "cost", source?: "reported" | "estimated") {
-  const values = entries.flatMap((entry) => entry.usage?.[key] !== undefined && (!source || entry.usage.costSource === source) ? [entry.usage[key]] : [])
+export function usageTotal(entries: readonly { usage?: SessionMessage.Usage }[], key: "input" | "uncachedInput" | "output" | "reasoning" | "cacheRead" | "cacheWrite" | "total" | "cost", source?: "reported" | "estimated") {
+  const values = entries.flatMap((entry) => {
+    const usage = entry.usage
+    if (!usage || (source && usage.costSource !== source)) return []
+    const value = key === "uncachedInput"
+      ? usage.input !== undefined && usage.cacheRead !== undefined && usage.cacheRead <= usage.input
+        ? usage.input - usage.cacheRead
+        : undefined
+      : usage[key]
+    return value === undefined ? [] : [value]
+  })
   return { value: values.length ? values.reduce((sum, value) => sum + value, 0) : undefined, missing: entries.length - values.length }
 }
 

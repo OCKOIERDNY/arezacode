@@ -39,6 +39,7 @@ import { BasicTool, GenericTool } from "./basic-tool"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ToolErrorCard } from "./tool-error-card"
@@ -784,7 +785,11 @@ export function AssistantParts(props: {
 
                 return (
                   <Show when={parts().length > 0}>
-                    <ContextToolGroup parts={parts()} busy={busy()} />
+                    <ContextToolGroup parts={parts()} busy={busy()} renderPart={(part) => (
+                      <Show when={msgs().get(part.messageID)}>{(message) => (
+                        <Part part={part} message={message()} useV2Actions={props.useV2Actions} defaultOpen={partDefaultOpen(part, props.shellToolDefaultOpen, props.editToolDefaultOpen)} />
+                      )}</Show>
+                    )} />
                   </Show>
                 )
               })()}
@@ -826,7 +831,7 @@ export function AssistantParts(props: {
 }
 
 function isContextGroupTool(part: PartType): part is ToolPart {
-  return part.type === "tool" && CONTEXT_GROUP_TOOLS.has(part.tool)
+  return part.type === "tool" && part.tool !== "question" && !HIDDEN_TOOLS.has(part.tool)
 }
 
 function contextToolDetail(part: ToolPart): string | undefined {
@@ -1008,7 +1013,9 @@ export function AssistantMessageDisplay(props: {
 
                 return (
                   <Show when={parts().length > 0}>
-                    <ContextToolGroup parts={parts()} />
+                    <ContextToolGroup parts={parts()} renderPart={(part) => (
+                      <Part part={part} message={props.message} useV2Actions={props.useV2Actions} defaultOpen={false} />
+                    )} />
                   </Show>
                 )
               })()}
@@ -1046,6 +1053,7 @@ export function ContextToolGroup(props: {
   open?: boolean
   onOpenChange?: (open: boolean) => void
   onSizeChange?: () => void
+  renderPart?: (part: ToolPart) => JSX.Element
 }) {
   const i18n = useI18n()
   const [localOpen, setLocalOpen] = createSignal(false)
@@ -1055,6 +1063,8 @@ export function ContextToolGroup(props: {
       !!props.busy || props.parts.some((part) => part.state.status === "pending" || part.state.status === "running"),
   )
   const summary = createMemo(() => contextToolSummary(props.parts))
+  const mixed = createMemo(() => props.parts.some((part) => !CONTEXT_GROUP_TOOLS.has(part.tool)))
+  const failed = createMemo(() => props.parts.some((part) => part.state.status === "error"))
   const handleOpenChange = (value: boolean) => {
     if (props.open === undefined) setLocalOpen(value)
     props.onOpenChange?.(value)
@@ -1071,15 +1081,16 @@ export function ContextToolGroup(props: {
     >
       <Collapsible.Trigger>
         <div data-component="context-tool-group-trigger">
+          <Icon name={mixed() ? "console" : "magnifying-glass-menu"} size="small" />
           <span
             data-slot="context-tool-group-title"
             class="min-w-0 flex items-center gap-2 text-14-medium text-text-strong"
           >
             <span data-slot="context-tool-group-label" class="shrink-0">
               <ToolStatusTitle
-                active={pending()}
-                activeText={i18n.t("ui.sessionTurn.status.gatheringContext")}
-                doneText={i18n.t("ui.sessionTurn.status.gatheredContext")}
+                active={pending() && !failed()}
+                activeText={i18n.t(mixed() ? "ui.sessionTurn.status.usingTools" : "ui.sessionTurn.status.gatheringContext")}
+                doneText={i18n.t(failed() ? "ui.toolErrorCard.failed" : mixed() ? "ui.sessionTurn.status.usedTools" : "ui.sessionTurn.status.gatheredContext")}
                 split={false}
               />
             </span>
@@ -1088,7 +1099,7 @@ export function ContextToolGroup(props: {
               class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-normal text-text-base"
             >
               <AnimatedCountList
-                items={[
+                items={mixed() ? [{ key: "ui.messagePart.context.call", count: props.parts.length }] : [
                   {
                     key: "ui.messagePart.context.read",
                     count: summary().read,
@@ -1110,6 +1121,7 @@ export function ContextToolGroup(props: {
         </div>
       </Collapsible.Trigger>
       <Collapsible.Content>
+        <ScrollView data-component="tool-group-scroll" orientation="vertical">
         <div data-component="context-tool-group-list">
           <Index each={props.parts}>
             {(partAccessor) => {
@@ -1119,8 +1131,10 @@ export function ContextToolGroup(props: {
               )
               return (
                 <div data-slot="context-tool-group-item">
+                  <Show when={CONTEXT_GROUP_TOOLS.has(partAccessor().tool) && partAccessor().state.status !== "error"} fallback={props.renderPart?.(partAccessor())}>
                   <div data-component="tool-trigger">
                     <div data-slot="basic-tool-tool-trigger-content">
+                      <span data-slot="basic-tool-tool-indicator"><Icon name={getToolInfo(partAccessor().tool).icon} size="small" /></span>
                       <div data-slot="basic-tool-tool-info">
                         <div data-slot="basic-tool-tool-info-structured">
                           <div data-slot="basic-tool-tool-info-main">
@@ -1140,11 +1154,13 @@ export function ContextToolGroup(props: {
                       </div>
                     </div>
                   </div>
+                  </Show>
                 </div>
               )
             }}
           </Index>
         </div>
+        </ScrollView>
       </Collapsible.Content>
     </Collapsible>
   )
@@ -1191,6 +1207,28 @@ export function UserMessageDisplay(props: {
   const [state, setState] = createStore({
     copied: false,
     busy: false,
+    expanded: false,
+    overflow: false,
+    top: false,
+    bottom: false,
+  })
+  const [textViewport, setTextViewport] = createSignal<HTMLDivElement>()
+  const measureText = () => {
+    const viewport = textViewport()
+    if (!viewport) return
+    setState({
+      ...(!state.expanded ? { overflow: viewport.scrollHeight > viewport.clientHeight + 1 } : {}),
+      top: viewport.scrollTop > 1,
+      bottom: viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 1,
+    })
+  }
+  createEffect(() => {
+    const viewport = textViewport()
+    if (!viewport) return
+    const observer = new ResizeObserver(measureText)
+    observer.observe(viewport)
+    if (viewport.firstElementChild) observer.observe(viewport.firstElementChild)
+    onCleanup(() => observer.disconnect())
   })
   const copied = () => state.copied
   const busy = () => state.busy
@@ -1200,6 +1238,7 @@ export function UserMessageDisplay(props: {
   )
 
   const text = createMemo(() => textPart()?.text || "")
+  createEffect(() => { text(); setState("expanded", false) })
 
   const files = createMemo(() => (props.parts?.filter((p) => p.type === "file") as FilePart[]) ?? [])
 
@@ -1263,6 +1302,7 @@ export function UserMessageDisplay(props: {
 
   const renderAttachments = () => (
     <Show when={attachments().length > 0}>
+      <ScrollView class="user-message-attachment-scroll" orientation="horizontal">
       <div data-slot="user-message-attachments">
         <For each={attachments()}>
           {(file) => {
@@ -1273,7 +1313,9 @@ export function UserMessageDisplay(props: {
               <Show
                 when={newLayout() && type === "file"}
                 fallback={
-                  <div
+                  <button
+                    type="button"
+                    aria-label={name}
                     data-slot="user-message-attachment"
                     data-type={type}
                     data-clickable={type === "image" ? "true" : undefined}
@@ -1293,7 +1335,7 @@ export function UserMessageDisplay(props: {
                     >
                       <img data-slot="user-message-attachment-image" src={file.url} alt={name} />
                     </Show>
-                  </div>
+                  </button>
                 }
               >
                 <AttachmentCardV2
@@ -1309,12 +1351,13 @@ export function UserMessageDisplay(props: {
           }}
         </For>
       </div>
+      </ScrollView>
     </Show>
   )
 
   return (
     <div data-component="user-message" data-timeline-part-id={textPart()?.id}>
-      <Show when={!props.useV2Actions}>{renderAttachments()}</Show>
+      {renderAttachments()}
       <Show
         when={text()}
         fallback={
@@ -1328,15 +1371,32 @@ export function UserMessageDisplay(props: {
             data-slot="user-message-text"
             dir="auto"
             data-comments={messageComments().length > 0 ? "true" : undefined}
+            data-expanded={state.expanded}
+            data-fade-top={!state.expanded && state.top}
+            data-fade-bottom={!state.expanded && state.bottom}
           >
+            <ScrollView class="user-message-text-scroll" orientation="vertical" viewportRef={setTextViewport} onScroll={measureText}>
+            <div data-slot="user-message-text-content">
             <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
             <Show when={messageComments().length > 0}>
               <UserMessageComments comments={messageComments()} bounded />
             </Show>
+            </div>
+            </ScrollView>
+            <Show when={state.overflow}>
+              <div data-slot="user-message-expand">
+                <IconButton
+                  icon={state.expanded ? "collapse" : "expand"}
+                  aria-label={i18n.t(state.expanded ? "ui.message.collapse" : "ui.message.expand")}
+                  title={i18n.t(state.expanded ? "ui.message.collapse" : "ui.message.expand")}
+                  aria-expanded={state.expanded}
+                  onClick={() => setState("expanded", !state.expanded)}
+                />
+              </div>
+            </Show>
           </div>
         </div>
       </Show>
-      <Show when={props.useV2Actions}>{renderAttachments()}</Show>
       <Show when={text() || (props.useV2Actions && messageComments().length > 0)}>
         <div data-slot="user-message-copy-wrapper">
           <Show when={metaHead() || metaTail()}>
@@ -1391,16 +1451,19 @@ export function UserMessageDisplay(props: {
   )
 }
 
-type HighlightSegment = { text: string; type?: "file" | "agent" }
+type HighlightSegment = { text: string; type?: "file" | "agent" | "skill" }
 
 function HighlightedText(props: { text: string; references: FilePart[]; agents: AgentPart[] }) {
   const segments = createMemo(() => {
     const text = props.text
 
-    const allRefs: { start: number; end: number; type: "file" | "agent" }[] = [
+    const allRefs: { start: number; end: number; type: "file" | "agent" | "skill"; label?: string }[] = [
+      ...Array.from(text.matchAll(/\[\$?([^\[\]\n]+)\]\(([^()\n]*\/SKILL\.md)\)/g), (match) => ({
+        start: match.index!, end: match.index! + match[0].length, type: "skill" as const, label: match[1],
+      })),
       ...props.references
         .filter((r) => r.source?.text?.start !== undefined && r.source?.text?.end !== undefined)
-        .map((r) => ({ start: r.source!.text!.start, end: r.source!.text!.end, type: "file" as const })),
+        .map((r) => ({ start: r.source!.text!.start, end: r.source!.text!.end, type: /(?:^|\/)SKILL\.md$/.test(r.filename ?? (r.source?.type === "file" ? r.source.path : "")) ? "skill" as const : "file" as const })),
       ...props.agents
         .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
         .map((a) => ({ start: a.source!.start, end: a.source!.end, type: "agent" as const })),
@@ -1416,7 +1479,7 @@ function HighlightedText(props: { text: string; references: FilePart[]; agents: 
         result.push({ text: text.slice(lastIndex, ref.start) })
       }
 
-      result.push({ text: text.slice(ref.start, ref.end), type: ref.type })
+      result.push({ text: ref.label ?? text.slice(ref.start, ref.end), type: ref.type })
       lastIndex = ref.end
     }
 
@@ -1427,7 +1490,7 @@ function HighlightedText(props: { text: string; references: FilePart[]; agents: 
     return result
   })
 
-  return <For each={segments()}>{(segment) => <span data-highlight={segment.type}>{segment.text}</span>}</For>
+  return <For each={segments()}>{(segment) => <span data-highlight={segment.type}><Show when={segment.type === "skill"}><Icon name="brain" size="small" /></Show>{segment.text}</span>}</For>
 }
 
 export function Part(props: MessagePartProps) {

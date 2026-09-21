@@ -27,6 +27,7 @@ export type TimelineRowMap = {
     previousAssistantPart: boolean
   }
   Thinking: { userMessageID: string; reasoningHeading?: string }
+  WorkSummary: { userMessageID: string; groups: PartGroup[] }
   Retry: { userMessageID: string }
   DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
   Error: { userMessageID: string; text: string }
@@ -168,8 +169,16 @@ export namespace Timeline {
       )
     }
 
-    let assistantGroupIndex = 0
-    assistantItems.forEach((item) => {
+    const final = assistantPartRefs.at(-1)
+    const finished = !error && !interrupted && !compaction && (!isActive || status === "idle") &&
+      assistantMessages.at(-1)?.time.completed !== undefined && final?.part.type === "text"
+    const finalStart = assistantPartRefs.findLastIndex((ref) => ref.part.type !== "text" || ref.messageID !== final?.messageID) + 1
+    const summaryEnd = finished ? assistantItems.findIndex((item) => item.type === "part" && item.group.type === "part" && item.group.ref.partID === assistantPartRefs[finalStart]?.part.id) : 0
+    const work = summaryEnd > 0 ? assistantItems.slice(0, summaryEnd).flatMap((item) => item.type === "part" ? [item.group] : []) : []
+    if (work.length > 0) rows.push(new TimelineRow.WorkSummary({ userMessageID: userMessage.id, groups: work }))
+
+    let assistantGroupIndex = work.length > 0 ? 1 : 0
+    ;(work.length > 0 ? assistantItems.slice(summaryEnd) : assistantItems).forEach((item) => {
       if (item.type === "interrupted") {
         rows.push(
           new TimelineRow.TurnDivider({

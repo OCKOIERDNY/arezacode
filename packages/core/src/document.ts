@@ -7,11 +7,7 @@ import { documentType } from "@opencode-ai/schema/document"
 import { Global } from "./global"
 import { engineCommand, engineEnabled, nativeBinary } from "./util/native-command"
 import { Jev } from "./jev"
-import { Integration } from "@opencode-ai/schema/integration"
-import { Schema } from "effect"
 import { fileURLToPath } from "node:url"
-import { lookup } from "node:dns/promises"
-import { BlockList, isIP } from "node:net"
 import type { FileAttachment } from "./session/prompt"
 
 export { documentType }
@@ -89,66 +85,23 @@ export async function attachment(file: FileAttachment, signal?: AbortSignal, ses
   return `Document: ${file.name ?? "attachment"}\n${(ranked ?? text).slice(0, 30_000)}\nFull converted document: ${output}`
 }
 
-const docsRoot = path.join(Global.Path.data, "grounded-docs")
-const docsFile = path.join(docsRoot, "sources.json")
-const Source = Schema.Struct({ ...Integration.DocsSource.fields, indexedAt: Schema.Number.pipe(Schema.optional), error: Schema.String.pipe(Schema.optional) })
-let docsWriting = Promise.resolve()
-const privateNetworks = new BlockList()
-for (const [address, prefix] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 3]] as const)
-  privateNetworks.addSubnet(address, prefix)
-privateNetworks.addSubnet("2001:db8::", 32, "ipv6")
-
-export async function docsSources() {
-  return Schema.decodeUnknownSync(Schema.Array(Source))(
-    Schema.decodeUnknownSync(Schema.UnknownFromJsonString)(await readFile(docsFile, "utf8").catch(() => "[]")),
-  )
-}
-
-export async function docsSearch(input: typeof Integration.DocsQuery.Type, signal?: AbortSignal) {
-  const query = Schema.decodeUnknownSync(Integration.DocsQuery)(input)
-  const source = (await docsSources()).find((item) => item.library === query.library && item.version === query.version && item.indexedAt && !item.error)
-  if (!source) throw new Error("This documentation version has not been indexed. Add its official source in Settings > Tools.")
-  return docsCommand(["search", query.library, ` ${query.query}`, "--version", query.version, "--exact-match", "--limit", "5", "--output", "json"], signal)
-}
-
-export function docsIndex(input: typeof Integration.DocsSource.Type, remove = false, signal?: AbortSignal) {
-  const source = Schema.decodeUnknownSync(Integration.DocsSource)(input)
-  const task = docsWriting.catch(() => {}).then(async () => {
-    signal?.throwIfAborted()
-    if (!remove) {
-      const url = new URL(source.url)
-      if (url.protocol !== "https:" || url.username || url.password || url.port && url.port !== "443") throw new Error("Documentation must use a public HTTPS URL")
-      const addresses = await lookup(url.hostname.replace(/^\[|\]$/g, ""), { all: true })
-      if (!addresses.length || addresses.some(({ address }) => isIP(address) === 6
-        ? !/^[23]/.test(address) || privateNetworks.check(address, "ipv6")
-        : privateNetworks.check(address))) throw new Error("Private documentation hosts are not permitted")
-    }
-    const sources = await docsSources()
-    const remaining = sources.filter((item) => item.library !== source.library || item.version !== source.version)
-    await mkdir(docsRoot, { recursive: true })
-    const temporary = `${docsFile}.${Date.now()}.tmp`
-    await writeFile(temporary, JSON.stringify(remove ? remaining : [...remaining, { ...source, error: "Indexing incomplete. Refresh this source to retry." }]), { mode: 0o600 })
-    await rename(temporary, docsFile)
-    const result = await docsCommand(remove
-      ? ["remove", source.library, "--version", source.version]
-      : ["scrape", source.library, source.url, "--version", source.version, "--max-pages", "100", "--max-depth", "3", "--scope", "subpages"], signal)
-    await writeFile(temporary, JSON.stringify(remove ? remaining : [...remaining, { ...source, indexedAt: Date.now() }]), { mode: 0o600 })
-    await rename(temporary, docsFile)
-    return result
-  })
-  docsWriting = task.then(() => {}, () => {})
-  return task
-}
-
-function docsCommand(args: string[], signal?: AbortSignal) {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
-    ["PATH", "HOME", "TMPDIR", "LANG", "SYSTEMROOT"].includes(key)))
-  return engineCommand("grounded", [...args, "--store-path", path.join(docsRoot, "index"), "--no-telemetry", "--no-logo"], {
-    cwd: docsRoot,
-    env: { ...env, DOCS_MCP_TELEMETRY: "false", DOCS_MCP_EMBEDDING_MODEL: "", DOCS_MCP_SCRAPER_SECURITY_NETWORK_ALLOW_PRIVATE_NETWORKS: "false" },
-    timeout: args[0] === "scrape" ? 300_000 : 30_000,
-    signal,
-  })
+export async function context7(name: "resolve-library-id" | "query-docs", input: Record<string, string>, signal?: AbortSignal) {
+  if (!(await engineEnabled("context7"))) throw new Error("Context7 is disabled")
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js")
+  const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js")
+  const client = new Client({ name: "ArezaCode", version: "1.0.0" })
+  const timeout = AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])])
+  const transport = new StreamableHTTPClientTransport(new URL("https://mcp.context7.com/mcp"), { requestInit: { signal: timeout } })
+  try {
+    await client.connect(transport, { signal: timeout, timeout: 30_000 })
+    const result = await client.callTool({ name, arguments: input }, undefined, { signal: timeout, timeout: 30_000 })
+    const text = result.content.flatMap((item) => item.type === "text" ? [item.text] : []).join("\n\n")
+    if (result.isError) throw new Error(text || "Context7 request failed")
+    if (!text) throw new Error("Context7 returned no documentation")
+    return text
+  } finally {
+    await client.close()
+  }
 }
 
 export function page(text: string, offset = 1, limit = 2000) {

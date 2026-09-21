@@ -27,10 +27,6 @@ export function createToolsClient(server: ServerConnection.HttpBase, fetcher: ty
     toolsList: async () => status(await request("GET", "/api/tools")),
     toolsAction: async (input: { engineID: typeof Integration.EngineID.Type } & typeof Integration.EngineAction.Type) =>
       status(await request("POST", `/api/tools/${input.engineID}`, { action: input.action })),
-    docsList: async () => Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ ...Integration.DocsSource.fields, indexedAt: Schema.Number.pipe(Schema.optional), error: Schema.String.pipe(Schema.optional) })))(await request("GET", "/api/tools/docs/sources")),
-    docsIndex: async (input: typeof Integration.DocsSource.Type, options?: { signal?: AbortSignal }): Promise<string> => request("POST", "/api/tools/docs/sources", input, options?.signal),
-    docsRemove: async (input: typeof Integration.DocsSource.Type, options?: { signal?: AbortSignal }): Promise<string> => request("DELETE", "/api/tools/docs/sources", input, options?.signal),
-    docsSearch: async (input: typeof Integration.DocsQuery.Type, options?: { signal?: AbortSignal }): Promise<string> => request("POST", "/api/tools/docs/search", input, options?.signal),
   }
 }
 

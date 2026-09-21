@@ -65,7 +65,7 @@ const layer = Layer.effectDiscard(
     yield* tools
       .register({
         reuse_check: Tool.withPermission(Tool.make({
-          description: "Before creating a source file or adding a substantial feature, search for existing owners, shared UI components, helpers, and installed native capabilities. Supply the target and a feature-oriented search pattern. Returns bounded evidence, never proof that no duplicates exist. Valid evidence permits source writes for ten minutes until the target or candidates change. Inspect the candidates and use docs_search for installed-library APIs before implementing.",
+          description: "Before creating a source file or adding a substantial feature, search for existing owners, shared UI components, helpers, and installed native capabilities. Supply the target and a feature-oriented search pattern. Returns bounded evidence, never proof that no duplicates exist. Valid evidence permits source writes for ten minutes until the target or candidates change. Inspect the candidates and use Context7 for installed-library APIs before implementing.",
           input: Schema.Struct({ target: Schema.String, query: Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(200)) }),
           output: Schema.String,
           toModelOutput: ({ output }) => [{ type: "text", text: output }],
