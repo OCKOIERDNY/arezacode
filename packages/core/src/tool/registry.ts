@@ -13,6 +13,7 @@ import { definition, permission, settle, validateName, type AnyTool, type Regist
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
 import { engineEnabled } from "../util/native-command"
+import { Browser } from "../browser"
 
 export type ExecuteInput = {
   readonly sessionID: SessionSchema.ID
@@ -112,6 +113,7 @@ const registryLayer = Layer.effect(
         }
         for (const [name, registration] of registrations)
           if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
+        if (!Browser.available()) registrations.delete("browser")
         if (!(yield* Effect.promise(() => engineEnabled("context7")))) {
           registrations.delete("context7_resolve_library_id")
           registrations.delete("context7_query_docs")

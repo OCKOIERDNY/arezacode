@@ -16,10 +16,12 @@ export function useProjectServices(active: Accessor<boolean>) {
     failed: false,
     stopping: "",
     stopFailed: false,
+    starting: "",
+    startFailed: false,
   })
   let revision = 0
   const refresh = async () => {
-    if (!available() || !active() || store.loading || store.stopping) return
+    if (!available() || !active() || store.loading || store.stopping || store.starting) return
     const current = revision
     setStore({ loading: true, failed: false })
     await platform.projectServices!.list(sdk().directory).then(
@@ -31,16 +33,18 @@ export function useProjectServices(active: Accessor<boolean>) {
       },
     )
   }
-  const stop = async (id: string) => {
-    if (!available() || store.stopping) return
+  const change = async (action: "start" | "stop", id: string) => {
+    if (!available() || store.stopping || store.starting) return
     const current = ++revision
-    setStore({ stopping: id, stopFailed: false, loading: false })
-    await platform.projectServices!.stop(sdk().directory, id).then(
+    const pending = action === "start" ? "starting" : "stopping"
+    const failed = action === "start" ? "startFailed" : "stopFailed"
+    setStore({ [pending]: id, startFailed: false, stopFailed: false, loading: false })
+    await platform.projectServices![action](sdk().directory, id).then(
       () => {
-        if (current === revision) setStore("stopping", "")
+        if (current === revision) setStore(pending, "")
       },
       () => {
-        if (current === revision) setStore({ stopping: "", stopFailed: true })
+        if (current === revision) setStore({ [pending]: "", [failed]: true })
       },
     )
     if (current === revision) await refresh()
@@ -49,7 +53,15 @@ export function useProjectServices(active: Accessor<boolean>) {
     sdk().directory
     const enabled = available() && active()
     revision++
-    setStore({ data: undefined, loading: false, failed: false, stopping: "", stopFailed: false })
+    setStore({
+      data: undefined,
+      loading: false,
+      failed: false,
+      stopping: "",
+      stopFailed: false,
+      starting: "",
+      startFailed: false,
+    })
     if (!enabled) return
     untrack(() => void refresh())
     const timer = setInterval(() => void refresh(), 10000)
@@ -58,5 +70,11 @@ export function useProjectServices(active: Accessor<boolean>) {
       clearInterval(timer)
     })
   })
-  return { store, available, refresh, stop }
+  return {
+    store,
+    available,
+    refresh,
+    stop: (id: string) => change("stop", id),
+    start: (id: string) => change("start", id),
+  }
 }

@@ -11,7 +11,7 @@ import { usePlatform } from "@/context/platform"
 import type { BrowserState, BrowserUpdate } from "@/browser"
 import { useProjectServices } from "@/hooks/use-project-services"
 
-export function SessionBrowserPanel(props: { active: boolean; url?: string }) {
+export function SessionBrowserPanel(props: { active: boolean; url?: string; id?: string }) {
   const platform = usePlatform()
   const language = useLanguage()
   const dialog = useDialog()
@@ -19,24 +19,32 @@ export function SessionBrowserPanel(props: { active: boolean; url?: string }) {
   const localURLs = createMemo(() => [
     ...new Set(services.store.data?.services.flatMap((service) => service.urls) ?? []),
   ])
-  const id = crypto.randomUUID()
+  const id = props.id ?? crypto.randomUUID()
   const [store, setStore] = createStore({
     address: props.url ?? "",
     invalid: false,
     failed: false,
+    preview: undefined as string | undefined,
     state: { id, url: "", title: "", loading: false, back: false, forward: false } as BrowserState,
   })
   let viewport: HTMLDivElement | undefined
   let frame = 0
   let previous = ""
   let disposed = false
+  const receive = (state: BrowserState) => {
+    if (disposed || state.id !== id) return
+    const changed = state.url !== store.state.url
+    setStore("state", state)
+    if (changed && state.url) setStore("address", state.url)
+  }
   const update = (input: Omit<BrowserUpdate, "id">) => {
     if (disposed) return
     void platform.browser?.update({ id, ...input }).then(
       (state) => {
         if (disposed) return
-        setStore("state", state)
+        receive(state)
         setStore("failed", false)
+        if (input.visible) setStore("preview", undefined)
       },
       () => {
         if (!disposed) setStore("failed", true)
@@ -67,21 +75,49 @@ export function SessionBrowserPanel(props: { active: boolean; url?: string }) {
     const rect = viewport.getBoundingClientRect()
     const visible =
       props.active &&
-      !dialog.active &&
       !document.hidden &&
       !store.state.error &&
       !store.failed &&
       !!store.state.url &&
       rect.width > 0 &&
-      rect.height > 0 &&
-      !viewport.closest("[inert]") &&
-      !document.querySelector(
+      rect.height > 0
+    const covered =
+      dialog.active ||
+      !!viewport.closest("[inert]") ||
+      !!document.querySelector(
         '[role="menu"][data-expanded], [role="dialog"], [data-component="popover-content"][data-expanded]',
       )
-    const input = { visible, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } }
+    const input = {
+      visible: visible && !covered,
+      bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    }
     const next = JSON.stringify(input)
     if (next === previous) return
     previous = next
+    if (visible && covered && platform.browser) {
+      void platform.browser
+        .update({ id, action: "capture" })
+        .then(async (state) => {
+          if (disposed || previous !== next) return
+          if (!state.preview) {
+            update(input)
+            return
+          }
+          const image = new Image()
+          image.src = state.preview
+          await image.decode()
+          if (disposed || previous !== next) return
+          setStore("preview", state.preview)
+          requestAnimationFrame(() => {
+            if (!disposed && previous === next) update(input)
+          })
+        })
+        .catch(() => {
+          if (!disposed && previous === next) update(input)
+        })
+      return
+    }
+    if (!visible) setStore("preview", undefined)
     update(input)
   }
   const schedule = () => {
@@ -101,12 +137,7 @@ export function SessionBrowserPanel(props: { active: boolean; url?: string }) {
     if (props.url) navigate(props.url)
   })
   onMount(() => {
-    const unsubscribe = platform.browser?.subscribe((state) => {
-      if (state.id !== id) return
-      const changed = state.url !== store.state.url
-      setStore("state", state)
-      if (changed && state.url) setStore("address", state.url)
-    })
+    const unsubscribe = platform.browser?.subscribe(receive)
     const resize = new ResizeObserver(schedule)
     if (viewport) resize.observe(viewport)
     const overlay = '[role="menu"], [role="dialog"], [data-component="popover-content"]'
@@ -262,23 +293,35 @@ export function SessionBrowserPanel(props: { active: boolean; url?: string }) {
         </div>
       </Show>
       <div ref={viewport} class="flex-1 min-h-0 relative flex flex-col overflow-y-auto">
-        <Show
-          when={store.failed || store.state.error}
-          fallback={
-            <EmptyState
-              icon={<Icon name="window-cursor" />}
-              title={language.t("session.browser.empty.title")}
-              description={language.t(platform.browser ? "session.browser.empty" : "session.browser.desktop")}
+        <Show when={store.preview}>
+          {(preview) => (
+            <img
+              data-component="browser-preview-snapshot"
+              src={preview()}
+              alt=""
+              class="absolute inset-0 size-full object-fill pointer-events-none"
             />
-          }
-        >
-          <div role="alert" class="flex flex-1">
-            <EmptyState
-              icon={<Icon name="circle-ban-sign" />}
-              title={language.t("session.browser.error.title")}
-              description={language.t("session.browser.error")}
-            />
-          </div>
+          )}
+        </Show>
+        <Show when={!store.state.url || store.failed || store.state.error}>
+          <Show
+            when={store.failed || store.state.error}
+            fallback={
+              <EmptyState
+                icon={<Icon name="window-cursor" />}
+                title={language.t("session.browser.empty.title")}
+                description={language.t(platform.browser ? "session.browser.empty" : "session.browser.desktop")}
+              />
+            }
+          >
+            <div role="alert" class="flex flex-1">
+              <EmptyState
+                icon={<Icon name="circle-ban-sign" />}
+                title={language.t("session.browser.error.title")}
+                description={language.t("session.browser.error")}
+              />
+            </div>
+          </Show>
         </Show>
       </div>
     </div>

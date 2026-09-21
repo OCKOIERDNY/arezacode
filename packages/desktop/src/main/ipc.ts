@@ -25,7 +25,7 @@ import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { createDesktopDraftStore } from "./draft-store"
 import { nativeT } from "./native-translations"
 import { registerBrowserHandlers } from "./browser-view"
-import { listProjectServices, stopProjectService } from "./project-services"
+import { listProjectServices, startProjectService, stopProjectService } from "./project-services"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -57,7 +57,7 @@ type Deps = {
 }
 
 export function registerIpcHandlers(deps: Deps) {
-  registerBrowserHandlers()
+  const browserReady = registerBrowserHandlers()
   const requireServiceOwner = (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win.isDestroyed() || win.webContents !== event.sender || event.senderFrame !== event.sender.mainFrame)
@@ -70,6 +70,10 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("project-services-stop", (event, directory: unknown, id: unknown) => {
     requireServiceOwner(event)
     return stopProjectService(directory, id)
+  })
+  ipcMain.handle("project-services-start", (event, directory: unknown, id: unknown) => {
+    requireServiceOwner(event)
+    return startProjectService(directory, id)
   })
   const drafts = createDesktopDraftStore(join(app.getPath("userData"), "drafts.sqlite"))
   const updaterSubscriptions = createUpdaterSubscriptions()
@@ -313,6 +317,7 @@ export function registerIpcHandlers(deps: Deps) {
       relaunch: deps.relaunch,
     })
   })
+  return browserReady
 }
 
 export function sendMenuCommand(win: BrowserWindow, id: string) {

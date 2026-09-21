@@ -113,11 +113,58 @@ test("tool rows use compact spacing, distinct icons and hover contrast", async (
   await group.click()
   const error = page.locator('[data-kind="tool-error-card"]')
   const errorTrigger = error.locator('[data-slot="collapsible-trigger"]')
+  const normalTrigger = shells.first().locator('xpath=ancestor::*[@data-slot="collapsible-trigger"]')
+  expect((await errorTrigger.boundingBox())!.height).toBe((await normalTrigger.boundingBox())!.height)
+  const indicator = '[data-slot="basic-tool-tool-indicator"]'
+  expect((await error.locator(indicator).boundingBox())!.x).toBe((await shells.first().locator(indicator).boundingBox())!.x)
+  expect(await error.locator('[data-slot="basic-tool-tool-title"]').evaluate((el) => getComputedStyle(el).fontSize))
+    .toBe(await shells.first().locator('[data-slot="basic-tool-tool-title"]').evaluate((el) => getComputedStyle(el).fontSize))
   if (await errorTrigger.getAttribute("aria-expanded") === "false") await errorTrigger.click()
   await expect(error).toContainText("Typecheck failed")
   expect(await error.evaluate((element) => getComputedStyle(element, "::before").content)).toBe("none")
   await expect(error.locator('[data-component="tool-error-card-icon"]')).toBeVisible()
   await page.screenshot({ path: "/tmp/areza-tool-error-no-line.png" })
+  await errorTrigger.click()
+  await shells.first().click()
+  await expect(errorTrigger).toHaveAttribute("aria-expanded", "false")
+  await viewport.evaluate((element) => { element.scrollTop = element.scrollHeight })
+  expect((await error.boundingBox())!.height).toBe((await normalTrigger.boundingBox())!.height)
+  await page.screenshot({ path: "/tmp/areza-tool-error-alignment.png" })
+})
+
+test("expanded patch headers scroll with their tool group", async ({ page }) => {
+  const fixture = await setupTimelineBenchmark(page, { historyTurns: 2, eventBatch: 1, newLayoutDesigns: true })
+  const files = ["src/first.ts", "src/second.ts"].map((filePath) => ({
+    filePath, relativePath: filePath, type: "update", additions: 40, deletions: 40,
+    before: Array.from({ length: 40 }, (_, index) => `export const value${index} = ${index}\n`).join(""),
+    after: Array.from({ length: 40 }, (_, index) => `export const value${index} = ${index + 1}\n`).join(""),
+  }))
+  fixture.transport.enqueue({ directory: "C:/OpenCode/TimelineStateRegression", payload: {
+    type: "message.part.updated", properties: { part: {
+      id: "prt_90000_scroll_patch", sessionID: "ses_timeline_state_regression", messageID: "msg_assistant_regression",
+      type: "tool", callID: "call_scroll_patch", tool: "apply_patch",
+      state: { status: "completed", input: { files: files.map((file) => file.filePath) }, output: "Done", title: "Done", metadata: { files }, time: { start: 1700000001000, end: 1700000002000 } },
+    } },
+  } })
+  const group = page.locator('[data-component="context-tool-group-trigger"]').last()
+  await expect(group).toContainText("Used tools")
+  await fixture.scrollToBottom()
+  await group.click()
+  const patch = page.locator('[data-component="apply-patch-tool"]').last()
+  const trigger = patch.locator('[data-slot="collapsible-trigger"]').first()
+  if (await trigger.getAttribute("aria-expanded") === "false") await trigger.click()
+  const header = patch.locator('[data-component="sticky-accordion-header"]').first()
+  await expect(header).toBeVisible()
+  await expect(trigger).toHaveCSS("position", "static")
+  await expect(header).toHaveCSS("position", "static")
+  await fixture.scrollToBottom()
+  const viewport = page.locator('[data-component="tool-group-scroll"]').last().locator('.scroll-view__viewport')
+  await viewport.evaluate((element) => { element.scrollTop = 0 })
+  const top = (await header.boundingBox())!.y
+  await page.screenshot({ path: "/tmp/areza-tool-headers-top.png" })
+  await viewport.evaluate((element) => { element.scrollTop = 160 })
+  await expect.poll(async () => top - (await header.boundingBox())!.y).toBeCloseTo(160, 0)
+  await page.screenshot({ path: "/tmp/areza-tool-headers-scrolled.png" })
 })
 
 test("keeps the review sidebar mounted when committed changes disappear", async ({ page }) => {

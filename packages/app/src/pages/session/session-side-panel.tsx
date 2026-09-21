@@ -375,10 +375,15 @@ export function SessionSidePanel(props: {
             classList={{ hidden: activeTab() !== tab }}
             inert={activeTab() !== tab || undefined}
           >
-            <SessionBrowserPanel
-              active={reviewOpen() && activeTab() === tab}
-              url={tab.startsWith("browser:") ? tab.slice(8) : undefined}
-            />
+            <Show when={params.id ?? "draft"} keyed>
+              {(sessionID) => (
+                <SessionBrowserPanel
+                  id={tab === "browser" && sessionID !== "draft" ? `agent_${sessionID}` : undefined}
+                  active={reviewOpen() && activeTab() === tab}
+                  url={tab.startsWith("browser:") ? tab.slice(8) : undefined}
+                />
+              )}
+            </Show>
           </div>
         )}
       </For>

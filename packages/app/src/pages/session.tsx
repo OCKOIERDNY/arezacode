@@ -389,6 +389,23 @@ export default function Page() {
   const newSessionDesign = createMemo(() => settings.general.newLayoutDesigns())
 
   createEffect(() => {
+    const sessionID = params.id
+    const browser = platform.browser
+    if (!browser || !sessionID) return
+    void browser.bind({ sessionID, directory: sdk().directory })
+    onCleanup(() => void browser.bind(undefined))
+  })
+  onMount(() => {
+    const unsubscribe = platform.browser?.onOpen((sessionID) => {
+      if (sessionID !== params.id) return
+      tabs().open("browser")
+      view().reviewPanel.open()
+      queueMicrotask(() => tabs().setActive("browser"))
+    })
+    onCleanup(() => unsubscribe?.())
+  })
+
+  createEffect(() => {
     if (!prompt.ready()) return
     untrack(() => {
       if (params.id) return

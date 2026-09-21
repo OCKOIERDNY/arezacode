@@ -33,9 +33,15 @@ export function SessionServerPanel(props: { active: boolean; onPreview: (url: st
             />
           }
         >
-          <Show when={services.store.failed || services.store.stopFailed}>
+          <Show when={services.store.failed || services.store.stopFailed || services.store.startFailed}>
             <p role="alert" class="mb-3 text-13-regular text-text-weak">
-              {language.t(services.store.stopFailed ? "session.servers.stopError" : "session.servers.error")}
+              {language.t(
+                services.store.startFailed
+                  ? "session.servers.startError"
+                  : services.store.stopFailed
+                    ? "session.servers.stopError"
+                    : "session.servers.error",
+              )}
             </p>
           </Show>
           <Show when={services.store.data?.processes === "unavailable"}>
@@ -50,7 +56,41 @@ export function SessionServerPanel(props: { active: boolean; onPreview: (url: st
               )}
             </p>
           </Show>
-          <Show when={services.store.data && !services.store.data.services.length}>
+          <For each={services.store.data?.launchers}>
+            {(launcher) => (
+              <div
+                class="flex items-center gap-3 py-4 border-b border-border-weaker-base"
+                data-service-launcher={launcher.id}
+              >
+                <Icon name={launcher.id === "launch:compose" ? "server" : "terminal"} size="small" />
+                <div class="flex-1 min-w-0">
+                  <div class="text-13-medium text-text-strong">
+                    {language.t(launcher.id === "launch:compose" ? "session.servers.compose" : "session.servers.dev")}
+                  </div>
+                  <div class="text-12-regular text-text-weak truncate" title={launcher.command}>
+                    {launcher.command}
+                  </div>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="small"
+                  disabled={
+                    !!services.store.starting ||
+                    !!services.store.stopping ||
+                    (launcher.id === "launch:compose" && services.store.data?.docker !== "available")
+                  }
+                  onClick={() => void services.start(launcher.id)}
+                >
+                  {language.t(
+                    services.store.starting === launcher.id ? "session.servers.starting" : "session.servers.start",
+                  )}
+                </Button>
+              </div>
+            )}
+          </For>
+          <Show
+            when={services.store.data && !services.store.data.services.length && !services.store.data.launchers?.length}
+          >
             <EmptyState
               icon={<Icon name="server" />}
               title={language.t("session.servers.empty.title")}
@@ -71,11 +111,19 @@ export function SessionServerPanel(props: { active: boolean; onPreview: (url: st
                   <Button
                     variant="ghost"
                     size="small"
-                    disabled={!!services.store.stopping}
-                    onClick={() => void services.stop(service.id)}
+                    disabled={!!services.store.stopping || !!services.store.starting}
+                    onClick={() =>
+                      void (service.running === false ? services.start(service.id) : services.stop(service.id))
+                    }
                   >
                     {language.t(
-                      services.store.stopping === service.id ? "session.servers.stopping" : "session.browser.stop",
+                      services.store.starting === service.id
+                        ? "session.servers.starting"
+                        : services.store.stopping === service.id
+                          ? "session.servers.stopping"
+                          : service.running === false
+                            ? "session.servers.start"
+                            : "session.browser.stop",
                     )}
                   </Button>
                 </div>
@@ -83,7 +131,15 @@ export function SessionServerPanel(props: { active: boolean; onPreview: (url: st
                   {language.t(service.kind === "container" ? "session.servers.container" : "session.servers.process")}
                   {service.pid ? ` · ${language.t("session.servers.pid", { pid: service.pid })}` : ""}
                   {service.ports.length ? ` · ${service.ports.join(", ")}` : ""}
+                  {service.running !== undefined
+                    ? ` · ${language.t(service.running ? "session.servers.running" : "session.servers.stopped")}`
+                    : ""}
                 </span>
+                <Show when={service.failed}>
+                  <p role="alert" class="text-12-regular text-text-weak">
+                    {language.t("session.servers.exited")}
+                  </p>
+                </Show>
                 <For each={service.urls}>
                   {(url) => (
                     <button

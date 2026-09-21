@@ -280,37 +280,39 @@ const main = Effect.gen(function* () {
     checkForUpdates: () => void showUpdaterDialog(updater, true),
     relaunch,
   }
-  registerIpcHandlers({
-    killSidecar: () => killSidecar(),
-    relaunch,
-    awaitInitialization: Effect.fnUntraced(
-      function* () {
-        logger.log("awaiting server ready")
-        const res = yield* Deferred.await(serverReady)
-        logger.log("server ready", { url: res.url })
-        return res
+  yield* Effect.promise(() =>
+    registerIpcHandlers({
+      killSidecar: () => killSidecar(),
+      relaunch,
+      awaitInitialization: Effect.fnUntraced(
+        function* () {
+          logger.log("awaiting server ready")
+          const res = yield* Deferred.await(serverReady)
+          logger.log("server ready", { url: res.url })
+          return res
+        },
+        (e) => Effect.runPromise(e),
+      ),
+      consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
+      getDefaultServerUrl: () => getDefaultServerUrl(),
+      setDefaultServerUrl: (url) => setDefaultServerUrl(url),
+      isFirstLaunchOnboardingPending,
+      finishFirstLaunchOnboarding,
+      isOldLayoutEligible,
+      getDisplayBackend: async () => null,
+      setDisplayBackend: async () => undefined,
+      checkAppExists: (appName) => checkAppExists(appName),
+      resolveAppPath: async (appName) => resolveAppPath(appName),
+      updater,
+      showUpdater: () => showUpdaterDialog(updater, true),
+      setBackgroundColor: (color) => setBackgroundColor(color),
+      exportDebugLogs: () => exportDebugLogs(),
+      recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
+      setNativeTranslations: (bundle) => {
+        if (setNativeTranslations(bundle)) createMenu(menuDeps)
       },
-      (e) => Effect.runPromise(e),
-    ),
-    consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
-    getDefaultServerUrl: () => getDefaultServerUrl(),
-    setDefaultServerUrl: (url) => setDefaultServerUrl(url),
-    isFirstLaunchOnboardingPending,
-    finishFirstLaunchOnboarding,
-    isOldLayoutEligible,
-    getDisplayBackend: async () => null,
-    setDisplayBackend: async () => undefined,
-    checkAppExists: (appName) => checkAppExists(appName),
-    resolveAppPath: async (appName) => resolveAppPath(appName),
-    updater,
-    showUpdater: () => showUpdaterDialog(updater, true),
-    setBackgroundColor: (color) => setBackgroundColor(color),
-    exportDebugLogs: () => exportDebugLogs(),
-    recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
-    setNativeTranslations: (bundle) => {
-      if (setNativeTranslations(bundle)) createMenu(menuDeps)
-    },
-  })
+    }),
+  )
   registerWslIpcHandlers(wslServers)
   void updater.start()
   const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)

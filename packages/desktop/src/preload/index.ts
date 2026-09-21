@@ -15,8 +15,15 @@ const api: ElectronAPI = {
   projectServices: {
     list: (directory) => ipcRenderer.invoke("project-services-list", directory),
     stop: (directory, id) => ipcRenderer.invoke("project-services-stop", directory, id),
+    start: (directory, id) => ipcRenderer.invoke("project-services-start", directory, id),
   },
   browser: {
+    bind: (scope) => ipcRenderer.invoke("browser-bind", scope),
+    onOpen: (callback) => {
+      const handler = (_: unknown, sessionID: string) => callback(sessionID)
+      ipcRenderer.on("browser-open", handler)
+      return () => ipcRenderer.removeListener("browser-open", handler)
+    },
     update: (input) => ipcRenderer.invoke("browser-update", input),
     close: (id) => ipcRenderer.invoke("browser-close", id),
     subscribe: (callback) => {

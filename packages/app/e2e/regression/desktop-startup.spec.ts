@@ -32,13 +32,26 @@ test("desktop restores layout and manages project servers and previews", async (
       { id: "container:postgres", kind: "container", name: "project-postgres", ports: [5435], urls: [] },
     ]
     const browser = { id: "", url: "", title: "", loading: false, back: false, forward: false }
+    const browsers = new Map<string, typeof browser>()
     const api: Record<string, unknown> = {
       projectServices: {
         list: async () => ({ services, processes: "available", docker: "available" }),
         stop: async (_directory: string, id: string) => { services = services.filter((service) => service.id !== id) },
       },
       browser: {
-        update: async (input: { id: string; url?: string }) => Object.assign(browser, { id: input.id }, input.url ? { url: input.url } : {}),
+        bind: async (scope: unknown) => { Reflect.set(window, "browserScope", scope) },
+        onOpen: (callback: (sessionID: string) => void) => { Reflect.set(window, "openAgentBrowser", callback); return () => {} },
+        update: async (input: { id: string; url?: string; visible?: boolean; action?: string }) => {
+          if (input.visible !== undefined) Reflect.set(window, "browserVisible", input.visible)
+          const state = browsers.get(input.id) ?? { ...browser, id: input.id }
+          browsers.set(input.id, state)
+          Object.assign(state, input.url ? { url: input.url } : {})
+          if (input.action === "capture") return {
+            ...state,
+            preview: "data:image/svg+xml;base64," + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"><rect width="900" height="600" fill="white"/><text x="48" y="90" font-family="sans-serif" font-size="32">Local preview: current page</text></svg>'),
+          }
+          return state
+        },
         subscribe: () => () => {},
         close: async () => {},
       },
@@ -52,7 +65,7 @@ test("desktop restores layout and manages project servers and previews", async (
       isFirstLaunchOnboardingPending: async () => false,
       storeGet: async (name: string, key: string) => {
         if (key === "layout") return Reflect.get(window, "readStartupLayout")()
-        if (key === "settings.v3") return JSON.stringify({ general: { newLayoutDesigns: true } })
+        if (key === "settings.v3") return JSON.stringify({ general: { newLayoutDesigns: true, showStatus: true } })
         return store.get(`${name}:${key}`) ?? null
       },
       storeSet: async (name: string, key: string, value: string) => { store.set(`${name}:${key}`, value) },
@@ -87,9 +100,19 @@ test("desktop restores layout and manages project servers and previews", async (
     expect((await picker.boundingBox())!.width).toBeLessThan(256)
     await picker.click()
     await expect(page.getByRole("menuitemradio", { name: "http://localhost:5173" })).toBeVisible()
+    await expect(preview.locator('[data-component="browser-preview-snapshot"]')).toBeVisible()
+    await expect(preview.locator('[data-component="empty-state"]')).toBeHidden()
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, "browserVisible"))).toBe(false)
     await page.screenshot({ path: "/tmp/areza-local-server-menu.png" })
     await page.getByRole("menuitemradio", { name: "http://localhost:5173" }).click()
     await expect(page.getByRole("menu")).toBeHidden()
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, "browserVisible"))).toBe(true)
+    await expect(preview.locator('[data-component="browser-preview-snapshot"]')).toBeHidden()
+    await page.getByRole("button", { name: "Status", exact: true }).click({ timeout: 10000 })
+    await expect(preview.locator('[data-component="browser-preview-snapshot"]')).toBeVisible()
+    await page.screenshot({ path: "/tmp/areza-browser-other-menu.png" })
+    await page.keyboard.press("Escape")
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, "browserVisible"))).toBe(true)
     await page.screenshot({ path: "/tmp/areza-local-server-picker.png" })
     await panel.getByRole("tab", { name: "Server", exact: true }).click()
     await servers.locator('[data-service-kind="process"]').getByRole("button", { name: "Stop", exact: true }).click()
@@ -112,6 +135,14 @@ test("desktop restores layout and manages project servers and previews", async (
     await expect(browser.getByText("Open a website", { exact: true })).toBeVisible()
     await expect(browser.locator(empty).getByRole("button")).toHaveCount(0)
     await page.screenshot({ path: "/tmp/areza-browser-empty.png" })
+    await panel.getByRole("tab", { name: "Server", exact: true }).click()
+    await page.evaluate((sessionID) => Reflect.get(window, "openAgentBrowser")(sessionID), fixture.targetID)
+    await expect(servers).toBeVisible()
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, "browserScope"))).toEqual({ sessionID: fixture.sourceID, directory: fixture.directory })
+    await page.evaluate((sessionID) => Reflect.get(window, "openAgentBrowser")(sessionID), fixture.sourceID)
+    await expect(browser).toBeVisible()
+    await expect(panel.getByRole("tab", { name: "Browser", exact: true })).toHaveCount(1)
+    await page.screenshot({ path: "/tmp/areza-agent-browser-tab.png" })
   } finally {
     layout.resolve()
   }
