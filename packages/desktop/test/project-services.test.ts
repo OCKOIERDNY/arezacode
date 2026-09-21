@@ -1,8 +1,49 @@
 import { expect, test } from "bun:test"
-import { mkdtemp, mkdir, rm } from "node:fs/promises"
+import { mkdtemp, mkdir, rm, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { listProjectServices, startProjectService, stopProjectService } from "../src/main/project-services"
+
+test("previews the Laravel app without asset, missing-route, or editor links", async () => {
+  const root = await mkdtemp(join(tmpdir(), "areza-preview-services-"))
+  const editor = join(root, ".vscode", "extensions", "php", "devsense.php.ls")
+  await mkdir(join(root, ".vscode", "extensions", "php"), { recursive: true })
+  await symlink(process.execPath, editor)
+  const children = [200, 200, 404, 200].map((status, index) =>
+    Bun.spawn(
+      [
+        index === 3 ? editor : process.execPath,
+        "-e",
+        `const server = Bun.serve({port:0,fetch:()=>new Response("Page",{status:${status}})}); console.log(server.port)`,
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    ),
+  )
+  try {
+    const ports = await Promise.all(
+      children.map(async (child) =>
+        Number(new TextDecoder().decode((await child.stdout.getReader().read()).value).trim()),
+      ),
+    )
+    await Bun.write(join(root, "artisan"), "")
+    await Bun.write(join(root, "public", "hot"), `http://[::1]:${ports[1]}`)
+    const services = (await listProjectServices(root)).services
+    expect(services.flatMap((service) => service.urls)).toEqual([`http://localhost:${ports[0]}/`])
+    expect(services.some((service) => service.pid === children[3]!.pid)).toBe(false)
+    expect(services.find((service) => service.pid === children[1]!.pid)?.ports).toEqual([ports[1]!])
+    await expect(stopProjectService(root, `process:${children[3]!.pid}:stale`)).rejects.toThrow("Service changed")
+    await rm(join(root, "artisan"))
+    expect((await listProjectServices(root)).services.flatMap((service) => service.urls)).toEqual([
+      `http://localhost:${ports[0]}/`,
+      `http://localhost:${ports[1]}/`,
+    ])
+    expect((await fetch(`http://localhost:${ports[3]}`)).status).toBe(200)
+  } finally {
+    children.forEach((child) => child.kill())
+    await Promise.all(children.map((child) => child.exited))
+    await rm(root, { recursive: true, force: true })
+  }
+}, 20000)
 
 test("detects project commands and owns the whole dev server process group", async () => {
   const root = await mkdtemp(join(tmpdir(), "areza-dev-services-"))

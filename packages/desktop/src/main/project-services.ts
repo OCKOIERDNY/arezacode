@@ -25,6 +25,14 @@ const run = (file: string, args: string[], timeout = 5000) =>
 
 export async function listProjectServices(directory: unknown): Promise<ProjectServicesState> {
   const root = await projectDirectory(directory)
+  const hot = (await stat(join(root, "artisan")).catch(() => undefined))?.isFile()
+    ? await readFile(join(root, "public", "hot"), "utf8").catch(() => "")
+    : ""
+  const assets = URL.canParse(hot.trim()) ? new URL(hot.trim()) : undefined
+  const assetPort =
+    assets && ["localhost", "127.0.0.1", "[::1]", "0.0.0.0", "[::]"].includes(assets.hostname)
+      ? Number(assets.port || (assets.protocol === "https:" ? 443 : 80))
+      : undefined
   const [processes, docker] = await Promise.allSettled([projectProcesses(root), projectContainers(root)])
   const managed = launched.get(root)
   const children = processes.status === "fulfilled" ? processes.value : []
@@ -50,7 +58,9 @@ export async function listProjectServices(directory: unknown): Promise<ProjectSe
   ]
   await Promise.all(
     services.map(async (service) => {
-      service.urls = (await Promise.all(service.ports.map(previewURL))).filter((url): url is string => !!url)
+      service.urls = (await Promise.all(service.ports.filter((port) => port !== assetPort).map(previewURL))).filter(
+        (url): url is string => !!url,
+      )
     }),
   )
   return {
@@ -265,7 +275,12 @@ async function projectProcesses(root: string): Promise<ProjectService[]> {
     if (!match || Number(match[2]) !== process.getuid?.()) return []
     const pid = Number(match[1])
     if (!paths.find((entry) => entry.pid === pid)?.names.some((path) => within(root, path))) return []
-    if (/ArezaCode\.app|Electron\.app|\/opencode(?:$|\/)/i.test(match[5]!)) return []
+    if (
+      /ArezaCode\.app|Electron\.app|\/opencode(?:$|\/)|\/\.vscode(?:-insiders)?\/extensions\/|(?:^|\/)devsense\.php\.ls$/i.test(
+        match[5]!,
+      )
+    )
+      return []
     const ports = [
       ...new Set(
         records
@@ -354,7 +369,7 @@ async function previewURL(port: number) {
       const available = await new Promise<boolean>((resolve) => {
         const req = (protocol === "http:" ? http : https).request(url, { method: "HEAD", timeout: 600 }, (response) => {
           response.resume()
-          resolve(true)
+          resolve(!!response.statusCode && response.statusCode >= 200 && response.statusCode < 400)
         })
         req.once("timeout", () => req.destroy())
         req.once("error", () => resolve(false))
