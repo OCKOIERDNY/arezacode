@@ -24,6 +24,8 @@ import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { createDesktopDraftStore } from "./draft-store"
 import { nativeT } from "./native-translations"
+import { registerBrowserHandlers } from "./browser-view"
+import { listProjectServices, stopProjectService } from "./project-services"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -55,6 +57,20 @@ type Deps = {
 }
 
 export function registerIpcHandlers(deps: Deps) {
+  registerBrowserHandlers()
+  const requireServiceOwner = (event: IpcMainInvokeEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed() || win.webContents !== event.sender || event.senderFrame !== event.sender.mainFrame)
+      throw new Error("Invalid project service sender")
+  }
+  ipcMain.handle("project-services-list", (event, directory: unknown) => {
+    requireServiceOwner(event)
+    return listProjectServices(directory)
+  })
+  ipcMain.handle("project-services-stop", (event, directory: unknown, id: unknown) => {
+    requireServiceOwner(event)
+    return stopProjectService(directory, id)
+  })
   const drafts = createDesktopDraftStore(join(app.getPath("userData"), "drafts.sqlite"))
   const updaterSubscriptions = createUpdaterSubscriptions()
   app.once("will-quit", updaterSubscriptions.clear)

@@ -46,7 +46,7 @@ export function createJevClient(server: ServerConnection.HttpBase, fetcher: type
   const request = async (method: string, suffix = "", body?: unknown, directory?: string) => {
     const url = new URL(`/api/jev${suffix}`, server.url)
     if (directory) url.searchParams.set("location[directory]", directory)
-    return send(method, url.pathname + url.search, body, AbortSignal.timeout(5000))
+    return send(method, url.pathname + url.search, body, AbortSignal.timeout(10_000))
   }
   const refresh = async () => {
     const value = await request("GET").catch(() => undefined)

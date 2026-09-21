@@ -1064,7 +1064,7 @@ export function ContextToolGroup(props: {
   )
   const summary = createMemo(() => contextToolSummary(props.parts))
   const mixed = createMemo(() => props.parts.some((part) => !CONTEXT_GROUP_TOOLS.has(part.tool)))
-  const failed = createMemo(() => props.parts.some((part) => part.state.status === "error"))
+  const failed = createMemo(() => props.parts.filter((part) => part.state.status === "error").length)
   const handleOpenChange = (value: boolean) => {
     if (props.open === undefined) setLocalOpen(value)
     props.onOpenChange?.(value)
@@ -1088,9 +1088,9 @@ export function ContextToolGroup(props: {
           >
             <span data-slot="context-tool-group-label" class="shrink-0">
               <ToolStatusTitle
-                active={pending() && !failed()}
+                active={pending()}
                 activeText={i18n.t(mixed() ? "ui.sessionTurn.status.usingTools" : "ui.sessionTurn.status.gatheringContext")}
-                doneText={i18n.t(failed() ? "ui.toolErrorCard.failed" : mixed() ? "ui.sessionTurn.status.usedTools" : "ui.sessionTurn.status.gatheredContext")}
+                doneText={i18n.t(mixed() ? "ui.sessionTurn.status.usedTools" : "ui.sessionTurn.status.gatheredContext")}
                 split={false}
               />
             </span>
@@ -1099,20 +1099,20 @@ export function ContextToolGroup(props: {
               class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-normal text-text-base"
             >
               <AnimatedCountList
-                items={mixed() ? [{ key: "ui.messagePart.context.call", count: props.parts.length }] : [
+                items={[...(mixed() ? [{ key: "ui.messagePart.context.call" as const, count: props.parts.length }] : [
                   {
-                    key: "ui.messagePart.context.read",
+                    key: "ui.messagePart.context.read" as const,
                     count: summary().read,
                   },
                   {
-                    key: "ui.messagePart.context.search",
+                    key: "ui.messagePart.context.search" as const,
                     count: summary().search,
                   },
                   {
-                    key: "ui.messagePart.context.list",
+                    key: "ui.messagePart.context.list" as const,
                     count: summary().list,
                   },
-                ]}
+                ]), ...(failed() ? [{ key: "ui.messagePart.context.failed" as const, count: failed() }] : [])]}
                 fallback=""
               />
             </span>
@@ -1255,7 +1255,7 @@ export function UserMessageDisplay(props: {
     const modelID = props.message.model?.modelID
     if (!providerID || !modelID) return ""
     const match = data.store.provider?.all?.get(providerID)
-    return match?.models?.[modelID]?.name ?? modelID
+    return [match?.models?.[modelID]?.name ?? modelID, props.message.model.variant].filter(Boolean).join(" · ")
   })
   const timefmt = createMemo(() => new Intl.DateTimeFormat(i18n.locale(), { timeStyle: "short" }))
 
@@ -1267,7 +1267,7 @@ export function UserMessageDisplay(props: {
 
   const metaHead = createMemo(() => {
     const agent = props.message.agent
-    const items = [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()]
+    const items = [agent ? agent[0]?.toUpperCase() + agent.slice(1) : ""]
     return items.filter((x) => !!x).join("\u00A0\u00B7\u00A0")
   })
 
@@ -1398,6 +1398,9 @@ export function UserMessageDisplay(props: {
         </div>
       </Show>
       <Show when={text() || (props.useV2Actions && messageComments().length > 0)}>
+        <div data-slot="user-message-model" class="text-12-regular text-text-weak text-right">
+          {model() || (props.message.model?.modelID === "" ? i18n.t("ui.message.routing") : "")}
+        </div>
         <div data-slot="user-message-copy-wrapper">
           <Show when={metaHead() || metaTail()}>
             <span data-slot="user-message-meta-wrap">
@@ -1728,7 +1731,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     if (props.message.role !== "assistant") return ""
     const message = props.message as AssistantMessage
     const match = data.store.provider?.all?.get(message.providerID)
-    return match?.models?.[message.modelID]?.name ?? message.modelID
+    return [match?.models?.[message.modelID]?.name ?? message.modelID, message.variant].filter(Boolean).join(" · ")
   })
 
   const duration = createMemo(() => {
@@ -1757,7 +1760,6 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     const agent = (props.message as AssistantMessage).agent
     const items = [
       agent ? agent[0]?.toUpperCase() + agent.slice(1) : "",
-      model(),
       duration(),
       interrupted() ? i18n.t("ui.message.interrupted") : "",
     ]
@@ -1767,6 +1769,23 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const streaming = createMemo(
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
+  const subagents = createMemo(() => {
+    if (props.message.role !== "assistant") return []
+    const parentID = props.message.parentID
+    return [...new Set((data.store.message[props.message.sessionID] ?? [])
+      .filter((message) => message.role === "assistant" && message.parentID === parentID)
+      .flatMap((message) => (data.store.part[message.id] ?? []).flatMap((part) => {
+        if (part.type !== "tool" || part.tool !== "task" || (part.state.status !== "completed" && part.state.status !== "error")) return []
+        const metadata = part.state.metadata
+        const models: unknown[] = Array.isArray(metadata?.models) ? metadata.models : [metadata?.model]
+        return models.flatMap((model) => {
+          if (!model || typeof model !== "object" || !("modelID" in model) || !("providerID" in model) || typeof model.modelID !== "string" || typeof model.providerID !== "string") return []
+          const name = data.store.provider?.all?.get(model.providerID)?.models[model.modelID]?.name ?? model.modelID
+          const variant = "variant" in model ? model.variant : metadata?.variant
+          return [[name, typeof variant === "string" ? variant : ""].filter(Boolean).join(" · ")]
+        })
+      })))]
+  })
   const text = () => readPartText(data.store.part_text_accum_delta, part())
   const isLastTextPart = createMemo(() => {
     const last = (data.store.part?.[props.message.id] ?? [])
@@ -1798,6 +1817,12 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
           <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
         </div>
         <Show when={showCopy()}>
+          <Show when={props.message.role === "assistant"}>
+            <div data-slot="text-part-models" class="text-12-regular text-text-weak">
+              <div>{i18n.t("ui.message.orchestrator", { model: model() })}</div>
+              <Show when={subagents().length}><div>{i18n.t("ui.message.subagents", { models: subagents().join(", ") })}</div></Show>
+            </div>
+          </Show>
           <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
             <MessageActionButton
               icon={copied() ? "check" : "copy"}

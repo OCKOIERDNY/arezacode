@@ -18,7 +18,7 @@ import { message as cleanMessage } from "@/utils/diffs"
 import { sessionNotFoundError } from "@/utils/server-errors"
 import { rootSession } from "@/utils/session-route"
 import { normalizeSessionInfo } from "@/utils/session"
-import { compareMessages, messageKey, normalizeSessionMessages } from "@/utils/session-message"
+import { compareMessages, messageKey, normalizeSessionMessages, upsertMessage } from "@/utils/session-message"
 import { dropSessionCaches, pickSessionCacheEvictions, SESSION_CACHE_LIMIT } from "./global-sync/session-cache"
 import { createV2SessionReducer, type V2SessionReduction } from "./server-session-v2-reducer"
 import type { ServerApi } from "@/utils/server"
@@ -113,7 +113,7 @@ function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) {
   const observed: { messageID: string; parts: Part[] }[] = []
   for (const item of items) {
     const result = Binary.search(session, messageKey(item.message), messageKey)
-    const found = result.found
+    const found = session.some((message) => message.id === item.message.id)
     if (!found) session.splice(result.index, 0, item.message)
     const current = part.get(item.message.id)
     const confirmed = found ? item.parts.filter((part) => current?.some((value) => value.id === part.id)) : []
@@ -1067,14 +1067,7 @@ export function createServerSession(
           setData("message", info.sessionID, [info])
           return
         }
-        const result = Binary.search(messages, messageKey(info), messageKey)
-        if (result.found) setData("message", info.sessionID, result.index, reconcile(info))
-        if (!result.found)
-          setData("message", info.sessionID, (value = []) => {
-            const next = value.slice()
-            next.splice(result.index, 0, info)
-            return next
-          })
+        setData("message", info.sessionID, reconcile(upsertMessage(messages, info), { key: "id" }))
         return
       }
       case "message.removed": {

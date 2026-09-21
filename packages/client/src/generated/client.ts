@@ -757,6 +757,7 @@ export function make(options: ClientOptions) {
             query: { location: input["location"] },
             body: {
               sessionID: input["sessionID"],
+              promptID: input["promptID"],
               text: input["text"],
               agent: input["agent"],
               auto: input["auto"],

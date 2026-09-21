@@ -17,7 +17,10 @@ test("tool rows use compact spacing, distinct icons and hover contrast", async (
   }
   const group = page.locator('[data-component="context-tool-group-trigger"]').last()
   await expect(group).toContainText("Used tools")
+  await fixture.scrollToBottom()
+  const groupTop = (await group.boundingBox())!.y
   await group.click()
+  await expect.poll(async () => (await group.boundingBox())?.y ?? -1).toBeCloseTo(groupTop, 0)
   const shells = page.locator('[data-component="tool-trigger"]').filter({ hasText: "Shell" })
   await expect(shells).toHaveCount(13)
   const shell = shells.last()
@@ -42,10 +45,14 @@ test("tool rows use compact spacing, distinct icons and hover contrast", async (
   expect((await scroll.boundingBox())!.height).toBeLessThanOrEqual(320)
   expect(await viewport.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
   await viewport.evaluate((element) => { element.scrollTop = 0 })
+  await expect(scroll).toHaveAttribute("data-scroll-below", "true")
+  await expect(scroll).not.toHaveAttribute("data-scroll-above")
+  expect(await viewport.evaluate((element) => getComputedStyle(element).maskImage)).toContain("linear-gradient")
   const outer = await page.locator('.message-timeline-scroll > .scroll-view__viewport').evaluate((element) => element.scrollTop)
   await viewport.hover()
   await page.mouse.wheel(0, 300)
   await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+  await expect(scroll).toHaveAttribute("data-scroll-above", "true")
   expect(await page.locator('.message-timeline-scroll > .scroll-view__viewport').evaluate((element) => element.scrollTop)).toBeCloseTo(outer, 0)
   await expect(scroll.locator('.scroll-view__thumb')).toBeVisible()
   await page.screenshot({ path: "/tmp/areza-compact-tools-expanded.png" })
@@ -63,12 +70,16 @@ test("tool rows use compact spacing, distinct icons and hover contrast", async (
       state: { status: "error", input: { command: "bun typecheck" }, error: "Typecheck failed", time: { start: 1700000001000, end: 1700000002000 } },
     } },
   } })
-  await expect(group).toContainText("Failed")
+  await expect(group.locator('[data-component="tool-count-label"]').last()).toContainText("failed")
+  await expect(group.locator('[data-component="tool-count-label"]').last().locator('[data-component="animated-number"]')).toHaveAttribute("aria-label", "1")
   await group.click()
   const error = page.locator('[data-kind="tool-error-card"]')
   const errorTrigger = error.locator('[data-slot="collapsible-trigger"]')
   if (await errorTrigger.getAttribute("aria-expanded") === "false") await errorTrigger.click()
   await expect(error).toContainText("Typecheck failed")
+  expect(await error.evaluate((element) => getComputedStyle(element, "::before").content)).toBe("none")
+  await expect(error.locator('[data-component="tool-error-card-icon"]')).toBeVisible()
+  await page.screenshot({ path: "/tmp/areza-tool-error-no-line.png" })
 })
 
 test("keeps the review sidebar mounted when committed changes disappear", async ({ page }) => {

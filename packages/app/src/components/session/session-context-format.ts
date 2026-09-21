@@ -14,7 +14,7 @@ export function createSessionContextFormatter(locale: string) {
     },
     time(value: number | undefined) {
       if (!value) return "—"
-      return DateTime.fromMillis(value).setLocale(locale).toLocaleString(DateTime.DATETIME_MED)
+      return DateTime.fromMillis(value).setLocale(locale).toLocaleString(DateTime.DATETIME_MED_WITH_SECONDS)
     },
   }
 }

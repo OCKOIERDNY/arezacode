@@ -66,7 +66,7 @@ import { SessionContextUsage } from "@/components/session-context-usage"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { MessageNavigator } from "./message-navigator"
-import { useSessionKey } from "@/pages/session/session-layout"
+import { useSessionKey, useSessionLayout } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { useServerSDK } from "@/context/server-sdk"
 import { usePlatform } from "@/context/platform"
@@ -318,6 +318,7 @@ export function MessageTimeline(props: {
   const initialMeasurements = cached?.measurements
   const coldBottomMount = !initialMeasurements?.length && props.shouldAnchorBottom()
   const platform = usePlatform()
+  const panels = useSessionLayout()
 
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const sessionID = createMemo(() => params.id)
@@ -483,8 +484,12 @@ export function MessageTimeline(props: {
         return TimelineRow.key(row)
       }
     },
-    anchorTo: "end",
-    followOnAppend: true,
+    get anchorTo() {
+      return props.shouldAnchorBottom() ? "end" : "start"
+    },
+    get followOnAppend() {
+      return props.shouldAnchorBottom()
+    },
     scrollEndThreshold: 80,
     get scrollMargin() {
       return showHeader() ? 64 : 0
@@ -1406,8 +1411,21 @@ export function MessageTimeline(props: {
   }
 
   return (
-    <div class="relative w-full h-full min-w-0" data-message-navigation={props.userMessages.length > 1 || undefined}>
-      <Show when={props.userMessages.length > 1}>
+    <div class="relative w-full h-full min-w-0" data-message-navigation={props.userMessages.length > 0 || undefined} ref={(element) => {
+      const openLink = (event: MouseEvent) => {
+        if (!platform.browser || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !(event.target instanceof Element)) return
+        const link = event.target.closest<HTMLAnchorElement>('a[href]')
+        if (!link || !/^https?:$/.test(new URL(link.href).protocol) || new URL(link.href).origin === window.location.origin) return
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        panels.tabs().open(`browser:${link.href}`)
+        panels.view().reviewPanel.open()
+        queueMicrotask(() => panels.tabs().setActive(`browser:${link.href}`))
+      }
+      element.addEventListener("click", openLink, true)
+      onCleanup(() => element.removeEventListener("click", openLink, true))
+    }}>
+      <Show when={props.userMessages.length > 0}>
         <MessageNavigator
           messages={props.userMessages}
           active={

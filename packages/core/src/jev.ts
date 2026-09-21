@@ -19,6 +19,8 @@ const decode = (text: string) =>
 const file = path.join(Global.Path.config, "jev.json")
 let writing = Promise.resolve()
 const tasks = new Map<string, string>()
+const RoutingModels = Schema.Array(Schema.Struct({ ...Jev.Model.fields, name: Schema.String, description: Schema.String }))
+export const workflow = "Keep reviews brief by default: report only actionable findings, severity, file/line and a short consequence; then one line of verification limits. Skip praise, long explanations, repeated evidence and references unless requested. Before building, inspect the existing flow, shared components and backend owners. Reuse or extend them; do not duplicate implementations unless the user explicitly requests it. Fix the underlying cause, not a workaround that hides it. Prefer available mechanical tools and configured project scripts over ad hoc shell/Python; use reuse_check and project_check when offered. Delegate only bounded independent work that benefits from specialization; include enough context and never duplicate a subagent's work. Jev can select a suitable allowed model for delegated tasks; honor explicit model overrides. If evidence is missing, say what is unknown and use the question tool for information that changes the decision; never invent an answer."
 
 const usageDirectory = (sessionID: string) => path.join(Global.Path.data, "jev-usage", createHash("sha256").update(sessionID).digest("hex"))
 async function saveUsage(sessionID: string, entry: typeof SessionMessage.UsageEntry.Encoded) {
@@ -29,10 +31,27 @@ async function saveUsage(sessionID: string, entry: typeof SessionMessage.UsageEn
   await rename(temporary, path.join(directory, `${entry.id}.json`))
 }
 
+export async function recordCompression(sessionID: string, inputCharacters: number, outputCharacters: number, cached: boolean) {
+  await saveUsage(sessionID, {
+    id: SessionMessage.ID.create(), kind: "automation",
+    model: { providerID: Provider.ID.make("local"), id: Model.ID.make("headroom") },
+    automation: { name: "Headroom", inputCharacters, outputCharacters, cached },
+    finish: outputCharacters < inputCharacters ? "compressed" : "unchanged",
+    time: { created: Date.now(), completed: Date.now() },
+  })
+}
+
 export async function usage(sessionID: string) {
   const directory = usageDirectory(sessionID)
   const files = await readdir(directory).catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return []; throw error })
   return Promise.all(files.filter((file) => /^msg_[\w-]+\.json$/.test(file)).map(async (file) => Schema.decodeUnknownSync(SessionMessage.UsageEntry)(Schema.decodeUnknownSync(Schema.UnknownFromJsonString)(await readFile(path.join(directory, file), "utf8")))))
+}
+
+export async function delegate(parentID: string, sessionID: string, text: string, agent: string, fetcher: typeof fetch = fetch) {
+  const models = await readFile(path.join(usageDirectory(parentID), "routing.json"), "utf8")
+    .then((text) => Schema.decodeUnknownSync(Schema.fromJsonString(RoutingModels))(text)).catch(() => [])
+  if (!models.length) return
+  return prepare({ sessionID, text, agent, auto: true, models }, { models: [...models], skills: [] }, fetcher)
 }
 
 export async function settings() {
@@ -94,23 +113,24 @@ export async function request(
   questions: Record<string, Question>,
   fetcher: typeof fetch = fetch,
   sessionID?: string,
+  trace?: { purpose: string; promptID?: string; models?: Array<typeof Jev.Model.Type>; skills?: string[]; explicitSkills?: string[] },
 ): Promise<Record<string, Answer> | undefined> {
   if (!key || !Object.keys(questions).length) return
   const body = JSON.stringify({ model: "~typesafe/jev-latest", state, questions })
   if (Buffer.byteLength(body) > 48_000) return
-  const entry = { id: SessionMessage.ID.create(), kind: "jev" as const, model: { providerID: Provider.ID.make("openrouter"), id: Model.ID.make("~typesafe/jev-latest") }, time: { created: Date.now() }, usage: { version: 1 as const, costSource: "unknown" as const } }
+  let entry: typeof SessionMessage.UsageEntry.Encoded = { id: SessionMessage.ID.create(), kind: "jev", promptID: trace?.promptID, decision: { purpose: trace?.purpose ?? "decision", outcome: "pending" }, model: { providerID: Provider.ID.make("openrouter"), id: Model.ID.make("~typesafe/jev-latest") }, time: { created: Date.now() }, usage: { version: 1, costSource: "unknown" } }
   if (sessionID && !(await saveUsage(sessionID, entry).then(() => true).catch(() => false))) return
   let saved = false
   return fetcher("https://openrouter.ai/api/alpha/decisions", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body,
-    signal: AbortSignal.timeout(1800),
+    signal: AbortSignal.timeout(5000),
     redirect: "error",
   })
     .then(async (response) => {
       if (!response.ok) {
-        if (sessionID) await saveUsage(sessionID, { ...entry, finish: "error", time: { ...entry.time, completed: Date.now() } })
+        if (sessionID) await saveUsage(sessionID, { ...entry, decision: { ...entry.decision!, outcome: `http-${response.status}` }, finish: "error", time: { ...entry.time, completed: Date.now() } })
         saved = true
         return
       }
@@ -120,8 +140,7 @@ export async function request(
       const finite = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
       const cost = finite(reported.cost)
       const detail = reported.prompt_tokens_details && typeof reported.prompt_tokens_details === "object" ? reported.prompt_tokens_details as Record<string, unknown> : {}
-      if (sessionID) await saveUsage(sessionID, { ...entry, finish: "stop", time: { ...entry.time, completed: Date.now() }, usage: { version: 1, input: finite(reported.prompt_tokens), output: finite(reported.completion_tokens), total: finite(reported.total_tokens), cacheRead: finite(detail.cached_tokens), cacheWrite: finite(detail.cache_write_tokens), cost, costSource: cost === undefined ? "unknown" : "reported", responseID: typeof data.id === "string" ? data.id : undefined } })
-      saved = true
+      entry = { ...entry, usage: { version: 1, input: finite(reported.prompt_tokens), output: finite(reported.completion_tokens), total: finite(reported.total_tokens), cacheRead: finite(detail.cached_tokens), cacheWrite: finite(detail.cache_write_tokens), cost, costSource: cost === undefined ? "unknown" : "reported", responseID: typeof data.id === "string" ? data.id : undefined } }
       const result = Schema.decodeUnknownSync(Response)(raw)
       const answers = Object.fromEntries(Object.entries(result.answers).map(([id, answer]) =>
         [id, { ...answer, confidence: answer.confidence ?? 0 }]))
@@ -136,11 +155,24 @@ export async function request(
           return true
         })
       )
-        return
+        throw new Error("Invalid decision response")
+      const answer = answers.model
+      const selected = answer?.type === "choice" && answer.confidence >= 0.8 ? trace?.models?.[Number(answer.choice.slice(5))] : undefined
+      if (sessionID) await saveUsage(sessionID, {
+        ...entry, finish: "stop", time: { ...entry.time, completed: Date.now() },
+        decision: {
+          purpose: trace?.purpose ?? "decision",
+          outcome: questions.model ? selected ? "selected" : "uncertain" : "evaluated",
+          confidence: answer?.confidence,
+          selected: selected ? { providerID: selected.providerID, id: selected.modelID, variant: selected.variant } : undefined,
+          skills: trace?.skills ? [...(trace.explicitSkills ?? []), ...selectSkills(trace.skills, answers, Math.max(0, 3 - (trace.explicitSkills?.length ?? 0)))] : undefined,
+        },
+      })
+      saved = true
       return answers
     })
     .catch(async () => {
-      if (sessionID && !saved) await saveUsage(sessionID, { ...entry, finish: "error", time: { ...entry.time, completed: Date.now() } }).catch(() => undefined)
+      if (sessionID && !saved) await saveUsage(sessionID, { ...entry, decision: { ...entry.decision!, outcome: "unavailable" }, finish: "error", time: { ...entry.time, completed: Date.now() } }).catch(() => undefined)
       return undefined
     })
 }
@@ -154,7 +186,7 @@ export async function evaluate(
 ) {
   const config = await settings()
   if (!config.enabled || !config[feature]) return
-  const answers = await request(await providerKey(), state, questions, fetcher, sessionID)
+  const answers = await request(await providerKey(), state, questions, fetcher, sessionID, { purpose: feature })
   const latest = await settings()
   return latest.enabled && latest[feature] ? answers : undefined
 }
@@ -162,7 +194,7 @@ export async function evaluate(
 export async function prepare(
   input: typeof Jev.Prepare.Type,
   candidates: {
-    models: Array<{ providerID: string; modelID: string; name: string; description: string }>
+    models: Array<{ providerID: string; modelID: string; variant?: string; name: string; description: string }>
     skills: Array<{ name: string; description?: string; content: string; location: string }>
   },
   fetcher: typeof fetch = fetch,
@@ -172,8 +204,15 @@ export async function prepare(
   if (!config.configured) return { status: "missing-key", skills: [] }
   remember(input.sessionID, input.text)
   const models = candidates.models.filter((model) =>
-    input.models.some((allowed) => allowed.providerID === model.providerID && allowed.modelID === model.modelID),
+    input.models.some((allowed) => allowed.providerID === model.providerID && allowed.modelID === model.modelID && allowed.variant === model.variant),
   )
+  if (models.length) {
+    const directory = usageDirectory(input.sessionID)
+    await mkdir(directory, { recursive: true, mode: 0o700 })
+    const temporary = path.join(directory, `routing.${randomUUID()}.tmp`)
+    await writeFile(temporary, JSON.stringify(models), { mode: 0o600 })
+    await rename(temporary, path.join(directory, "routing.json"))
+  }
   const mentioned = new Set(Array.from(input.text.matchAll(/(?:\$|\/|\[|\b(?:use|using|apply|with)\s+(?:the\s+)?)([\w:-]+)/gi),
     (match) => match[1].toLowerCase()))
   const explicit = config.skills ? candidates.skills.filter((skill) => mentioned.has(skill.name.toLowerCase())) : []
@@ -200,11 +239,11 @@ export async function prepare(
       criteria: Object.fromEntries(
         models.map((model, index) => [
           `model${index}`,
-          `${model.providerID}/${model.modelID}: ${model.name}. ${model.description}`,
+          `${model.providerID}/${model.modelID}${model.variant ? ` (${model.variant})` : ""}: ${model.name}. ${model.description}`,
         ]),
       ),
     }
-  if (!Object.keys(questions).length) return { status: "ready", skills: instructions(explicit) }
+  if (!Object.keys(questions).length) return { status: "ready", routing: !input.auto ? "manual" : !config.routing ? "disabled" : "unavailable", skills: instructions(explicit) }
   const current = await settings()
   const answers = current.enabled
     ? await request(
@@ -213,6 +252,7 @@ export async function prepare(
         questions,
         fetcher,
         input.sessionID,
+        { purpose: questions.model ? "routing and skills" : "skills", promptID: input.promptID, models, skills: skills.map((skill) => skill.name), explicitSkills: explicit.map((skill) => skill.name) },
       )
     : undefined
   const latest = await settings()
@@ -225,19 +265,19 @@ export async function prepare(
       : undefined
   return {
     status: "ready",
-    ...(model ? { model: { providerID: model.providerID, modelID: model.modelID } } : {}),
+    routing: !input.auto ? "manual" : !latest.routing ? "disabled" : model ? "selected" : "uncertain",
+    ...(model ? { model: { providerID: model.providerID, modelID: model.modelID, ...(model.variant ? { variant: model.variant } : {}) } } : {}),
     skills: latest.skills
-      ? instructions([...explicit, ...skills
-          .map((skill, index) => ({ skill, answer: answers[`skill${index}`] }))
-          .filter((item) => item.answer?.type === "score" && item.answer.score >= 1.8 && item.answer.confidence >= 0.8)
-          .sort(
-            (a, b) =>
-              (b.answer?.type === "score" ? b.answer.score : 0) - (a.answer?.type === "score" ? a.answer.score : 0),
-          )
-          .slice(0, Math.max(0, 3 - explicit.length))
-          .map(({ skill }) => skill)])
+      ? instructions([...explicit, ...selectSkills(skills, answers, Math.max(0, 3 - explicit.length))])
       : [],
   }
+}
+
+function selectSkills<T>(skills: T[], answers: Record<string, Answer>, count: number) {
+  return skills.map((skill, index) => ({ skill, answer: answers[`skill${index}`] }))
+    .filter((item) => item.answer?.type === "score" && item.answer.score >= 1.8 && item.answer.confidence >= 0.8)
+    .sort((a, b) => (b.answer?.type === "score" ? b.answer.score : 0) - (a.answer?.type === "score" ? a.answer.score : 0))
+    .slice(0, count).map(({ skill }) => skill)
 }
 
 export async function context(text: string, sessionID?: string, fetcher: typeof fetch = fetch) {

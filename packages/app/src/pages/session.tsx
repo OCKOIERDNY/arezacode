@@ -1766,6 +1766,7 @@ export default function Page() {
       const ok = await sendFollowupDraft({
         scope: sdk().scope,
         jev: serverSDK().jev,
+        routingError: language.t("jev.routingUnavailable"),
         api: sdk().api.session,
         sync: sync(),
         serverSync: serverSync(),

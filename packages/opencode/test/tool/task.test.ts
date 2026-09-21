@@ -23,6 +23,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { Provider } from "@/provider/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 
 afterEach(async () => {
@@ -38,6 +39,7 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   LayerNode.compile(
     LayerNode.group([
       Agent.node,
+      Provider.node,
       BackgroundJob.node,
       EventV2Bridge.node,
       Config.node,
@@ -283,6 +285,24 @@ describe("tool.task", () => {
       expect(seen?.variant).toBe("xhigh")
     }),
   )
+
+  it.instance("records actual models without reopening a completed background tool", () => Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const { chat, assistant } = yield* seed()
+    const part = yield* sessions.updatePart({ id: PartID.ascending(), messageID: assistant.id, sessionID: chat.id, type: "tool", tool: "task", callID: "call_model_history", state: { status: "completed", input: {}, output: "Started in background", title: "Inspect", metadata: { background: true }, time: { start: 1, end: 2 } } })
+    const ops: TaskPromptOps = { ...stubOps(), prompt: (input) => Effect.gen(function* () {
+      const result = reply(input, "done")
+      if (result.info.role === "assistant") result.info.variant = "low"
+      yield* sessions.updateMessage(result.info)
+      yield* sessions.updatePart({ id: PartID.ascending(), messageID: result.info.id, sessionID: input.sessionID, type: "tool", tool: "task", callID: "call_nested", state: { status: "completed", input: {}, output: "Done", title: "Nested", metadata: { models: [{ providerID: "test", modelID: "nested-model", variant: "high" }] }, time: { start: 1, end: 2 } } })
+      return result
+    }) }
+    const tool = yield* TaskTool
+    const def = yield* tool.init()
+    yield* def.execute({ description: "Inspect", prompt: "Inspect existing code", subagent_type: "general" }, { sessionID: chat.id, messageID: assistant.id, callID: "call_model_history", agent: "build", abort: new AbortController().signal, extra: { promptOps: ops }, messages: [], metadata: () => Effect.void, ask: () => Effect.void })
+    const saved = yield* sessions.getPart({ sessionID: chat.id, messageID: assistant.id, partID: part.id })
+    expect(saved).toMatchObject({ state: { status: "completed", output: "Started in background", metadata: { background: true, models: [{ ...ref, variant: "low" }, { providerID: "test", modelID: "nested-model", variant: "high" }] } } })
+  }))
 
   it.instance("execute surfaces child errors with a resumable task_id", () =>
     Effect.gen(function* () {

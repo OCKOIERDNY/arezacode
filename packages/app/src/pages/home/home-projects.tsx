@@ -1,12 +1,11 @@
-import type { Accessor, JSX } from "solid-js"
 import type { HomeProjectsController } from "./home-projects-controller"
-import { HomeProjectsView } from "./home-projects-view"
+import { HomeProjectsView, type HomeProjectsViewProps } from "./home-projects-view"
 import type { HomeScrollController } from "./home-scroll-controller"
 
 export function HomeProjects(props: {
   projects: HomeProjectsController
   scroll: HomeScrollController
-  renderSessions?: (expanded: Accessor<boolean>) => JSX.Element
+  renderSessions?: HomeProjectsViewProps["renderSessions"]
   projectActive?: (server: string, directory: string) => boolean
 }) {
   return (

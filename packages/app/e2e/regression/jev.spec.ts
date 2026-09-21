@@ -3,6 +3,41 @@ import { setupTimelineBenchmark } from "../performance/timeline/session-timeline
 
 test.use({ colorScheme: "dark" })
 
+test("chat and Context show routing effort, subagent ownership and Headroom history", async ({ page }) => {
+  const fixture = await setupTimelineBenchmark(page, { historyTurns: 0, eventBatch: 20, newLayoutDesigns: true })
+  const sessionID = "ses_timeline_state_regression"
+  const info = { id: "msg_assistant_regression", sessionID, role: "assistant", parentID: "msg_user_regression", modelID: "gpt-6-astra", providerID: "openai", variant: "high", mode: "build", agent: "build", path: { cwd: "C:/OpenCode/TimelineStateRegression", root: "C:/OpenCode/TimelineStateRegression" }, time: { created: 1700000001000, completed: 1700000003000 }, cost: 0.01, tokens: { input: 300, output: 100, reasoning: 20, cache: { read: 600, write: 0 } } }
+  const task = { id: "prt_8000_delegate", sessionID, messageID: info.id, type: "tool", callID: "call_delegate", tool: "task", state: { status: "completed", input: { description: "Inspect authentication", subagent_type: "review", prompt: "Check existing login handlers" }, output: "One finding", title: "Inspect authentication", metadata: { sessionId: "ses_child_activity", model: { providerID: "openai", modelID: "gpt-5.6-sol" }, variant: "low" }, time: { start: 1700000001500, end: 1700000002500 } } }
+  await page.route("**/session/ses_child_activity/message*", (route) => route.fulfill({ json: [{ info: { ...info, id: "msg_child_activity", sessionID: "ses_child_activity", modelID: "gpt-5.6-sol", variant: "low" }, parts: [{ ...task, id: "prt_child_read", messageID: "msg_child_activity", sessionID: "ses_child_activity", tool: "read", callID: "call_child_read", state: { ...task.state, input: { filePath: "routes/web.php" }, metadata: {} } }] }] }))
+  await page.route("**/api/session/*/usage", (route) => route.fulfill({ json: [
+    { id: "msg_activity_model", kind: "model", model: { providerID: "openai", id: "gpt-6-astra", variant: "high" }, time: { created: 1700000001000 }, usage: { version: 1, costSource: "unknown", input: 900, cacheRead: 600 } },
+    { id: "msg_activity_jev", kind: "jev", model: { providerID: "openrouter", id: "~typesafe/jev-latest" }, time: { created: 1700000000000 }, finish: "stop", decision: { purpose: "routing and skills", outcome: "selected", selected: { providerID: "openai", id: "gpt-6-astra", variant: "high" }, confidence: 0.94, skills: ["az-checklist"] } },
+    { id: "msg_activity_headroom", kind: "automation", model: { providerID: "local", id: "headroom" }, time: { created: 1700000002000 }, finish: "compressed", automation: { name: "Headroom", inputCharacters: 12000, outputCharacters: 3000, cached: true } },
+  ] }))
+  fixture.transport.enqueue([
+    { directory: info.path.cwd, payload: { type: "message.updated", properties: { info } } },
+    { directory: info.path.cwd, payload: { type: "message.part.updated", properties: { part: task } } },
+    { directory: info.path.cwd, payload: { type: "message.part.updated", properties: { part: { id: "prt_9999_text", sessionID, messageID: info.id, type: "text", text: "Found one authentication issue. Verification passed." } } } },
+  ])
+  await fixture.scrollToBottom()
+  await expect(page.getByText("Orchestrator: gpt-6-astra · high", { exact: false })).toBeVisible()
+  await expect(page.getByText("Subagents: gpt-5.6-sol · low", { exact: true })).toBeVisible()
+  await page.screenshot({ path: "/tmp/areza-routing-chat.png" })
+  await page.getByRole("button", { name: "View context usage", exact: true }).click()
+  const activity = page.getByTestId("session-model-activity")
+  await expect(activity).toContainText("gpt-5.6-sol · low")
+  await activity.locator("summary").filter({ hasText: "Jev decisions" }).click()
+  await activity.locator("summary").filter({ hasText: "Headroom compression" }).click()
+  await expect(activity).toContainText("94%")
+  await expect(activity).toContainText("9000 saved")
+  await expect(activity).toContainText("Reused cached compression")
+  await expect(page.getByTestId("session-tool-activity")).toContainText("read · gpt-5.6-sol · low")
+  await page.getByTestId("session-tool-activity").locator("summary").filter({ hasText: "read ·" }).click()
+  await expect(activity).toContainText("routes/web.php")
+  await activity.evaluate((element) => { const viewport = element.closest(".scroll-view__viewport"); if (viewport) viewport.scrollTop = 0 })
+  await page.screenshot({ path: "/tmp/areza-routing-context.png" })
+})
+
 test("session usage separates inclusive counts, reported charges and unavailable history", async ({ page }) => {
   const fixture = await setupTimelineBenchmark(page, { historyTurns: 2, eventBatch: 1, newLayoutDesigns: true })
   await page.route("**/api/session/*/usage", (route) => route.fulfill({ json: [

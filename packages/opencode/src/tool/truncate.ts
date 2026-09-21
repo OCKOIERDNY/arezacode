@@ -92,9 +92,9 @@ const layer = Layer.effect(
       const maxLines = options.maxLines ?? resolved.maxLines
       const maxBytes = options.maxBytes ?? resolved.maxBytes
       const ranked = yield* Effect.promise(() => Jev.context(text, options.sessionID))
-      const compressed = ranked ?? (yield* Effect.tryPromise(() => AutomaticChecks.compress(text)).pipe(
+      const compressed = (yield* Effect.tryPromise((signal) => AutomaticChecks.compress(ranked ?? text, signal, options.sessionID)).pipe(
         Effect.catch(() => Effect.succeed(undefined)),
-      ))
+      )) ?? ranked
       if (compressed && Buffer.byteLength(compressed) < maxBytes && compressed.split("\n").length < maxLines) {
         const file = yield* write(text)
         return {

@@ -65,6 +65,24 @@ await Jev.update({ ...Jev.defaults, enabled: false })
 assert.equal((await Jev.prepare(input, candidates, transport)).status, "disabled")
 assert.equal(calls, 2)
 await Jev.update({ ...Jev.defaults, enabled: true })
+const variants = ["low", "high"].map((variant) => ({ ...candidates.models[0], variant }))
+const routing: typeof fetch = Object.assign(async (_: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+  const body = JSON.parse(String(init?.body))
+  assert.deepEqual(Object.keys(body.questions.model.criteria), ["model0", "model1"])
+  assert.match(body.questions.model.criteria.model1, /high/)
+  return Response.json({ answers: { model: { type: "choice", choice: "model1", confidence: 0.94 } } })
+}, { preconnect: fetch.preconnect })
+const routed = await Jev.prepare({ ...input, promptID: "msg_routing_test", models: variants }, { models: [...variants, candidates.models[1]], skills: [] }, routing)
+assert.deepEqual(routed.model, { providerID: "allowed", modelID: "fast", variant: "high" })
+assert.equal(routed.routing, "selected")
+const child = await Jev.delegate(input.sessionID, "child", "Review authentication", "review", routing)
+assert.deepEqual(child?.model, routed.model)
+const history = await Jev.usage(input.sessionID)
+assert.ok(history.some((entry) => entry.promptID === "msg_routing_test" && entry.decision?.selected?.variant === "high"))
+const uncertain: typeof fetch = Object.assign(async () => Response.json({ answers: { model: { type: "choice", choice: "model0", confidence: 0.4 } } }), { preconnect: fetch.preconnect })
+assert.equal((await Jev.prepare({ ...input, models: variants }, { models: variants, skills: [] }, uncertain)).routing, "uncertain")
+await Jev.recordCompression(input.sessionID, 12000, 3000, true)
+assert.ok((await Jev.usage(input.sessionID)).some((entry) => entry.automation?.cached && entry.automation.outputCharacters === 3000))
 const explicit = await Jev.prepare({ ...input, auto: false, text: "Use $requested" }, {
   models: [],
   skills: [...Array.from({ length: 80 }, (_, index) => ({ ...candidates.skills[0], name: `other-${index}` })),
@@ -72,6 +90,7 @@ const explicit = await Jev.prepare({ ...input, auto: false, text: "Use $requeste
 }, transport)
 assert.equal(explicit.skills[0].name, "requested")
 assert.equal(explicit.skills.length, 3)
+assert.ok((await Jev.usage(input.sessionID)).some((entry) => entry.decision?.skills?.includes("requested") && entry.decision.skills.length === 3))
 const ranking: typeof fetch = Object.assign(async (_: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
   const body = JSON.parse(String(init?.body))
   const values: string[] = body.state.chunks ?? body.state.findings ?? []

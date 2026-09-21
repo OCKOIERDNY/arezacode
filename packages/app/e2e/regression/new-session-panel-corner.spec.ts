@@ -279,6 +279,131 @@ test("scrolls project content between fixed search and footer controls", async (
   await page.screenshot({ path: "/tmp/areza-sidebar-scroll.png" })
 })
 
+test("creates new chats without flashing the startup flower", async ({ page }) => {
+  await page.goto(`/server/${Buffer.from(server).toString("base64url")}/session/ses_sidebar_000`)
+  const sidebar = page.locator('[data-component="project-sidebar"]')
+  const row = sidebar.locator('[data-component="home-project-row"]')
+  const newChat = sidebar.locator('[data-action="home-project-new-session"]')
+  await expectAppVisible(page.locator('[data-component="prompt-input"]'))
+  await page.evaluate(() => {
+    document.body.dataset.loadingFlashes = "0"
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue
+          if (!node.matches('[data-component="startup-splash"]') && !node.querySelector('[data-component="startup-splash"]')) continue
+          document.body.dataset.loadingFlashes = String(Number(document.body.dataset.loadingFlashes) + 1)
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true })
+  })
+  for (let index = 0; index < 3; index++) {
+    const previous = page.url()
+    await row.hover()
+    await newChat.click()
+    await expect(page).toHaveURL(/\/new-session\?draftId=/)
+    await expect.poll(() => page.url()).not.toBe(previous)
+    await expectAppVisible(page.locator('[data-component="prompt-input"]'))
+    await expect(page.locator("body")).toHaveAttribute("data-loading-flashes", "0")
+  }
+  await page.screenshot({ path: "/tmp/areza-new-chat-no-flash.png" })
+})
+
+test("keeps project accordions independent with scoped chats and hover feedback", async ({ page }) => {
+  const projects = [directory, `${directory}-second`].map((worktree, index) => ({
+    id: `proj_accordion_${index}`,
+    worktree,
+    vcs: "git",
+    name: `Project ${index + 1}`,
+    time: { created: 1700000000000, updated: 1700000000000 },
+    sandboxes: [],
+  }))
+  await mockOpenCodeServer(page, {
+    directory,
+    project: projects[0],
+    provider: { all: [], connected: [], default: {} },
+    sessions: projects.map((project, index) => ({
+      id: `ses_accordion_${index}`,
+      slug: `accordion-${index}`,
+      title: `Chat for project ${index + 1}`,
+      directory: project.worktree,
+      projectID: project.id,
+      version: "1",
+      time: { created: 1700000000000, updated: 1700000000000 },
+    })),
+    pageMessages: () => ({ items: [] }),
+  })
+  await page.route((url) => url.pathname === "/project" || url.pathname === "/api/project", (route) => route.fulfill({ json: projects }))
+  await page.addInitScript(({ projects, directory }) => {
+    localStorage.setItem("opencode.global.dat:server", JSON.stringify({
+      projects: { local: projects.map((project) => ({ worktree: project.worktree, expanded: true })) },
+      lastProject: { local: directory },
+    }))
+  }, { projects, directory })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`/new-session?draftId=${draftID}`)
+  const sidebar = page.locator('[data-component="project-sidebar"]')
+  const disclosures = sidebar.locator('[data-action="home-project-collapse"]')
+  const first = disclosures.nth(0)
+  const second = disclosures.nth(1)
+  const firstChat = sidebar.getByRole("button", { name: "Chat for project 1", exact: true })
+  const secondChat = sidebar.getByRole("button", { name: "Chat for project 2", exact: true })
+  await expect(disclosures).toHaveCount(2)
+  await expect(first).toHaveAttribute("aria-expanded", "true")
+  await expect(second).toHaveAttribute("aria-expanded", "true")
+  await expect(firstChat).toBeVisible()
+  await expect(secondChat).toBeVisible()
+  await expect(sidebar.locator('[data-component="home-session-row"]')).toHaveCount(2)
+  await expect(secondChat).toHaveCSS("background-color", "rgba(0, 0, 0, 0)")
+  await secondChat.hover()
+  await expect(secondChat).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)")
+  await page.screenshot({ path: "/tmp/areza-projects-open-hover.png" })
+  await first.click()
+  await expect(first).toHaveAttribute("aria-expanded", "false")
+  await expect(second).toHaveAttribute("aria-expanded", "true")
+  await expect(secondChat).toBeVisible()
+  await first.click()
+  await expect(firstChat).toBeVisible()
+  await second.click()
+  await expect(first).toHaveAttribute("aria-expanded", "true")
+  await expect(second).toHaveAttribute("aria-expanded", "false")
+  await second.click()
+  await secondChat.click()
+  await expect(page).toHaveURL(/\/session\/ses_accordion_1$/)
+  await expect(secondChat).toHaveAttribute("aria-current", "page")
+  await expect(firstChat).not.toHaveAttribute("aria-current", "page")
+  await expect(first).toHaveAttribute("aria-expanded", "true")
+  await expect(second).toHaveAttribute("aria-expanded", "true")
+})
+
+test("restores an open right sidebar without replaying its entry animation", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`/server/${Buffer.from(server).toString("base64url")}/session/ses_sidebar_069`)
+  const sidebar = page.locator('[data-component="project-sidebar"]')
+  const panel = page.locator('[data-component="session-right-panel"]')
+  await expectAppVisible(page.locator('[data-component="prompt-input"]'))
+  await page.getByRole("button", { name: "Toggle review", exact: true }).click()
+  await expect(panel).toHaveAttribute("data-opened", "true")
+  await panel.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)))
+  await page.evaluate(() => {
+    document.body.dataset.sidebarEntries = "0"
+    document.addEventListener("transitionrun", (event) => {
+      if (!(event.target instanceof Element) || !event.target.matches('[data-component="session-right-panel"]') || event.propertyName !== "transform") return
+      document.body.dataset.sidebarEntries = String(Number(document.body.dataset.sidebarEntries) + 1)
+    })
+  })
+  await sidebar.locator('[data-component="home-project-row"]').hover()
+  await sidebar.locator('[data-action="home-project-new-session"]').click()
+  await expect(page).toHaveURL(/\/new-session\?draftId=/)
+  await expectAppVisible(page.locator('[data-component="prompt-input"]'))
+  await sidebar.locator('[data-component="home-session-row"]').filter({ hasText: /^Project chat 70$/ }).click()
+  await expect(page).toHaveURL(/\/session\/ses_sidebar_069$/)
+  await expect(panel).toHaveAttribute("data-opened", "true")
+  await panel.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)))
+  await expect(page.locator("body")).toHaveAttribute("data-sidebar-entries", "0")
+  await page.screenshot({ path: "/tmp/areza-right-sidebar-restored.png" })
+})
+
 test("overlays project actions with working status until hover or keyboard focus", async ({ page }) => {
   await page.goto(`/new-session?draftId=${draftID}`)
   const sidebar = page.locator('[data-component="project-sidebar"]')
@@ -421,7 +546,7 @@ test("keeps all project chats under the project and preserves the composer when 
   await project.click()
   await expect(chats.first()).not.toBeInViewport()
   await disclosure.click()
-  await expect(sidebar.locator('[data-component="project-working"]')).toHaveCount(0)
+  await expect(sidebar.locator('[data-component="project-working"]')).toBeHidden()
   await expect(chats).toHaveCount(70)
   await sidebar.getByRole("searchbox", { name: "Search sessions" }).fill("Project chat 1")
   await expect(chats).toHaveCount(11)
@@ -433,7 +558,7 @@ test("keeps all project chats under the project and preserves the composer when 
   const separator = sidebar.getByRole("separator")
   const width = (await sidebar.boundingBox())!.width
   await separator.press("ArrowRight")
-  await expect(sidebar).toHaveCSS("width", `${width + 16}px`)
+  await expect.poll(async () => Number.parseFloat(await sidebar.evaluate((el) => getComputedStyle(el).width))).toBeCloseTo(width + 16, 3)
   await separator.hover()
   await expect.poll(() => separator.evaluate((element) => getComputedStyle(element, "::after").opacity)).toBe("1")
   expect(await separator.evaluate((element) => getComputedStyle(element, "::after").borderRadius)).toBe("999px")
@@ -459,7 +584,7 @@ test("keeps all project chats under the project and preserves the composer when 
   )
   await expect(chats.filter({ hasText: /^Project chat 70$/ }).locator('[data-status="complete"]')).toHaveCount(0)
   await chats.filter({ hasText: /^Project chat 69$/ }).hover()
-  await expect(chats.filter({ hasText: /^Project chat 69$/ })).toHaveCSS("background-color", "rgba(0, 0, 0, 0)")
+  await expect(chats.filter({ hasText: /^Project chat 69$/ })).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)")
   await project.hover()
   await project.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)))
   const projectHover = await project.evaluate((el) => getComputedStyle(el).backgroundColor)

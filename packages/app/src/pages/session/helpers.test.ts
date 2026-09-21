@@ -106,6 +106,22 @@ describe("getTabReorderIndex", () => {
 })
 
 describe("createSessionTabs", () => {
+  test("keeps utility panels out of file rendering and allows closing them", () => {
+    for (const tab of ["agents", "browser:https://example.com", "terminal", "server"])
+      createRoot((dispose) => {
+        const state = { active: tab, all: ["agents", "browser:https://example.com", "terminal", "server", "file://src/a.ts"] }
+        const result = createSessionTabs({
+          tabs: () => ({ active: () => state.active, all: () => state.all }),
+          pathFromTab: (tab) => (tab.startsWith("file://") ? tab.slice(7) : undefined),
+          normalizeTab: (tab) => tab,
+        })
+        expect(result.activeTab()).toBe(tab)
+        expect(result.closableTab()).toBe(tab)
+        expect(result.activeFileTab()).toBeUndefined()
+        expect(result.panelTabs()).toEqual(["file://src/a.ts"])
+        dispose()
+      })
+  })
   test("normalizes the effective file tab", () => {
     createRoot((dispose) => {
       const [state] = createStore({

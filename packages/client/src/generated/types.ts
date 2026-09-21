@@ -545,9 +545,22 @@ export type SessionsUsageInput = { readonly sessionID: { readonly sessionID: str
 
 export type SessionsUsageOutput = ReadonlyArray<{
   readonly id: string
-  readonly kind?: "model" | "jev"
+  readonly kind?: "model" | "jev" | "automation"
   readonly promptID?: string
   readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+  readonly decision?: {
+    readonly purpose: string
+    readonly outcome: string
+    readonly selected?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly confidence?: number
+    readonly skills?: ReadonlyArray<string>
+  }
+  readonly automation?: {
+    readonly name: string
+    readonly inputCharacters: number
+    readonly outputCharacters: number
+    readonly cached: boolean
+  }
   readonly usage?: {
     readonly version: 1
     readonly input?: number
@@ -2720,57 +2733,73 @@ export type JevPrepareInput = {
   }["location"]
   readonly sessionID: {
     readonly sessionID: string
+    readonly promptID?: string
     readonly text: string
     readonly agent: string
     readonly auto: boolean
-    readonly images?: boolean | undefined
-    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string }>
+    readonly images?: boolean | null
+    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["sessionID"]
+  readonly promptID?: {
+    readonly sessionID: string
+    readonly promptID?: string
+    readonly text: string
+    readonly agent: string
+    readonly auto: boolean
+    readonly images?: boolean | null
+    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
+  }["promptID"]
   readonly text: {
     readonly sessionID: string
+    readonly promptID?: string
     readonly text: string
     readonly agent: string
     readonly auto: boolean
-    readonly images?: boolean | undefined
-    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string }>
+    readonly images?: boolean | null
+    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["text"]
   readonly agent: {
     readonly sessionID: string
+    readonly promptID?: string
     readonly text: string
     readonly agent: string
     readonly auto: boolean
-    readonly images?: boolean | undefined
-    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string }>
+    readonly images?: boolean | null
+    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["agent"]
   readonly auto: {
     readonly sessionID: string
+    readonly promptID?: string
     readonly text: string
     readonly agent: string
     readonly auto: boolean
-    readonly images?: boolean | undefined
-    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string }>
+    readonly images?: boolean | null
+    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["auto"]
   readonly images?: {
     readonly sessionID: string
+    readonly promptID?: string
     readonly text: string
     readonly agent: string
     readonly auto: boolean
-    readonly images?: boolean | undefined
-    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string }>
+    readonly images?: boolean | null
+    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["images"]
   readonly models: {
     readonly sessionID: string
+    readonly promptID?: string
     readonly text: string
     readonly agent: string
     readonly auto: boolean
-    readonly images?: boolean | undefined
-    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string }>
+    readonly images?: boolean | null
+    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["models"]
 }
 
 export type JevPrepareOutput = {
   readonly status: "disabled" | "missing-key" | "unavailable" | "ready"
-  readonly model?: { readonly providerID: string; readonly modelID: string } | undefined
+  readonly model?: { readonly providerID: string; readonly modelID: string; readonly variant?: string } | null
+  readonly routing?: "selected" | "manual" | "disabled" | "unavailable" | "uncertain"
   readonly skills: ReadonlyArray<{ readonly name: string; readonly content: string }>
 }
 

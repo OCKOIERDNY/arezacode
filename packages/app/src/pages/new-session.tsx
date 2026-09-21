@@ -35,9 +35,8 @@ export default function NewSessionPage() {
     finishStartup()
     draft.input.restoreFocus()
   })
-  const ready = Promise.resolve()
   const [suspendUntilPromptReady] = createResource(
-    () => draft.prompt.readyPromise() ?? ready,
+    () => !draft.prompt.ready() && draft.prompt.readyPromise(),
     (promise) => promise.then(() => true),
   )
 

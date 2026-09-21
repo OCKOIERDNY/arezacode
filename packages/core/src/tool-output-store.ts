@@ -151,9 +151,9 @@ const layer = Layer.effect(
             })
           : text.map((item) => item.text).join("")
       const ranked = yield* Effect.promise(() => Jev.context(contextual, input.sessionID))
-      const compressed = ranked ?? (yield* Effect.tryPromise((signal) => AutomaticChecks.compress(contextual, signal)).pipe(
+      const compressed = (yield* Effect.tryPromise((signal) => AutomaticChecks.compress(ranked ?? contextual, signal, input.sessionID)).pipe(
         Effect.catch(() => Effect.succeed(undefined)),
-      ))
+      )) ?? ranked
       if (
         compressed &&
         Buffer.byteLength(compressed) < outputLimits.maxBytes &&

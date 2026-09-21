@@ -12,7 +12,40 @@ const files = Array.from({ length: 80 }, (_, index) => `file-${String(index).pad
 // Marks the file-browser sidebar DOM node so a remount (fresh node) is detectable.
 const PROBE = "original"
 
-test.use({ viewport: { width: 1440, height: 900 } })
+test.use({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" })
+
+test("opens the panel picker, nested agents, and browser controls", async ({ page }) => {
+  const events: unknown[] = []
+  await setup(page, undefined, () => events)
+  await page.goto(`/server/${base64Encode(server)}/session/${sessionID}`)
+  await expectSessionTitle(page, title)
+  const panel = page.locator("#review-panel")
+  await panel.getByRole("button", { name: "New tab", exact: true }).click()
+  const picker = panel.locator('[data-component="session-panel-picker"]')
+  await expect(picker.getByRole("button")).toHaveText(["Review", "Terminal", "Browser", "Server", "Files", "Agents"])
+  await page.screenshot({ path: "/tmp/areza-panels-picker.png" })
+  await picker.getByRole("button", { name: "Agents", exact: true }).click()
+  const agents = panel.locator('[data-component="session-agents"]')
+  await expect(agents.getByRole("button", { name: /Review authentication.*Running/ })).toBeVisible()
+  await expect(agents.getByRole("button", { name: /Inspect tests.*Idle/ })).toBeVisible()
+  await expect(agents.getByText("Test · high", { exact: true })).toHaveCount(2)
+  await page.screenshot({ path: "/tmp/areza-panels-agents.png" })
+  events.push({
+    directory,
+    payload: { type: "session.status", properties: { sessionID: "ses_panel_child", status: { type: "idle" } } },
+  })
+  await expect(agents.getByRole("button", { name: /Review authentication.*Idle/ })).toBeVisible()
+  await panel.getByRole("button", { name: "New tab", exact: true }).click()
+  await picker.getByRole("button", { name: "Browser", exact: true }).click()
+  const browser = panel.locator('[data-component="session-browser"]')
+  await browser.getByRole("textbox", { name: "Enter a URL" }).fill("file:///etc/passwd")
+  await browser.getByRole("textbox", { name: "Enter a URL" }).press("Enter")
+  await expect(browser.getByRole("alert")).toHaveText("Enter an HTTP or HTTPS URL without credentials.")
+  await page.screenshot({ path: "/tmp/areza-panels-browser.png" })
+  await panel.getByRole("tab", { name: "Agents", exact: true }).click()
+  await agents.getByRole("button", { name: /Inspect tests/ }).click()
+  await expect(page).toHaveURL(new RegExp("/session/ses_panel_grandchild$"))
+})
 
 // The file-browser sidebar must stay mounted across preview/pinned file-tab
 // switches. Remounting resets scroll and filter state.
@@ -23,7 +56,8 @@ test("keeps the file-browser sidebar mounted when switching file tabs", async ({
   await expectSessionTitle(page, title)
 
   const panel = page.locator("#review-panel")
-  await panel.getByRole("button", { name: "Open file" }).click()
+  await panel.getByRole("button", { name: "New tab", exact: true }).click()
+  await panel.getByRole("button", { name: "Files", exact: true }).click()
   await expect(panel.getByRole("tab", { name: "Open file" })).toHaveAttribute("data-selected", "")
 
   const sidebar = panel.locator('[data-component="session-review-v2-sidebar-root"]')
@@ -75,7 +109,8 @@ test("keeps previous file search results visible while the next search loads", a
   await expectSessionTitle(page, title)
 
   const panel = page.locator("#review-panel")
-  await panel.getByRole("button", { name: "Open file" }).click()
+  await panel.getByRole("button", { name: "New tab", exact: true }).click()
+  await panel.getByRole("button", { name: "Files", exact: true }).click()
   const filter = panel.getByRole("combobox", { name: "Filter files" })
   await filter.fill("file-0")
   await expect(panel.getByRole("option", { name: "file-00.ts" })).toBeVisible()
@@ -110,6 +145,7 @@ async function readProbe(page: Page) {
 async function setup(
   page: Page,
   findFiles?: (input: { query: string; dirs?: string; limit?: number }) => unknown | Promise<unknown>,
+  events?: () => unknown[],
 ) {
   await mockOpenCodeServer(page, {
     directory,
@@ -142,6 +178,19 @@ async function setup(
         version: "dev",
         time: { created: 1700000000000, updated: 1700000000000 },
       },
+      ...(events
+        ? [
+            { id: "ses_panel_child", parentID: sessionID, title: "Review authentication" },
+            { id: "ses_panel_grandchild", parentID: "ses_panel_child", title: "Inspect tests" },
+          ].map((session) => ({
+            ...session,
+            slug: session.id,
+            projectID,
+            directory,
+            version: "dev",
+            time: { created: 1700000000000, updated: 1700000000000 },
+          }))
+        : []),
     ],
     vcsDiff: [],
     fileList: (path) => {
@@ -156,7 +205,34 @@ async function setup(
     },
     fileContent: (path) => ({ type: "text", content: `contents:${path}` }),
     findFiles,
-    pageMessages: () => ({ items: [] }),
+    pageMessages: (id) => ({
+      items:
+        events && id !== sessionID
+          ? [
+              {
+                info: {
+                  id: `msg_${id}`,
+                  sessionID: id,
+                  role: "assistant",
+                  agent: "build",
+                  mode: "build",
+                  modelID: "test",
+                  providerID: "opencode",
+                  variant: "high",
+                  parentID: "msg_user",
+                  time: { created: 1700000000000, completed: 1700000001000 },
+                  path: { cwd: directory, root: directory },
+                  cost: 0,
+                  tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+                },
+                parts: [],
+              },
+            ]
+          : [],
+    }),
+    sessionStatus: events ? { ses_panel_child: { type: "busy" }, ses_panel_grandchild: { type: "idle" } } : {},
+    events,
+    eventRetry: events ? 100 : undefined,
   })
 
   await page.addInitScript(

@@ -22,6 +22,18 @@ const textPart = (id: string, sessionID: string, messageID: string): Text => ({
 })
 
 describe("sync optimistic reducers", () => {
+  test("reconciles timestamps by ID without duplicating optimistic messages", () => {
+    const message = userMessage("msg_1", "ses_1", 2)
+    const part = textPart("prt_1", "ses_1", message.id)
+    const draft = { message: { ses_1: [message] }, part: {} as Record<string, Part[] | undefined> }
+    applyOptimisticAdd(draft, { sessionID: "ses_1", message, parts: [part] })
+    expect(draft.message.ses_1).toEqual([message])
+    const confirmed = { ...message, time: { created: 3 } }
+    const page = mergeOptimisticPage({ session: [confirmed], part: [{ id: message.id, part: [part] }], complete: true }, [{ message, parts: [part] }])
+    expect(page.session).toEqual([confirmed])
+    expect(page.confirmed).toEqual([message.id])
+  })
+
   test("applyOptimisticAdd inserts by creation time", () => {
     const sessionID = "ses_1"
     const draft = {

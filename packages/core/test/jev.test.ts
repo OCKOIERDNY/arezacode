@@ -76,11 +76,14 @@ test("Jev sends one bounded typed request and rejects invalid, failed, or incomp
       },
     }
     expect(await Jev.request("test-only-not-a-real-key", {}, questions, transport)).toBeUndefined()
+    const invalidSession = `ses_invalid_${crypto.randomUUID()}`
+    expect(await Jev.request("test-only-not-a-real-key", {}, questions, transport, invalidSession)).toBeUndefined()
+    expect(await Jev.usage(invalidSession)).toMatchObject([{ finish: "error", decision: { outcome: "unavailable" } }])
     response = { answers: { model: { type: "choice", choice: "fast", confidence: 1 } } }
     expect(await Jev.request("test-only-not-a-real-key", {}, questions, transport)).toBeUndefined()
     expect(await Jev.request("", {}, questions, transport)).toBeUndefined()
     expect(await Jev.request("test-only-not-a-real-key", "x".repeat(50_000), questions, transport)).toBeUndefined()
-    expect(requests).toHaveLength(3)
+    expect(requests).toHaveLength(4)
     response = { answers: { model: { type: "choice", choice: "fast" }, skill: { type: "score", score: 2 } } }
     expect((await Jev.request("test-only-not-a-real-key", {}, questions, transport))?.model.confidence).toBe(0)
   } finally {

@@ -187,9 +187,22 @@ export type Usage = typeof Usage.Type
 
 export const UsageEntry = Schema.Struct({
   id: ID,
-  kind: Schema.Literals(["model", "jev"]).pipe(optional),
+  kind: Schema.Literals(["model", "jev", "automation"]).pipe(optional),
   promptID: ID.pipe(optional),
   model: Model.Ref,
+  decision: Schema.Struct({
+    purpose: Schema.String,
+    outcome: Schema.String,
+    selected: Model.Ref.pipe(optional),
+    confidence: Schema.Finite.pipe(optional),
+    skills: Schema.Array(Schema.String).pipe(optional),
+  }).pipe(optional),
+  automation: Schema.Struct({
+    name: Schema.String,
+    inputCharacters: Schema.Int,
+    outputCharacters: Schema.Int,
+    cached: Schema.Boolean,
+  }).pipe(optional),
   usage: Usage.pipe(optional),
   finish: Schema.String.pipe(optional),
   time: Schema.Struct({ created: DateTimeUtcFromMillis, completed: DateTimeUtcFromMillis.pipe(optional) }),

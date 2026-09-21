@@ -51,7 +51,7 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
   )
 
   const selection = {
-    auto: () => prompt.model.current()?.auto ?? false,
+    auto: () => prompt.model.current()?.auto ?? (sdk().jev.state.enabled && sdk().jev.state.routing),
     setAuto() {
       const model = current()
       if (model) prompt.model.set({ providerID: model.provider.id, modelID: model.id, auto: true })
@@ -72,7 +72,7 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
     set(item: ModelKey | undefined, options?: { recent?: boolean }) {
       startTransition(() =>
         batch(() => {
-          prompt.model.set(item ? { ...item, variant: prompt.model.current()?.variant } : undefined)
+          prompt.model.set(item ? { ...item, auto: item.auto ?? false, variant: prompt.model.current()?.variant } : undefined)
           if (!item) return
           models.setVisibility(item, true)
           if (options?.recent) models.recent.push(item)
@@ -114,7 +114,7 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
           batch(() => {
             const model = current()
             if (!model) return
-            prompt.model.set({ providerID: model.provider.id, modelID: model.id, variant: value ?? null })
+            prompt.model.set({ providerID: model.provider.id, modelID: model.id, auto: false, variant: value ?? null })
             models.variant.set({ providerID: model.provider.id, modelID: model.id }, value)
           }),
         )

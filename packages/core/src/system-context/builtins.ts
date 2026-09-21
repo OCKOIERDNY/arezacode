@@ -9,6 +9,7 @@ import { SystemContextRegistry } from "./registry"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
 import { engineEnabled } from "../util/native-command"
+import { Jev } from "../jev"
 
 const builtIns = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -21,6 +22,7 @@ const builtIns = Layer.effectDiscard(
       `  Is directory a git repo: ${location.vcs?.type === "git" ? "yes" : "no"}`,
       `  Platform: ${process.platform}`,
       "</env>",
+      Jev.workflow,
       "For routine verification, call project_check with operation verify and the owning project/package workdir once. The application discovers, orders and runs configured lint, typechecks, tests and builds, including workspaces; do not schedule separate shell commands or regenerate Python/shell glue. Read each reported result: missing/skipped checks are not passes. Use operation script for an existing named project script, ci for its declared CI script (or local verification), and deploy only when the user explicitly requests deployment. These execute repository code with normal permissions and do not dispatch remote CI workflows.",
     ].join("\n")
     const context = SystemContext.combine([

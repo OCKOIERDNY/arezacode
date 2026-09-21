@@ -27,7 +27,7 @@ import { createSizing, focusTerminalById } from "@/pages/session/helpers"
 import { getTerminalHandoff, setTerminalHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
-export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
+export function TerminalPanelV2(props: { stacked?: boolean; embedded?: boolean; onClose?: () => void } = {}) {
   const layout = useLayout()
   const terminal = useTerminal()
   const sdk = useSDK()
@@ -38,10 +38,10 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const newLayout = createMemo(() => settings.general.newLayoutDesigns())
-  const opened = createMemo(() => view().terminal.opened())
+  const opened = createMemo(() => props.embedded || view().terminal.opened())
   const size = createSizing()
   const height = createMemo(() => layout.terminal.height())
-  const close = () => view().terminal.close()
+  const close = () => (props.onClose ? props.onClose() : view().terminal.close())
   let root: HTMLDivElement | undefined
   let tabList: HTMLDivElement | undefined
 
@@ -177,7 +177,7 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
         "w-full": !isDesktop() || stacked(),
         "min-w-0 h-full flex-1": isDesktop() && opened() && !stacked(),
         "w-0 h-full pointer-events-none": isDesktop() && !opened(),
-        "rounded-[10px] shadow-[var(--v2-elevation-raised)]": isDesktop() && newLayout(),
+        "rounded-[10px] shadow-[var(--v2-elevation-raised)]": isDesktop() && newLayout() && !props.embedded,
         "transition-[height] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[height] motion-reduce:transition-none":
           !isDesktop() && !size.active(),
       }}

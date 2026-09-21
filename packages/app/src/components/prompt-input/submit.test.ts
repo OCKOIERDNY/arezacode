@@ -315,6 +315,29 @@ beforeEach(() => {
 })
 
 describe("prompt submit worktree selection", () => {
+  test("waits for Jev and executes its model and effort; uncertain Auto never sends", async () => {
+    const { sendFollowupDraft } = await import("./submit")
+    const gate = Promise.withResolvers<{ status: "ready"; routing: "selected"; model: { providerID: string; modelID: string; variant: string }; skills: [] }>()
+    const requests: unknown[] = []
+    const base = {
+      api: { prompt: async (input: unknown) => { requests.push(input) } },
+      serverSync: { session: { set: () => undefined } },
+      sync: { data: { command: [] }, session: { optimistic: { add: () => undefined, remove: () => undefined } } },
+      draft: { sessionID: "session-route", sessionDirectory: "/repo", prompt: [{ type: "text", content: "Review authentication", start: 0, end: 21 }], context: [], agent: "build", model: { providerID: "original", modelID: "original" }, variant: "low", jev: { auto: true, models: [{ providerID: "chosen", modelID: "astra", variant: "high" }] } },
+      jev: { state: { enabled: true, routing: true }, prepare: () => gate.promise },
+      routingError: "Choose a model or retry",
+    }
+    const pending = sendFollowupDraft(base as unknown as Parameters<typeof sendFollowupDraft>[0])
+    await Bun.sleep(0)
+    expect(requests).toHaveLength(0)
+    gate.resolve({ status: "ready", routing: "selected", model: { providerID: "chosen", modelID: "astra", variant: "high" }, skills: [] })
+    expect(await pending).toBe(true)
+    expect(requests).toMatchObject([{ model: { providerID: "chosen", modelID: "astra" }, variant: "high" }])
+    const uncertain = { ...base, jev: { state: base.jev.state, prepare: async () => ({ status: "ready", routing: "uncertain", skills: [] }) } }
+    await expect(sendFollowupDraft(uncertain as unknown as Parameters<typeof sendFollowupDraft>[0])).rejects.toThrow("Choose a model or retry")
+    expect(requests).toHaveLength(1)
+  })
+
   test("reads the latest worktree accessor value per submit", async () => {
     const submit = createPromptSubmit({
       prompt,

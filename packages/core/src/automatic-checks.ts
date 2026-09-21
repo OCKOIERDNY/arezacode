@@ -235,7 +235,7 @@ export function scan(root: string, changed: Map<string, string>, sessionID?: str
   })
 }
 
-export async function compress(text: string, signal?: AbortSignal) {
+export async function compress(text: string, signal?: AbortSignal, sessionID?: string) {
   signal?.throwIfAborted()
   if (text.length < 8000 || text.length > 4 * 1024 * 1024 || process.env.AREZACODE_HEADROOM === "0") return
   if (!(await engineEnabled("headroom"))) return
@@ -244,6 +244,7 @@ export async function compress(text: string, signal?: AbortSignal) {
   const cached = await readCache("headroom", key)
   if (cached && cached.length < text.length * 0.9 && !/<<ccr:|\[.*headroom_retrieve/.test(cached)) {
     await engineResult("headroom", "Reused compressed output with identical input, settings, and tool version.")
+    if (sessionID) await Jev.recordCompression(sessionID, text.length, cached.length, true)
     return cached
   }
   const first = (await readFile(executable, "utf8")).split("\n")[0]
@@ -259,6 +260,7 @@ export async function compress(text: string, signal?: AbortSignal) {
     { interpreter: python, input: text, timeout: 15_000, signal, env: engineEnvironment({ HF_HUB_OFFLINE: "1", HF_HUB_DISABLE_TELEMETRY: "1" }) },
   )
   const result: unknown = JSON.parse(output)
+  if (sessionID) await Jev.recordCompression(sessionID, text.length, typeof result === "string" && result.trim() && result.length < text.length * 0.9 && !/<<ccr:|\[.*headroom_retrieve/.test(result) ? result.length : text.length, false)
   if (
     typeof result !== "string" ||
     !result.trim() ||

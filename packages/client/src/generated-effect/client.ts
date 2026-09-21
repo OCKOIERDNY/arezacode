@@ -452,6 +452,7 @@ type Endpoint9_2Request = Parameters<RawClient["server.jev"]["jev.prepare"]>[0]
 type Endpoint9_2Input = {
   readonly location?: Endpoint9_2Request["query"]["location"]
   readonly sessionID: Endpoint9_2Request["payload"]["sessionID"]
+  readonly promptID?: Endpoint9_2Request["payload"]["promptID"]
   readonly text: Endpoint9_2Request["payload"]["text"]
   readonly agent: Endpoint9_2Request["payload"]["agent"]
   readonly auto: Endpoint9_2Request["payload"]["auto"]
@@ -463,6 +464,7 @@ const Endpoint9_2 = (raw: RawClient["server.jev"]) => (input: Endpoint9_2Input) 
     query: { location: input["location"] },
     payload: {
       sessionID: input["sessionID"],
+      promptID: input["promptID"],
       text: input["text"],
       agent: input["agent"],
       auto: input["auto"],

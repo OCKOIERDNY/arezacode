@@ -3,7 +3,7 @@ import { createMemo } from "solid-js"
 import { useServerSync } from "./server-sync"
 import { useSDK } from "./sdk"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { messageKey } from "@/utils/session-message"
+import { messageKey, upsertMessage } from "@/utils/session-message"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -69,7 +69,7 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
 
   for (const item of items) {
     const result = Binary.search(session, messageKey(item.message), messageKey)
-    const found = result.found
+    const found = session.some((message) => message.id === item.message.id)
     if (!found) session.splice(result.index, 0, item.message)
 
     const current = part.get(item.message.id)
@@ -91,13 +91,7 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
 }
 
 export function applyOptimisticAdd(draft: OptimisticStore, input: OptimisticAddInput) {
-  const messages = draft.message[input.sessionID]
-  if (messages) {
-    const result = Binary.search(messages, messageKey(input.message), messageKey)
-    messages.splice(result.index, 0, input.message)
-  } else {
-    draft.message[input.sessionID] = [input.message]
-  }
+  draft.message[input.sessionID] = upsertMessage(draft.message[input.sessionID] ?? [], input.message)
   draft.part[input.message.id] = sortParts(input.parts)
 }
 

@@ -391,7 +391,7 @@ describe("applyDirectoryEvent", () => {
         type: "message.updated",
         properties: {
           info: {
-            ...userMessage("msg_a", sessionID, 2),
+            ...userMessage("msg_a", sessionID, 4),
             role: "assistant",
           } as Message,
         },
@@ -404,6 +404,7 @@ describe("applyDirectoryEvent", () => {
     })
 
     expect(store.message[sessionID]?.find((x) => x.id === "msg_a")?.role).toBe("assistant")
+    expect(store.message[sessionID]?.map((x) => x.id)).toEqual(["msg_z", "msg_b", "msg_a"])
 
     applyDirectoryEvent({
       event: { type: "message.removed", properties: { sessionID, messageID: "msg_a" } },

@@ -217,6 +217,7 @@ export const Terminal = (props: TerminalProps) => {
   let sizeTimer: ReturnType<typeof setTimeout> | undefined
   let pendingSize: { cols: number; rows: number } | undefined
   let lastSize: { cols: number; rows: number } | undefined
+  let replayed = false
   let disposed = false
   const cleanups: VoidFunction[] = []
   const start =
@@ -290,6 +291,7 @@ export const Terminal = (props: TerminalProps) => {
 
   const scheduleFit = () => {
     if (disposed) return
+    if (!replayed) return
     if (!fitAddon) return
     if (fitFrame !== undefined) return
 
@@ -449,6 +451,8 @@ export const Terminal = (props: TerminalProps) => {
 
       const active = document.activeElement
       t.open(container)
+      const canvas = container.querySelector("canvas")
+      if (canvas) canvas.style.visibility = "hidden"
       useTerminalUiBindings({
         container,
         term: t,
@@ -510,20 +514,9 @@ export const Terminal = (props: TerminalProps) => {
           output.flush(resolve)
         })
 
-      if (restore && restoreSize) {
+      if (restore) {
         await write(restore)
-        fit.fit()
-        scheduleSize(t.cols, t.rows)
         if (scrollY !== undefined) t.scrollToLine(scrollY)
-        startResize()
-      } else {
-        fit.fit()
-        scheduleSize(t.cols, t.rows)
-        if (restore) {
-          await write(restore)
-          if (scrollY !== undefined) t.scrollToLine(scrollY)
-        }
-        startResize()
       }
 
       const once = { value: false }
@@ -638,7 +631,7 @@ export const Terminal = (props: TerminalProps) => {
           if (disposed) return
           tries = 0
           local.onConnect?.()
-          scheduleSize(t.cols, t.rows)
+          if (replayed) scheduleSize(t.cols, t.rows)
           if (t.getMode(2031)) t.write("\x1b[?996n")
         }
 
@@ -654,6 +647,17 @@ export const Terminal = (props: TerminalProps) => {
               if (typeof next === "number" && Number.isSafeInteger(next) && next >= 0) {
                 cursor = next
                 seek = next
+                output?.flush(() => {
+                  void document.fonts.ready.then(() => {
+                    if (disposed || replayed) return
+                    replayed = true
+                    fit.fit()
+                    scheduleSize(t.cols, t.rows)
+                    if (scrollY !== undefined) t.scrollToLine(scrollY)
+                    startResize()
+                    if (canvas) canvas.style.visibility = "visible"
+                  })
+                })
               }
             } catch (err) {
               debugTerminal("invalid websocket control frame", err)
@@ -744,7 +748,7 @@ export const Terminal = (props: TerminalProps) => {
       dir="ltr"
       data-prevent-autofocus
       tabIndex={-1}
-      style={{ "background-color": terminalColors().background }}
+      style={{ "background-color": terminalColors().background, "caret-color": "transparent" }}
       classList={{
         ...local.classList,
         "select-text": true,

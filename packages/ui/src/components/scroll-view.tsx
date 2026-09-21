@@ -149,6 +149,8 @@ export function ScrollView(props: ScrollViewProps) {
     thumbWidth: 0,
     thumbLeft: 0,
     showHorizontal: false,
+    above: false,
+    below: false,
   })
   const isHovered = () => state.isHovered
   const isDragging = () => state.isDragging
@@ -191,6 +193,8 @@ export function ScrollView(props: ScrollViewProps) {
       Math.abs(viewportRef.scrollLeft) / Math.max(1, viewportRef.scrollWidth - viewportRef.clientWidth),
     )
     setState({
+      above: scrollTop > 1,
+      below: scrollTop + clientHeight < scrollHeight - 1,
       showThumb: local.orientation !== "horizontal" && scrollHeight > clientHeight,
       thumbHeight: Math.max(0, height),
       thumbTop:
@@ -363,6 +367,8 @@ export function ScrollView(props: ScrollViewProps) {
   return (
     <div
       class={`scroll-view ${local.class || ""}`}
+      data-scroll-above={state.above || undefined}
+      data-scroll-below={state.below || undefined}
       style={local.style}
       onPointerEnter={() => {
         if (hoverRoot()) setState("isHovered", true)

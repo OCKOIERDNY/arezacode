@@ -1,5 +1,5 @@
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page, type WebSocketRoute } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
@@ -15,6 +15,72 @@ const server = `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${pr
 const PROBE = "original"
 
 test.use({ viewport: { width: 1440, height: 900 } })
+
+test("replays the shell at its original width and hides the browser caret", async ({ page }) => {
+  const sizes: unknown[] = []
+  let socket: WebSocketRoute | undefined
+  await setup(page, (ws) => {
+    socket = ws
+    ws.send(`\x1b[7m%\x1b[27m${" ".repeat(79)}\r \r\x1b[Kproject % `)
+  })
+  await page.route(`**/api/pty/${ptyID}?*`, async (route) => {
+    if (route.request().method() === "PUT") sizes.push(route.request().postDataJSON())
+    await route.fulfill({ json: { location: ptyLocation(), data: ptyInfo() } })
+  })
+  await page.addInitScript(() =>
+    localStorage.setItem("opencode.global.dat:layout", JSON.stringify({ review: { panelOpened: true } })),
+  )
+  await page.goto(sessionHref(sessionA))
+  const panel = page.locator("#review-panel")
+  await panel.getByRole("button", { name: "New tab", exact: true }).click()
+  await panel.getByRole("button", { name: "Terminal", exact: true }).click()
+  const terminal = panel.locator('[data-component="terminal"]')
+  await expect.poll(() => !!socket).toBe(true)
+  await expect(terminal.locator("canvas")).toHaveCSS("visibility", "hidden")
+  await terminal.click({ position: { x: 4, y: 4 } })
+  await expect(terminal).toHaveCSS("caret-color", "rgba(0, 0, 0, 0)")
+  expect(sizes).toEqual([])
+  socket!.send(Buffer.from(`\0${JSON.stringify({ cursor: 120 })}`))
+  await expect.poll(() => sizes.length).toBeGreaterThan(0)
+  await expect(terminal.locator("canvas")).toBeVisible()
+  await page.screenshot({ path: "/tmp/areza-terminal-fixed.png" })
+  expect(await terminal.locator("canvas").evaluate((canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext("2d")!
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+    const background = Array.from(data.slice(data.length - 4, data.length - 1))
+    const bottom = Math.ceil(30 * devicePixelRatio)
+    for (let y = bottom; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width - 20; x++) {
+        const offset = (y * canvas.width + x) * 4
+        if (background.some((color, i) => Math.abs(data[offset + i]! - color) > 20)) return false
+      }
+    }
+    return true
+  })).toBe(true)
+})
+
+test("opens an embedded terminal from the panel picker and preserves it across panel tabs", async ({ page }) => {
+  const connections = await setup(page)
+  await page.addInitScript(() =>
+    localStorage.setItem("opencode.global.dat:layout", JSON.stringify({ review: { panelOpened: true } })),
+  )
+  await page.goto(sessionHref(sessionA))
+  await expectSessionTitle(page, titleA)
+  const panel = page.locator("#review-panel")
+  await panel.getByRole("button", { name: "New tab", exact: true }).click()
+  await panel.getByRole("button", { name: "Terminal", exact: true }).click()
+  const terminal = panel.locator('[data-component="terminal"]')
+  await expect(terminal).toBeVisible()
+  await expect.poll(() => connections.length).toBe(1)
+  await writeProbe(page)
+  await page.screenshot({ path: "/tmp/areza-panels-terminal.png" })
+  await panel.getByRole("button", { name: "New tab", exact: true }).click()
+  await expect(terminal).toBeHidden()
+  await panel.getByRole("tab", { name: "Terminal", exact: true }).click()
+  await expect(terminal).toBeVisible()
+  expect(await readProbe(page)).toBe(PROBE)
+  expect(connections.length).toBe(1)
+})
 
 // Terminals are workspace-scoped: switching between session tabs in the same
 // workspace must keep the terminal mounted and its PTY connection open instead
@@ -64,7 +130,7 @@ async function readProbe(page: Page) {
   return page.locator('[data-component="terminal"]').evaluate((el) => (el as Probed).__e2eProbe)
 }
 
-async function setup(page: Page) {
+async function setup(page: Page, connected?: (socket: WebSocketRoute) => void) {
   await mockOpenCodeServer(page, {
     protocol: "v2",
     directory,
@@ -118,6 +184,8 @@ async function setup(page: Page) {
   const connections: string[] = []
   await page.routeWebSocket(new RegExp(`/api/pty/${ptyID}/connect`), (ws) => {
     connections.push(ws.url())
+    if (connected) connected(ws)
+    else ws.send(Buffer.from('\0{"cursor":0}'))
   })
 
   await page.addInitScript(

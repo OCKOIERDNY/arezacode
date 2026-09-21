@@ -110,6 +110,22 @@ test("moves busy through retry and recovery to final idle content", async ({ pag
   await expect(page.locator('[data-timeline-row="DiffSummary"]')).toBeVisible()
 })
 
+test("checkpoint markers stay unique when the server corrects a message timestamp", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" })
+  const first = userMessage()
+  const second = userMessage(undefined, { id: "msg_second", created: first.info.time.created + 1000 })
+  const timeline = await setupTimeline(page, { messages: [first], settings: { newLayoutDesigns: true } })
+  const marks = page.locator('[data-slot="navigator-marks"] button')
+  await expect(marks).toHaveCount(1)
+  await timeline.send(messageUpdated({ ...first.info, time: { created: first.info.time.created + 500 } }), 150)
+  await expect(marks).toHaveCount(1)
+  await expect(marks.first()).toHaveAttribute("data-message-target", first.info.id)
+  await marks.first().hover()
+  await page.screenshot({ path: "/tmp/areza-unique-checkpoints.png" })
+  await timeline.send(messageUpdated(second.info), 150)
+  await expect(marks).toHaveCount(2)
+})
+
 test("single-file edits use one compact summary with an expandable review", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" })
   await setupTimeline(page, {

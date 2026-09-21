@@ -2,6 +2,10 @@
   --card-pad-y: 8px;
   --card-line-pad: 12px;
 
+  &::before {
+    content: none;
+  }
+
   [data-slot="basic-tool-tool-title"] {
     color: var(--v2-text-text-base);
   }

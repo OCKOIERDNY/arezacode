@@ -1,4 +1,7 @@
 export const dict: Record<string, string> = {
+  "ui.message.orchestrator": "Orchestrator: {{model}}",
+  "ui.message.routing": "Jev is choosing a model…",
+  "ui.message.subagents": "Subagents: {{models}}",
   "ui.sessionReview.title": "Session changes",
   "ui.sessionReview.title.git": "Git changes",
   "ui.sessionReview.title.branch": "Branch changes",
@@ -119,6 +122,8 @@ export const dict: Record<string, string> = {
   "ui.messagePart.context.list.other": "{{count}} lists",
   "ui.messagePart.context.call.one": "{{count}} call",
   "ui.messagePart.context.call.other": "{{count}} calls",
+  "ui.messagePart.context.failed.one": "{{count}} failed",
+  "ui.messagePart.context.failed.other": "{{count}} failed",
 
   "ui.list.loading": "Loading",
   "ui.list.empty": "No results",

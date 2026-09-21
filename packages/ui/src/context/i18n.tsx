@@ -11,6 +11,7 @@ export const UI_PLURAL_KEYS = [
   "ui.messagePart.context.search",
   "ui.messagePart.context.list",
   "ui.messagePart.context.call",
+  "ui.messagePart.context.failed",
 ] as const
 export type UiI18nPluralKey = (typeof UI_PLURAL_KEYS)[number]
 export type UiPluralCategory = "zero" | "one" | "two" | "few" | "many" | "other"

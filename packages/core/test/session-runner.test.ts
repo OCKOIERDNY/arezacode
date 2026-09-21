@@ -24,6 +24,7 @@ import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { QuestionV2 } from "@opencode-ai/core/question"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { SessionV2 } from "@opencode-ai/core/session"
+import { MessageID } from "@opencode-ai/core/v1/session"
 import { Snapshot } from "@opencode-ai/core/snapshot"
 import { ContextSnapshotDecodeError } from "@opencode-ai/core/session/error"
 import { SessionEvent } from "@opencode-ai/core/session/event"
@@ -43,6 +44,7 @@ import { Config } from "@opencode-ai/core/config"
 import { ConfigCompaction } from "@opencode-ai/core/config/compaction"
 import { Tool } from "@opencode-ai/core/tool/tool"
 import {
+  MessageTable,
   SessionContextEpochTable,
   SessionInputTable,
   SessionMessageTable,
@@ -563,6 +565,20 @@ const verifyPartialFlushOnInterruption = (kind: FragmentKind) =>
   })
 
 describe("SessionRunnerLLM", () => {
+  it.effect("includes legacy coding requests, cache counts and reasoning variants in usage", () => Effect.gen(function* () {
+    yield* setup
+    const session = yield* SessionV2.Service
+    const database = yield* Database.Service
+    const id = MessageID.make("msg_legacy_usage")
+    yield* database.db.insert(MessageTable).values({ id, session_id: sessionID, time_created: 1000, time_updated: 2000,
+      data: { role: "assistant", parentID: MessageID.make("msg_legacy_prompt"), modelID: ModelV2.ID.make("gpt-6-astra"), providerID: ProviderV2.ID.make("openai"), variant: "high", agent: "build", mode: "build", path: { cwd: "/project", root: "/project" }, time: { created: 1000, completed: 2000 }, cost: 0.02, finish: "stop", tokens: { input: 300, output: 100, reasoning: 20, total: 1120, cache: { read: 600, write: 100 } } } as typeof MessageTable.$inferInsert.data,
+    }).run().pipe(Effect.orDie)
+    expect((yield* session.usage(sessionID)).find((entry) => String(entry.id) === id)).toMatchObject({
+      kind: "model", promptID: "msg_legacy_prompt", model: { id: "gpt-6-astra", variant: "high" },
+      usage: { input: 1000, output: 120, cacheRead: 600, cacheWrite: 100, reasoning: 20, cost: 0.02, costSource: "unknown" },
+    })
+    yield* database.db.delete(MessageTable).where(eq(MessageTable.id, id)).run().pipe(Effect.orDie)
+  }))
   it.effect("persists final cumulative usage once and retains it after compaction and replay", () => Effect.gen(function* () {
     yield* setup
     const session = yield* SessionV2.Service

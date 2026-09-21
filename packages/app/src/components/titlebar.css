@@ -226,6 +226,9 @@
   transition:
     transform var(--sidebar-duration) var(--sidebar-easing),
     visibility 0s;
+}
+
+[data-component="project-sidebar"] {
   @starting-style {
     transform: translateX(var(--sidebar-exit));
   }

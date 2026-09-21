@@ -534,6 +534,23 @@ describe("server session", () => {
     expect(store.data.part[stale.id]).toEqual([refreshed, pending])
   })
 
+  test("reconciles optimistic message IDs when the server assigns a different timestamp", async () => {
+    const optimistic = userMessage("message-1", { time: { created: 1 } })
+    const confirmed = { ...optimistic, time: { created: 3 } }
+    const part = textPart(optimistic.id)
+    const store = createServerSession(rootMessageClient([response([{ info: confirmed, parts: [part] }])], []))
+    store.optimistic.add({ sessionID: "child", message: optimistic, parts: [part] })
+    store.apply({ type: "message.updated", properties: { info: confirmed } })
+    expect(store.data.message.child).toEqual([confirmed])
+    await store.sync("child", { force: true })
+    expect(store.data.message.child).toEqual([confirmed])
+
+    const refreshing = createServerSession(rootMessageClient([response([{ info: confirmed, parts: [part] }])], []))
+    refreshing.optimistic.add({ sessionID: "child", message: optimistic, parts: [part] })
+    await refreshing.sync("child", { force: true })
+    expect(refreshing.data.message.child).toEqual([confirmed])
+  })
+
   test("uses a parent received by SSE during the replacement load", async () => {
     const pending = deferredResponse()
     const user = userMessage("message-1")

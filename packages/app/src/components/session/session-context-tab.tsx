@@ -140,7 +140,54 @@ export function SessionContextTab() {
     async (key) => ({ key, entries: await serverSDK().tools.sessionUsage(params.id!) }),
     { initialValue: { key: "", entries: [] } },
   )
-  const usageEntries = () => usageResource.error || usageResource.latest.key !== usageKey() ? [] : usageResource.latest.entries
+  const activityEntries = () => usageResource.error || usageResource.latest.key !== usageKey() ? [] : usageResource.latest.entries
+  const usageEntries = () => activityEntries().filter((entry) => entry.kind !== "automation")
+  const modelName = (providerID: string, modelID: string, variant?: string) => [providers.all().get(providerID)?.models[modelID]?.name ?? modelID, variant].filter(Boolean).join(" · ")
+  const childIDs = createMemo(() => [...new Set(messages().flatMap((message) => (sync().data.part[message.id] ?? []).flatMap((part) => {
+    if (part.type !== "tool" || part.tool !== "task" || part.state.status === "pending") return []
+    const id = part.state.metadata?.sessionId
+    return typeof id === "string" ? [id] : []
+  })))])
+  const childKey = createMemo(() => JSON.stringify([usageKey(), childIDs()]))
+  const [childActivity] = createResource(childKey, async (key) => {
+    const sessions: Array<{ sessionID: string; messages: { info: Message; parts: Part[] }[] }> = []
+    const visited = new Set<string>()
+    const pending = new Set([...(params.id ? [params.id] : []), ...childIDs()])
+    const client = sdk().client
+    while (pending.size) {
+      const ids = [...pending].filter((id) => !visited.has(id))
+      pending.clear()
+      ids.forEach((id) => visited.add(id))
+      const loaded = await Promise.all(ids.map(async (sessionID) => {
+        const response = await client.session.messages({ sessionID })
+        if (!response.data) throw new Error(language.t("context.activity.childrenError"))
+        return { sessionID, messages: response.data }
+      }))
+      sessions.push(...loaded)
+      loaded.forEach((session) => session.messages.forEach((message) => message.parts.forEach((part) => {
+        if (part.type !== "tool" || part.tool !== "task" || part.state.status === "pending") return
+        const id = part.state.metadata?.sessionId
+        if (typeof id === "string" && !visited.has(id)) pending.add(id)
+      })))
+    }
+    return { key, sessions }
+  }, { initialValue: { key: "", sessions: [] } })
+  const history = () => childActivity.error || childActivity.latest.key !== childKey() ? [] : childActivity.latest.sessions
+  const children = () => history().filter((session) => session.sessionID !== params.id)
+  const tools = createMemo(() => [
+    ...new Map([
+      ...(history().find((session) => session.sessionID === params.id)?.messages ?? []),
+      ...messages().map((info) => ({ info, parts: sync().data.part[info.id] ?? [] })),
+    ].map((message) => [message.info.id, { ...message, child: false }])).values(),
+    ...children().flatMap((session) => session.messages.map((message) => ({ ...message, child: true }))),
+  ].flatMap((message) => {
+    const info = message.info
+    return info.role !== "assistant" ? [] : message.parts.flatMap((part) => part.type !== "tool" ? [] : [{
+      part, child: message.child, sessionID: info.sessionID,
+      model: modelName(info.providerID, info.modelID, info.variant),
+      start: part.state.status === "pending" ? info.time.created : part.state.time.start,
+    }])
+  }).sort((a, b) => a.start - b.start))
   const [usageLimit, setUsageLimit] = createSignal(50)
   const money = (value: number | undefined) => value === undefined ? "—" : new Intl.NumberFormat(language.intl(), { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value)
   const usageKeys = ["input", "uncachedInput", "cacheRead", "cacheWrite", "output", "reasoning", "total"] as const
@@ -149,7 +196,8 @@ export function SessionContextTab() {
     const value = formatter().number(total.value)
     return total.missing && total.value !== undefined ? language.t("context.accounting.partial", { value, count: total.missing }) : value
   }
-  const models = createMemo(() => [...new Set(usageEntries().map((entry) => `${entry.model.providerID}/${entry.model.id}`))].map((model) => ({ model, entries: usageEntries().filter((entry) => `${entry.model.providerID}/${entry.model.id}` === model) })))
+  const modelKey = (entry: ReturnType<typeof usageEntries>[number]) => `${entry.model.providerID}/${entry.model.id}${entry.model.variant ? ` · ${entry.model.variant}` : ""}`
+  const models = createMemo(() => [...new Set(usageEntries().map(modelKey))].map((model) => ({ model, entries: usageEntries().filter((entry) => modelKey(entry) === model) })))
   const prompts = createMemo(() => [...new Set(usageEntries().flatMap((entry) => entry.promptID ? [entry.promptID] : []))].slice(-usageLimit()).map((id) => ({ model: `${language.t("context.accounting.prompt")} ${id}`, entries: usageEntries().filter((entry) => entry.promptID === id) })))
 
   const cost = createMemo(() => {
@@ -319,6 +367,44 @@ export function SessionContextTab() {
       onScroll={handleScroll}
     >
       <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
+        <section class="flex flex-col gap-3" data-testid="session-model-activity">
+          <div class="text-14-medium text-text-strong">{language.t("context.activity.title")}</div>
+          <Stat label={language.t("context.activity.orchestrator")} value={[...new Set(usageEntries().filter((entry) => entry.kind !== "jev").map((entry) => modelName(entry.model.providerID, entry.model.id, entry.model.variant)))].join(", ") || modelLabel()} />
+          <Show when={children().length}><Stat label={language.t("context.activity.subagent")} value={[...new Set(children().flatMap((session) => session.messages.flatMap(({ info }) => info.role === "assistant" ? [modelName(info.providerID, info.modelID, info.variant)] : [])))].join(", ") || "—"} /></Show>
+          <Show when={childActivity.error}><p role="alert">{language.t("context.activity.childrenError")}</p></Show>
+          <details>
+            <summary class="cursor-pointer text-12-medium">{language.t("context.activity.decision")} · {usageEntries().filter((entry) => entry.kind === "jev").length}</summary>
+            <ScrollView class="max-h-80 mt-2" data-testid="jev-decision-history">
+              <div class="flex flex-col gap-3 pr-3">
+                <For each={usageEntries().filter((entry) => entry.kind === "jev")}>{(entry) => <div class="text-12-regular text-text-weak">
+                  <div>{formatter().time(entry.time.created)} · {entry.decision?.purpose ?? "Jev"} · {entry.decision?.outcome ?? entry.finish}</div>
+                  <Show when={entry.decision?.selected}>{(selected) => <div class="text-text-strong">{modelName(selected().providerID, selected().id, selected().variant)} · {Math.round((entry.decision?.confidence ?? 0) * 100)}%</div>}</Show>
+                  <Show when={entry.decision?.skills?.length}><div>{entry.decision?.skills?.join(", ")}</div></Show>
+                </div>}</For>
+              </div>
+            </ScrollView>
+          </details>
+          <details>
+            <summary class="cursor-pointer text-12-medium">{language.t("context.activity.compression")} · {activityEntries().filter((entry) => entry.automation).length}</summary>
+            <ScrollView class="max-h-64 mt-2"><div class="flex flex-col gap-3 pr-3">
+              <Show when={activityEntries().some((entry) => entry.automation)} fallback={<p class="text-12-regular text-text-weak">{language.t("context.activity.noHistory")}</p>}>
+                <For each={activityEntries().filter((entry) => entry.automation)}>{(entry) => <div class="text-12-regular text-text-weak">
+                  <div>{formatter().time(entry.time.created)} · {entry.finish}</div>
+                  <div>{language.t("context.activity.characters", { input: entry.automation!.inputCharacters, output: entry.automation!.outputCharacters, saved: entry.automation!.inputCharacters - entry.automation!.outputCharacters })}</div>
+                  <Show when={entry.automation!.cached}>{language.t("context.activity.cached")}</Show>
+                </div>}</For>
+              </Show>
+            </div></ScrollView>
+          </details>
+          <ScrollView class="max-h-96" data-testid="session-tool-activity"><div class="flex flex-col gap-2 pr-3">
+            <Show when={tools().length > usageLimit()}><Button size="small" variant="ghost" onClick={() => setUsageLimit((limit) => limit + 50)}>{language.t("context.activity.older")}</Button></Show>
+            <For each={tools().slice(-usageLimit())}>{(item) => <details class="text-12-regular">
+              <summary class="cursor-pointer text-text-weak">{formatter().time(item.start)} · {item.part.tool} · {item.model} · {item.part.state.status}{item.child ? ` · ${language.t("context.activity.subagent")}` : ""}</summary>
+              <div class="py-2 text-text-weak break-all">{item.part.callID} · {item.sessionID}<Show when={item.part.state.status === "completed" || item.part.state.status === "error"}>{" · "}{formatter().time((item.part.state as { time: { end: number } }).time.end)}</Show></div>
+              <pre class="whitespace-pre-wrap break-all text-12-regular">{JSON.stringify(item.part.state.input, null, 2)}</pre>
+            </details>}</For>
+          </div></ScrollView>
+        </section>
         <section class="flex flex-col gap-4" data-testid="session-usage-accounting" aria-busy={usageResource.loading}>
           <div class="text-14-medium text-text-strong">{language.t("context.accounting.title")}</div>
           <p class="text-12-regular text-text-weak">{language.t("context.accounting.note")}</p>
@@ -342,7 +428,7 @@ export function SessionContextTab() {
           <div class="text-12-medium text-text-strong">{language.t("context.accounting.attempts")}</div>
           <Show when={usageEntries().length > usageLimit()}><Button size="small" variant="ghost" onClick={() => setUsageLimit((limit) => limit + 50)}>{language.t("context.accounting.older")}</Button></Show>
           <For each={usageEntries().slice(-usageLimit())}>{(entry, index) => { const [open, setOpen] = createSignal(false); return <details class="rounded-md border border-border-base p-3" onToggle={(event) => setOpen(event.currentTarget.open)}>
-            <summary class="cursor-pointer text-12-regular text-text-base">{index() + 1}. {entry.model.id} · {formatter().time(entry.time.created)} · {money(entry.usage?.cost)}</summary>
+            <summary class="cursor-pointer text-12-regular text-text-base">{index() + 1}. {modelName(entry.model.providerID, entry.model.id, entry.model.variant)} · {formatter().time(entry.time.created)} · {money(entry.usage?.cost)}</summary>
             <Show when={open()}><div class="grid grid-cols-2 gap-3 pt-3">
               <Stat label={language.t("context.accounting.request")} value={entry.id} />
               <Stat label={language.t("context.accounting.responseID")} value={entry.usage?.responseID ?? "—"} />

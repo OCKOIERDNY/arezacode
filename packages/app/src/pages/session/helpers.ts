@@ -6,6 +6,11 @@ import { SESSION_OPEN_FILE_TAB } from "@/context/layout-tabs"
 
 export { SESSION_OPEN_FILE_TAB } from "@/context/layout-tabs"
 
+export const SESSION_UTILITY_TABS = ["new-tab", "agents", "browser", "terminal", "server"] as const
+export const isSessionBrowserTab = (tab: string) => tab === "browser" || tab.startsWith("browser:")
+export const isSessionUtilityTab = (tab: string) =>
+  isSessionBrowserTab(tab) || SESSION_UTILITY_TABS.some((item) => item === tab)
+
 const emptyTabs: string[] = []
 
 type Tabs = {
@@ -45,7 +50,7 @@ export const createSessionTabs = (input: TabsInput) => {
         .tabs()
         .all()
         .flatMap((tab) => {
-          if (tab === "context" || tab === "review") return []
+          if (tab === "context" || tab === "review" || isSessionUtilityTab(tab)) return []
           if (tab === SESSION_OPEN_FILE_TAB && !fileBrowser()) return []
           const value = input.pathFromTab(tab) ? input.normalizeTab(tab) : tab
           if (seen.has(value)) return []
@@ -62,6 +67,7 @@ export const createSessionTabs = (input: TabsInput) => {
   const activeTab = createMemo(() => {
     const active = input.tabs().active()
     if (active === "context") return active
+    if (active && isSessionUtilityTab(active)) return active
     if (active === SESSION_OPEN_FILE_TAB && openFileOpen()) return active
     if (active === "review" && review()) return active
     if (active && input.pathFromTab(active)) return input.normalizeTab(active)
@@ -80,6 +86,7 @@ export const createSessionTabs = (input: TabsInput) => {
   const closableTab = createMemo(() => {
     const active = activeTab()
     if (active === "context") return active
+    if (isSessionUtilityTab(active)) return active
     if (active === SESSION_OPEN_FILE_TAB && openFileOpen()) return active
     if (!openedTabs().includes(active)) return
     return active

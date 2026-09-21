@@ -16,7 +16,7 @@ import { EventV2 } from "./event"
 import { EventTable } from "./event/sql"
 import { Database } from "./database/database"
 import { SessionProjector } from "./session/projector"
-import { SessionMessageTable, SessionTable } from "./session/sql"
+import { MessageTable, SessionMessageTable, SessionTable } from "./session/sql"
 import { SessionSchema } from "./session/schema"
 import { AbsolutePath, PositiveInt, RelativePath } from "./schema"
 import { AgentV2 } from "./agent"
@@ -345,6 +345,20 @@ const layer = Layer.effect(
           }
           const previous = entries.get(id)
           if (previous) entries.set(id, { ...previous, usage: data.usage ?? previous.usage, finish: row.type.startsWith(SessionEvent.Step.Failed.type + ".") ? "error" : data.finish, time: { ...previous.time, completed: data.timestamp } })
+        }
+        const legacy = yield* db.select().from(MessageTable).where(eq(MessageTable.session_id, sessionID)).all().pipe(Effect.orDie)
+        for (const row of legacy) {
+          const message = yield* Schema.decodeUnknownEffect(SessionV1.Info)({ ...row.data, id: row.id, sessionID }).pipe(Effect.orDie)
+          if (message.role !== "assistant" || entries.has(SessionMessage.ID.make(message.id))) continue
+          entries.set(SessionMessage.ID.make(message.id), {
+            id: SessionMessage.ID.make(message.id), promptID: SessionMessage.ID.make(message.parentID), kind: "model",
+            model: { providerID: message.providerID, id: message.modelID, variant: message.variant ? ModelV2.VariantID.make(message.variant) : undefined },
+            usage: { version: 1, input: message.tokens.input + message.tokens.cache.read + message.tokens.cache.write,
+              cacheRead: message.tokens.cache.read, cacheWrite: message.tokens.cache.write, output: message.tokens.output + message.tokens.reasoning,
+              reasoning: message.tokens.reasoning, total: message.tokens.total, cost: message.cost, costSource: "unknown" },
+            finish: message.error ? "error" : message.finish,
+            time: { created: DateTime.makeUnsafe(message.time.created), completed: message.time.completed === undefined ? undefined : DateTime.makeUnsafe(message.time.completed) },
+          })
         }
         return [...entries.values(), ...yield* Effect.promise(() => Jev.usage(sessionID))].sort((a, b) => DateTime.toEpochMillis(a.time.created) - DateTime.toEpochMillis(b.time.created))
       }),

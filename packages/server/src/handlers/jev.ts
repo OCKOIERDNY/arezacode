@@ -33,17 +33,19 @@ export const JevHandler = HttpApiBuilder.group(Api, "server.jev", (handlers) =>
         return yield* Effect.promise(() =>
           Jev.prepare(ctx.payload, {
             skills: available,
-            models: models.map((model) => ({
+            models: models.flatMap((model) => [undefined, ...model.variants.map((variant) => variant.id)].map((variant) => ({
               providerID: model.providerID,
               modelID: model.id,
+              variant,
               name: model.name,
               description: JSON.stringify({
                 family: model.family,
                 context: model.limit.context,
                 cost: model.cost,
                 inputs: model.capabilities.input,
+                reasoningEffort: variant ?? model.request.variant ?? "default",
               }),
-            })),
+            }))),
           }),
         )
       }),

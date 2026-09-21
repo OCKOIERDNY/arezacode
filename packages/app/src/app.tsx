@@ -221,7 +221,7 @@ function ResolvedDraftRoute(props: { draft: DraftTab }) {
             <SDKProvider directory={directory}>
               <DirectoryDataProvider directory={directory} server={serverKey}>
                 <DraftProviders>
-                  <Suspense fallback={<LoadingSplash />}>
+                  <Suspense>
                     <NewSession />
                   </Suspense>
                 </DraftProviders>

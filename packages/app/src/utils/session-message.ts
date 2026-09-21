@@ -27,6 +27,10 @@ export function compareMessages(a: Pick<Message, "id" | "time">, b: Pick<Message
 
 export const messageKey = (message: Pick<Message, "id" | "time">) => message.time.created + message.id
 
+export function upsertMessage(messages: Message[], message: Message) {
+  return [...messages.filter((current) => current.id !== message.id), message].sort(compareMessages)
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }

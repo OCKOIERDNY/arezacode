@@ -14,6 +14,10 @@ import { Effect, Exit, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@opencode-ai/core/database/database"
+import { Jev } from "@opencode-ai/core/jev"
+import { Provider } from "@/provider/provider"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@opencode-ai/core/provider"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -88,6 +92,7 @@ export const TaskTool = Tool.define(
     const scope = yield* Scope.Scope
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+    const providers = yield* Provider.Service
 
     const run = Effect.fn("TaskTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
@@ -178,7 +183,11 @@ export const TaskTool = Tool.define(
       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
       const variant = msg.info.variant
 
-      const model = next.model ?? {
+      const routed = next.model || next.variant ? undefined : yield* Effect.promise(() => Jev.delegate(ctx.sessionID, nextSession.id, params.prompt, next.name))
+      const selected = routed?.model ? yield* providers.getModel(ProviderV2.ID.make(routed.model.providerID), ModelV2.ID.make(routed.model.modelID)).pipe(Effect.catch(() => Effect.succeed(undefined))) : undefined
+      if (routed && routed.status !== "disabled" && routed.routing !== "disabled" && (!selected || (routed.model?.variant && !Object.hasOwn(selected.variants ?? {}, routed.model.variant))))
+        return yield* Effect.fail(new Error("Jev could not select an available subagent model and reasoning effort. Retry or explicitly configure the subagent model."))
+      const model = next.model ?? (selected ? { modelID: selected.id, providerID: selected.providerID } : undefined) ?? {
         modelID: msg.info.modelID,
         providerID: msg.info.providerID,
       }
@@ -186,6 +195,9 @@ export const TaskTool = Tool.define(
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,
         model,
+        models: [] as Array<{ providerID: string; modelID: string; variant?: string }>,
+        variant: selected ? routed?.model?.variant : next.variant ?? (next.model ? undefined : variant),
+        routing: routed?.routing ?? routed?.status,
         ...(runInBackground ? { background: true } : {}),
       }
 
@@ -206,10 +218,30 @@ export const TaskTool = Tool.define(
             modelID: model.modelID,
             providerID: model.providerID,
           },
-          variant: next.model ? undefined : variant,
+          variant: metadata.variant,
           agent: next.name,
           parts,
         })
+        const transcript = yield* sessions.messages({ sessionID: nextSession.id })
+        metadata.models = [...new Map(transcript.flatMap((message) => {
+          if (message.info.role !== "assistant") return []
+          const direct = { providerID: message.info.providerID, modelID: message.info.modelID, variant: message.info.variant }
+          const delegated = message.parts.flatMap((part) => {
+            if (part.type !== "tool" || part.tool !== "task" || part.state.status === "pending") return []
+            const models: unknown = part.state.metadata?.models
+            if (!Array.isArray(models)) return []
+            return models.flatMap((item: unknown) => {
+              if (!item || typeof item !== "object" || !("providerID" in item) || !("modelID" in item) || typeof item.providerID !== "string" || typeof item.modelID !== "string") return []
+              return [{ providerID: item.providerID, modelID: item.modelID, variant: "variant" in item && typeof item.variant === "string" ? item.variant : undefined }]
+            })
+          })
+          return [direct, ...delegated]
+        }).map((model) => [JSON.stringify(model), model])).values()]
+        yield* ctx.metadata({ title: params.description, metadata })
+        const partID = msg.parts.find((part) => part.type === "tool" && part.callID === ctx.callID)?.id
+        const completed = partID ? yield* sessions.getPart({ sessionID: ctx.sessionID, messageID: ctx.messageID, partID }).pipe(Effect.catch(() => Effect.succeed(undefined))) : undefined
+        if (completed?.type === "tool" && (completed.state.status === "completed" || completed.state.status === "error"))
+          yield* sessions.updatePart({ ...completed, state: { ...completed.state, metadata: { ...completed.state.metadata, ...metadata } } })
         if (result.info.role === "assistant" && result.info.error) {
           const message =
             "message" in result.info.error.data && typeof result.info.error.data.message === "string"

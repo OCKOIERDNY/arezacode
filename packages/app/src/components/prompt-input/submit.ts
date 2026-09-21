@@ -41,12 +41,13 @@ export type FollowupDraft = {
   agent: string
   model: { providerID: string; modelID: string }
   variant?: string
-  jev?: { auto: boolean; models: { providerID: string; modelID: string }[] }
+  jev?: { auto: boolean; models: { providerID: string; modelID: string; variant?: string }[] }
 }
 
 type FollowupSendInput = {
   scope?: DirectorySDK["scope"]
   jev?: ReturnType<typeof createJevClient>
+  routingError?: string
   api: DirectorySDK["api"]["session"]
   serverSync: ServerSync
   sync: DirectorySync
@@ -74,7 +75,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   }
 
   const decision: { result?: Awaited<ReturnType<ReturnType<typeof createJevClient>["prepare"]>> } = {}
-  const wait = async (cleanup: VoidFunction = setIdle) => {
+  const wait = async (cleanup: VoidFunction = setIdle, promptID?: string) => {
     const ok = await input.before?.()
     if (ok === false) return false
     const abort = new AbortController()
@@ -84,6 +85,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     try {
       decision.result = await input.jev?.prepare({
         sessionID: input.draft.sessionID,
+        promptID,
         text,
         agent: input.draft.agent,
         auto: input.draft.jev?.auto ?? false,
@@ -91,6 +93,8 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         models: input.draft.jev?.models ?? [],
       }, input.draft.sessionDirectory)
       if (!input.jev?.state.enabled) decision.result = undefined
+      if (!abort.signal.aborted && input.draft.jev?.auto && input.jev?.state.enabled && input.jev.state.routing && !decision.result?.model)
+        throw new Error(input.routingError ?? "jev.routingUnavailable")
       return !abort.signal.aborted
     } finally {
       if (key && pending.get(key) === entry) pending.delete(key)
@@ -102,12 +106,12 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   if (cmd && input.sync.data.command.find((item) => item.name === cmd)) {
     setBusy()
     try {
-      if (!(await wait())) {
+      const messageID = Identifier.ascending("message")
+      if (!(await wait(setIdle, messageID))) {
         setIdle()
         return false
       }
 
-      const messageID = Identifier.ascending("message")
       await input.api.command({
         sessionID: input.draft.sessionID,
         id: messageID,
@@ -117,7 +121,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         model: {
           id: decision.result?.model?.modelID ?? input.draft.model.modelID,
           providerID: decision.result?.model?.providerID ?? input.draft.model.providerID,
-          variant: decision.result?.model ? undefined : input.draft.variant,
+          variant: decision.result?.model ? decision.result.model.variant : input.draft.variant,
         },
         files: [...await Promise.all(
           images.map(async (attachment) => ({
@@ -159,7 +163,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     role: "user",
     time: { created: Date.now() },
     agent: input.draft.agent,
-    model: { ...input.draft.model, variant: input.draft.variant },
+    model: { ...input.draft.model, modelID: input.draft.jev?.auto && input.jev?.state.enabled && input.jev.state.routing ? "" : input.draft.model.modelID, variant: input.draft.variant },
   }
 
   const add = () =>
@@ -183,7 +187,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   })
 
   try {
-    if (!(await wait(() => { setIdle(); remove() }))) {
+    if (!(await wait(() => { setIdle(); remove() }, messageID))) {
       batch(() => {
         setIdle()
         remove()
@@ -193,6 +197,10 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
 
     const prepared = decision.result
     const selected = prepared?.model ?? input.draft.model
+    if (prepared?.model || !message.model.modelID) {
+      message.model = { ...selected, variant: prepared?.model ? prepared.model.variant : input.draft.variant }
+      add()
+    }
     if (input.jev?.state.enabled) {
       for (const skill of prepared?.skills ?? []) requestParts.push({
         id: Identifier.ascending("part"), type: "text", synthetic: true,
@@ -205,7 +213,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       id: messageID,
       agent: input.draft.agent,
       model: input.jev?.state.enabled ? selected : input.draft.model,
-      variant: prepared?.model ? undefined : input.draft.variant,
+      variant: prepared?.model ? prepared.model.variant : input.draft.variant,
       legacyParts: requestParts,
       text: requestParts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
       files: requestParts.flatMap((part) => {
@@ -499,8 +507,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       variant,
       jev: {
         auto: modelSelection.auto?.() ?? false,
-        models: modelSelection.auto?.() ? modelSelection.list().filter((item) => modelSelection.visible({ providerID: item.provider.id, modelID: item.id }))
-          .slice(0, 255).map((item) => ({ providerID: item.provider.id, modelID: item.id })) : [],
+        models: sdk().jev?.state.enabled ? modelSelection.list().filter((item) => modelSelection.visible({ providerID: item.provider.id, modelID: item.id }))
+          .flatMap((item) => [undefined, ...Object.keys(item.variants ?? {})].map((variant) => ({ providerID: item.provider.id, modelID: item.id, variant }))).slice(0, 255) : [],
       },
     }
 
@@ -632,6 +640,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     void sendFollowupDraft({
       scope: sdk().scope,
       jev: sdk().jev,
+      routingError: language.t("jev.routingUnavailable"),
       api: sdk().api.session,
       sync: sync(),
       serverSync: serverSync(),

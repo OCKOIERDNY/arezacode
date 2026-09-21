@@ -38,20 +38,29 @@ export type HomeSessionGroup = {
 
 export type OpenSessionOptions = { background?: boolean }
 
-export function createHomeSessionsController(home: HomeController, limit = HOME_SESSION_LIMIT) {
+export function createHomeSessionsController(
+  home: HomeController,
+  limit = HOME_SESSION_LIMIT,
+  scope?: { server: ServerConnection.Any; project: Accessor<LocalProject>; expanded: Accessor<boolean> },
+) {
   const tabs = useTabs()
   const command = useCommand()
   const dialog = useDialog()
   const language = useLanguage()
+  const server = () => scope?.server ?? home.server.focused()
+  const context = () => scope ? home.server.context(scope.server) : home.server.focusedContext()
+  const projects = () => scope ? home.project.forServer(scope.server) : home.project.list()
+  const selectedProject = () => scope ? scope.project() : home.project.selected()
+  const serverKey = () => scope ? ServerConnection.key(scope.server) : home.selection.value().server
   const projectDirectories = createMemo(() => {
-    const project = home.project.selected()
-    if (!project) return home.project.list().flatMap(directories)
+    const project = selectedProject()
+    if (!project) return projects().flatMap(directories)
     return directories(project)
   })
   const projectByID = createMemo(
-    () => new Map(home.project.list().flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
+    () => new Map(projects().flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
   )
-  const homeSessions = () => home.server.focusedSync().homeSessions
+  const homeSessions = () => (context()?.sync ?? home.server.focusedSync()).homeSessions
   const queryClient = () => homeSessions().client
   const sessionEventLoad = useQuery(
     () => ({
@@ -65,9 +74,9 @@ export function createHomeSessionsController(home: HomeController, limit = HOME_
   const sessionLoad = useQuery(
     () => ({
       queryKey: homeSessions().indexKey,
-      enabled: !!home.server.focusedContext(),
+      enabled: !!context(),
       queryFn: async ({ signal }) => {
-        const ctx = home.server.focusedContext()
+        const ctx = context()
         if (!ctx) return { sessions: [], eventSequence: 0 }
         const cache = homeSessions()
         const eventSequence = cache.eventSequence()
@@ -93,7 +102,7 @@ export function createHomeSessionsController(home: HomeController, limit = HOME_
     buildHomeSessionRecords({
       sessions: indexedSessions,
       projectDirectories,
-      projects: home.project.list,
+      projects,
       projectByID,
     }),
   )
@@ -102,8 +111,9 @@ export function createHomeSessionsController(home: HomeController, limit = HOME_
   const prefetched = new Set<string>()
 
   createEffect(() => {
-    const ctx = home.server.focusedContext()
-    const conn = home.server.focused()
+    if (scope && !scope.expanded()) return
+    const ctx = context()
+    const conn = server()
     if (!ctx || !conn) return
     records()
       .slice(0, 2)
@@ -134,7 +144,7 @@ export function createHomeSessionsController(home: HomeController, limit = HOME_
       })
   })
 
-  command.register("home.palette", () => [
+  if (!scope) command.register("home.palette", () => [
     {
       id: "command.palette",
       title: language.t("command.palette"),
@@ -177,24 +187,23 @@ export function createHomeSessionsController(home: HomeController, limit = HOME_
       searchRecords: allRecords,
     },
     session: {
-      showProjectName: () => !home.project.selected(),
-      server: () => home.selection.value().server,
+      showProjectName: () => !selectedProject(),
+      server: serverKey,
       canCreate: () => !!home.project.newSession(),
       create: home.project.openNewSession,
       open: (session: Session, options?: OpenSessionOptions) => {
         const directoryKey = pathKey(session.directory)
         const project =
-          home.project
-            .list()
+          projects()
             .find(
               (item) =>
                 pathKey(item.worktree) === directoryKey ||
                 item.sandboxes?.some((sandbox) => pathKey(sandbox) === directoryKey),
-            ) ?? projectForSession(session, home.project.list(), projectByID())
-        const conn = home.server.focused()
+            ) ?? projectForSession(session, projects(), projectByID())
+        const conn = server()
         if (!conn) return
         const directory = project?.worktree ?? session.directory
-        const ctx = home.server.focusedContext()
+        const ctx = context()
         if (!ctx) return
         ctx.projects.open(directory)
         if (options?.background) {
@@ -208,8 +217,8 @@ export function createHomeSessionsController(home: HomeController, limit = HOME_
         })
       },
       archive: async (session: Session) => {
-        const conn = home.server.focused()
-        const ctx = home.server.focusedContext()
+        const conn = server()
+        const ctx = context()
         if (!conn || !ctx) return
         const [, setStore] = ctx.sync.child(session.directory)
         if ((await ctx.sdk.protocol) !== "v1") return
@@ -241,7 +250,7 @@ export function createHomeSessionsController(home: HomeController, limit = HOME_
     },
     tab: {
       isOpen: (record: HomeSessionRecord) =>
-        sessionHasOpenTab(tabs.store, home.selection.value().server, record.session),
+        sessionHasOpenTab(tabs.store, serverKey(), record.session),
     },
   }
 }

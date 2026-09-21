@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { AutomaticChecks } from "../src/automatic-checks"
+import { Jev } from "../src/jev"
 import { Document } from "../src/document"
 import { Entire } from "../src/entire"
 import { engineStatus, engineAction, nativeBinary, nativeCommand } from "../src/util/native-command"
@@ -108,10 +109,12 @@ test("Headroom compresses real output without provider routing or retrieval mark
   const output = JSON.stringify(
     Array.from({ length: 300 }, (_, id) => ({ id, status: "healthy", details: "normal operation" })),
   )
-  const compressed = await AutomaticChecks.compress(output)
+  const sessionID = `ses_headroom_${crypto.randomUUID()}`
+  const compressed = await AutomaticChecks.compress(output, undefined, sessionID)
   expect(compressed).toBeDefined()
   expect(compressed!.length).toBeLessThan(output.length)
   expect(compressed).not.toContain("<<ccr:")
+  expect(await Jev.usage(sessionID)).toMatchObject([{ kind: "automation", automation: { name: "Headroom", inputCharacters: output.length, outputCharacters: compressed!.length }, finish: "compressed" }])
   const replay = JSON.parse(await nativeCommand(process.execPath, ["-e", `
     import { AutomaticChecks } from ${JSON.stringify(path.resolve(import.meta.dir, "../src/automatic-checks.ts"))}
     import { engineStatus } from ${JSON.stringify(path.resolve(import.meta.dir, "../src/util/native-command.ts"))}

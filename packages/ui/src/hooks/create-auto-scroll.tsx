@@ -15,6 +15,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
   let settleTimer: ReturnType<typeof setTimeout> | undefined
   let autoTimer: ReturnType<typeof setTimeout> | undefined
   let auto: { top: number; time: number } | undefined
+  let inspecting = false
 
   const threshold = () => options.bottomThreshold ?? 10
 
@@ -79,6 +80,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
   const scrollToBottom = (force: boolean) => {
     if (!force && !active()) return
 
+    if (force) inspecting = false
     if (force && store.userScrolled) setStore("userScrolled", false)
 
     const el = store.scrollRef
@@ -111,7 +113,6 @@ export function createAutoScroll(options: AutoScrollOptions) {
   }
 
   const handleWheel = (e: WheelEvent) => {
-    if (e.deltaY >= 0) return
     // If the user is scrolling within a nested scrollable region (tool output,
     // code block, etc), don't treat it as leaving the "follow bottom" mode.
     // Those regions opt in via `data-scrollable`.
@@ -119,10 +120,13 @@ export function createAutoScroll(options: AutoScrollOptions) {
     const target = e.target instanceof Element ? e.target : undefined
     const nested = target?.closest("[data-scrollable]")
     if (el && nested && nested !== el) return
+    inspecting = false
+    if (e.deltaY >= 0) return
     stop()
   }
 
   const handleScroll = () => {
+    if (inspecting) return
     const el = store.scrollRef
     if (!el) return
 
@@ -145,8 +149,17 @@ export function createAutoScroll(options: AutoScrollOptions) {
     stop()
   }
 
-  const handleInteraction = () => {
+  const handleInteraction = (event?: Event) => {
     if (!active()) return
+    const target = event?.target instanceof Element ? event.target : undefined
+    if (target?.closest('[data-slot="collapsible-trigger"], [data-slot="accordion-trigger"], button[aria-expanded]')) {
+      inspecting = true
+      if (!store.userScrolled) {
+        setStore("userScrolled", true)
+        options.onUserInteracted?.()
+      }
+      return
+    }
     const selection = window.getSelection()
     if (selection && selection.toString().length > 0) {
       stop()
@@ -172,6 +185,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
   createResizeObserver(
     () => store.contentRef,
     () => {
+      if (inspecting) return
       const el = store.scrollRef
       if (el && !canScroll(el)) {
         if (store.userScrolled) setStore("userScrolled", false)
@@ -214,6 +228,11 @@ export function createAutoScroll(options: AutoScrollOptions) {
   })
 
   createEventListener(() => store.scrollRef, "wheel", handleWheel, { passive: true })
+  createEventListener(() => store.scrollRef, "click", handleInteraction, { capture: true })
+  createEventListener(() => store.scrollRef?.parentElement ?? undefined, "pointerdown", () => { inspecting = false }, { capture: true })
+  createEventListener(() => store.scrollRef, "keydown", (event) => {
+    if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key)) inspecting = false
+  }, { capture: true })
 
   onCleanup(() => {
     if (settleTimer) clearTimeout(settleTimer)

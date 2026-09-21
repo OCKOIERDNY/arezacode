@@ -30,7 +30,7 @@ const projectContextMenuID = (server: ServerConnection.Any, directory: string) =
   `project:${ServerConnection.key(server)}:${directory}`
 
 export type HomeProjectsViewProps = {
-  renderSessions?: (expanded: Accessor<boolean>) => JSX.Element
+  renderSessions?: (expanded: Accessor<boolean>, server: ServerConnection.Any, project: Accessor<LocalProject>) => JSX.Element
   projectActive?: (server: string, directory: string) => boolean
   language: ReturnType<typeof useLanguage>
   servers: Accessor<ServerConnection.Any[]>
@@ -363,6 +363,7 @@ function HomeProjectSlot(
     index: () => number
   },
 ) {
+  const global = useGlobal()
   const initial = props.items.find((item) => item.worktree === props.worktree)
   if (!initial) return
   const project = createMemo<LocalProject>(
@@ -371,7 +372,9 @@ function HomeProjectSlot(
   )
   const expanded = createMemo(
     () =>
-      props.selection().server === ServerConnection.key(props.server) && props.selection().directory === props.worktree,
+      props.renderSessions
+        ? project().expanded
+        : props.selection().server === ServerConnection.key(props.server) && props.selection().directory === props.worktree,
   )
 
   return (
@@ -384,6 +387,12 @@ function HomeProjectSlot(
         serverSelected={props.selection().server === ServerConnection.key(props.server)}
         selected={expanded()}
         unseen={props.unseenCount(props.server, project())}
+        onSelectProject={(server, directory) => {
+          if (!props.renderSessions) return props.onSelectProject(server, directory)
+          const projects = global.ensureServerCtx(server).projects
+          if (expanded()) return projects.collapse(directory)
+          projects.expand(directory)
+        }}
       />
       <Show when={props.renderSessions}>
         <div
@@ -393,7 +402,7 @@ function HomeProjectSlot(
           inert={!expanded()}
         >
           <div class="min-h-0 overflow-hidden">
-            {props.renderSessions?.(expanded)}
+            {props.renderSessions?.(expanded, props.server, project)}
           </div>
         </div>
       </Show>

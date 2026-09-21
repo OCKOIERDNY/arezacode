@@ -33,9 +33,9 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
     const route = layout.route()
     return route.type === "draft" ? route.draftID : undefined
   }
-  const selected = (id: string) => {
+  const selected = (id: string, server: ServerConnection.Key) => {
     const route = layout.route()
-    return route.type === "session" && route.sessionId === id && route.server === home.selection.value().server
+    return route.type === "session" && route.sessionId === id && route.server === server
   }
   createEffect(() => {
     const route = layout.route()
@@ -56,6 +56,7 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
         .forServer(conn)
         .find((project) => project.worktree === directory || project.sandboxes?.includes(directory))
       home.selection.set({ server: tab.server, directory: project?.worktree ?? directory })
+      if (project) home.server.context(conn).projects.expand(project.worktree)
     })
   })
   const scroll = createHomeScrollController(sessions.data.groups)
@@ -81,7 +82,8 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
           const tab = tabs.store.find((tab) => tab.type === "draft" && tab.draftID === selectedDraft())
           return tab?.type === "draft" && tab.server === server && tab.directory === directory
         }}
-        renderSessions={(expanded) => {
+        renderSessions={(expanded, conn, project) => {
+          const sessions = createHomeSessionsController(home, Infinity, { server: conn, project, expanded })
           const records = createMemo<ReturnType<typeof sessions.data.searchRecords>>(
             (previous) =>
               expanded()
@@ -111,12 +113,12 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
                     <button
                       type="button"
                       data-component="home-session-row"
-                      class="flex h-8 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-v2-text-text-muted focus-visible:outline focus-visible:outline-1 focus-visible:outline-v2-border-border-muted"
-                      classList={{ "bg-v2-background-bg-layer-03 text-v2-text-text-base": selected(record.session.id) }}
-                      aria-current={selected(record.session.id) ? "page" : undefined}
+                      class="flex h-8 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-v2-border-border-muted"
+                      classList={{ "bg-v2-background-bg-layer-03 text-v2-text-text-base": selected(record.session.id, sessions.session.server()) }}
+                      aria-current={selected(record.session.id, sessions.session.server()) ? "page" : undefined}
                       onClick={(event) => {
                         notification
-                          .ensureServerState(home.selection.value().server)
+                          .ensureServerState(sessions.session.server())
                           .session.markViewed(record.session.id)
                         if (layout.session.width() === 0) layout.session.resize(600)
                         sessions.session.open(record.session, {
@@ -133,7 +135,7 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
                     >
                       <SidebarTitle>{sessionTitle(record.session.title) || record.session.id}</SidebarTitle>
                       <SidebarSessionStatus
-                        server={home.selection.value().server}
+                        server={sessions.session.server()}
                         directory={record.session.directory}
                         sessionID={record.session.id}
                       />

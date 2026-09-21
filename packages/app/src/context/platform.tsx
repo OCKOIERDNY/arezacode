@@ -6,6 +6,8 @@ import { ServerConnection } from "./server"
 import type { WslServersPlatform } from "../wsl/types"
 import type { UpdaterPlatform } from "../updater"
 import type { DraftStore } from "@/utils/draft-store"
+import type { EmbeddedBrowser } from "../browser"
+import type { ProjectServicesPlatform } from "../project-services"
 
 type PickerPaths = string | string[] | null
 type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
@@ -34,6 +36,9 @@ type PlatformBase = {
 
   /** Open a web or mail URL in the default system application */
   openExternal(url: string): void
+
+  browser?: EmbeddedBrowser
+  projectServices?: ProjectServicesPlatform
 
   /** Open a local path in a local app (desktop only) */
   openPath?(path: string, app?: string): Promise<void>

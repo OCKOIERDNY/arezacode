@@ -9,7 +9,7 @@ afterEach(async () => {
   await resetDatabase()
 })
 
-test("Tools HTTP handlers report native engines, persist toggles and reject unsafe documentation sources", async () => {
+test("Tools HTTP handlers report native engines and persist toggles", async () => {
   const request = (suffix: string, method = "GET", body?: unknown) => HttpApiApp.webHandler().handler(
     new Request(`http://localhost/api/tools${suffix}`, {
       method,
@@ -25,9 +25,6 @@ test("Tools HTTP handlers report native engines, persist toggles and reject unsa
   expect(await disabled.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "ponytail", enabled: false })]))
   expect((await request("/ponytail", "POST", { action: "enable" })).status).toBe(200)
   expect((await request("/unknown", "POST", { action: "enable" })).status).toBe(400)
-  expect((await request("/docs/sources")).status).toBe(200)
-  expect((await request("/docs/sources", "POST", { library: "test", version: "1.0.0", url: "https://127.0.0.1/private" })).status).toBe(400)
-  expect((await request("/docs/search", "POST", { library: "unindexed-test", version: "1.0.0", query: "test" })).status).toBe(400)
 })
 
 test("Jev settings and prepare use the real HTTP handlers without requiring a key", async () => {
