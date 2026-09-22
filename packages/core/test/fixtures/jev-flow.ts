@@ -80,7 +80,11 @@ assert.deepEqual(child?.model, routed.model)
 const history = await Jev.usage(input.sessionID)
 assert.ok(history.some((entry) => entry.promptID === "msg_routing_test" && entry.decision?.selected?.variant === "high"))
 const uncertain: typeof fetch = Object.assign(async () => Response.json({ answers: { model: { type: "choice", choice: "model0", confidence: 0.4 }, kind: { type: "choice", choice: "cosmetic", confidence: 0.4 }, relation: { type: "choice", choice: "followup", confidence: 0.4 } } }), { preconnect: fetch.preconnect })
-assert.equal((await Jev.prepare({ ...input, models: variants }, { models: variants, skills: [] }, uncertain)).routing, "uncertain")
+const uncertainRoute = await Jev.prepare({ ...input, promptID: "msg_uncertain_routing", models: variants }, { models: variants, skills: [] }, uncertain)
+assert.equal(uncertainRoute.routing, "selected")
+assert.deepEqual(uncertainRoute.model, { providerID: "allowed", modelID: "fast", variant: "low" })
+assert.equal(uncertainRoute.task, undefined)
+assert.ok((await Jev.usage(input.sessionID)).some((entry) => entry.promptID === "msg_uncertain_routing" && entry.decision?.confidence === 0.4 && entry.decision.selected?.variant === "low"))
 await Jev.recordCompression(input.sessionID, 12000, 3000, true)
 assert.ok((await Jev.usage(input.sessionID)).some((entry) => entry.automation?.cached && entry.automation.outputCharacters === 3000))
 const explicit = await Jev.prepare({ ...input, auto: false, text: "Use $requested" }, {
@@ -194,6 +198,24 @@ const updated: typeof fetch = Object.assign(async (_: Parameters<typeof fetch>[0
   return Response.json({ answers: { skill: { type: "score", score: 2, confidence: 1 } } })
 }, { preconnect: fetch.preconnect })
 assert.ok(await Jev.evaluate("skills", {}, { skill: { type: "score", instructions: "test", criteria: ["No", "Maybe", "Yes"] } }, updated))
+const free = { providerID: "opencode", modelID: "mimo-v2.6-flash-free", name: "MiMo Flash Free", description: "Free coding model" }
+const astra = [undefined, "low", "medium", "high", "xhigh"].map((variant) => ({ providerID: "openai", modelID: "gpt-6-astra", variant, name: "GPT-6 Astra", description: "Coding model" }))
+for (const [kind, confidence, effort, expected] of [["cosmetic", 0.95, "model0", free], ["cosmetic", 0.3, "model2", astra[3]], ["fix", 0.95, "model1", astra[2]], ["review", 0.95, "model2", astra[3]]] as const) {
+  const choose: typeof fetch = Object.assign(async (_: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    const body = JSON.parse(String(init?.body))
+    assert.deepEqual(Object.keys(body.questions.model.criteria), ["model0", "model1", "model2"])
+    assert.deepEqual(Object.keys(body.questions.smallModel.criteria), ["model3"])
+    return Response.json({ answers: {
+      model: { type: "choice", choice: effort, confidence: 0.5 },
+      smallModel: { type: "choice", choice: "model3", confidence: 0.3 },
+      kind: { type: "choice", choice: kind, confidence },
+      relation: { type: "choice", choice: "standalone", confidence: 0.99 },
+    } })
+  }, { preconnect: fetch.preconnect })
+  const result = await Jev.prepare({ ...input, models: [free] }, { models: [...astra, free, ...candidates.models], skills: [] }, choose)
+  assert.deepEqual(result.model, { providerID: expected.providerID, modelID: expected.modelID, ...("variant" in expected ? { variant: expected.variant } : {}) })
+}
+assert.equal((await Jev.prepare({ ...input, models: [free] }, { models: [free], skills: [] }, uncertain)).model, undefined)
 await Effect.runPromise(Auth.Service.use((service) => service.remove("openrouter")).pipe(Effect.provide(auth)))
 assert.equal((await Jev.prepare(input, candidates, transport)).status, "missing-key")
 assert.equal((await Jev.status()).configured, false)
