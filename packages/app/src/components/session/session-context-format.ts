@@ -16,5 +16,8 @@ export function createSessionContextFormatter(locale: string) {
       if (!value) return "—"
       return DateTime.fromMillis(value).setLocale(locale).toLocaleString(DateTime.DATETIME_MED_WITH_SECONDS)
     },
+    duration(value: number) {
+      return new Intl.NumberFormat(locale, { style: "unit", unit: "second", maximumFractionDigits: 1 }).format(value / 1000)
+    },
   }
 }

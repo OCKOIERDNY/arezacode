@@ -12,7 +12,7 @@ import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
-import { getSessionContext, recordedUsage, usageTotal } from "@/components/session/session-context-metrics"
+import { getSessionContext, getSessionCost, recordedUsage, usageTotal } from "@/components/session/session-context-metrics"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { useSettings } from "@/context/settings"
@@ -70,14 +70,14 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
       new Intl.NumberFormat(language.intl(), {
         style: "currency",
         currency: "USD",
+        maximumFractionDigits: 6,
       }),
   )
 
   const context = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
   const cost = createMemo(() => {
-    const value = info()?.cost
-    const known = messages().some((message) => message.role === "assistant" && recordedUsage(message)?.cost !== undefined)
-    return value !== undefined && (value > 0 || known) ? usd().format(value) : "—"
+    const value = getSessionCost(messages(), info()?.cost)
+    return value === undefined ? "—" : usd().format(value)
   })
   const contextVisible = createMemo(() => view().reviewPanel.opened() && tabState.activeTab() === "context")
   const hasOtherTabs = createMemo(() =>

@@ -1,6 +1,22 @@
 import { describe, expect, test } from "bun:test"
-import type { Message } from "@opencode-ai/sdk/v2/client"
-import { getSessionContext, usageTotal } from "./session-context-metrics"
+import type { AssistantMessage, Message } from "@opencode-ai/sdk/v2/client"
+import { executionTiming, getSessionContext, getSessionCost, recordedUsage, usageTotal } from "./session-context-metrics"
+
+test("execution timing separates overlapping work, checks, question waits and unmeasured time", () => {
+  const timing = executionTiming(0, 100, [
+    { kind: "routing", start: -10, end: 10 },
+    { kind: "model", start: 20, end: 120 },
+    { kind: "tools", start: 30, end: 70 },
+    { kind: "tools", start: 40, end: 60 },
+    { kind: "checks", start: 50, end: 60 },
+    { kind: "wait", start: 60, end: 80 },
+    { kind: "checks", start: 90, end: 85 },
+  ])
+  expect(timing).toEqual({ routing: 10, model: 30, tools: 20, checks: 10, wait: 20, other: 10 })
+  expect(Object.values(timing).reduce((sum, value) => sum + value, 0)).toBe(100)
+  expect(executionTiming(10, 20, [])).toEqual({ routing: 0, model: 0, tools: 0, checks: 0, wait: 0, other: 10 })
+  expect(executionTiming(10, 10, [{ kind: "model", start: 0, end: 20 }]).model).toBe(0)
+})
 
 const assistant = (
   id: string,
@@ -25,7 +41,7 @@ const assistant = (
       },
     },
     time: { created: 1 },
-  } as unknown as Message
+  } as unknown as AssistantMessage
 }
 
 const user = (id: string) => {
@@ -38,6 +54,55 @@ const user = (id: string) => {
 }
 
 describe("getSessionContext", () => {
+  test("shows the detailed breakdown stored in legacy token fields", () => {
+    const message = assistant("legacy", { input: 300, output: 100, reasoning: 20, read: 600, write: 100 }, 0.02)
+    const usage = recordedUsage(message)
+    expect(usage).toMatchObject({
+      input: 1000,
+      output: 120,
+      reasoning: 20,
+      cacheRead: 600,
+      cacheWrite: 100,
+      total: 1120,
+      cost: 0.02,
+      costSource: "unknown",
+    })
+    expect(usageTotal([{ usage }], "uncachedInput")).toEqual({ value: 400, missing: 0 })
+    expect(getSessionContext([message])?.total).toBe(1120)
+  })
+
+  test("does not treat legacy placeholder zeros as recorded free usage", () => {
+    const message = assistant("pending", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0)
+    expect(recordedUsage(message)).toBeUndefined()
+    const used = assistant("used", { input: 100, output: 10, reasoning: 0, read: 0, write: 0 }, 0)
+    expect(recordedUsage(used)?.input).toBe(100)
+    expect(recordedUsage(used)?.cacheRead).toBe(0)
+    expect(recordedUsage(used)?.cost).toBeUndefined()
+  })
+
+  test("preserves modern inclusive usage and explicitly reported zero cost", () => {
+    const usage = { version: 1 as const, input: 1000, output: 120, total: 1120, cacheRead: 600, reasoning: 20, cost: 0, costSource: "reported" as const }
+    const message = {
+      ...assistant("modern", { input: 300, output: 100, reasoning: 20, read: 600, write: 100 }, 0.02),
+      usage,
+    }
+    expect(recordedUsage(message)).toEqual(usage)
+    expect(recordedUsage(message)?.cacheWrite).toBeUndefined()
+    expect(getSessionContext([message])?.total).toBe(1120)
+    expect(getSessionCost([message], 0)).toBe(0)
+  })
+
+  test("uses known message costs when the session aggregate is missing or still zero", () => {
+    const messages = [
+      assistant("a1", { input: 100, output: 10, reasoning: 0, read: 0, write: 0 }, 0.002),
+      assistant("a2", { input: 200, output: 20, reasoning: 0, read: 0, write: 0 }, 0.004),
+    ]
+    expect(getSessionCost(messages)).toBeCloseTo(0.006)
+    expect(getSessionCost(messages, 0)).toBeCloseTo(0.006)
+    expect(getSessionCost(messages, 0.5)).toBe(0.5)
+    expect(getSessionCost([], 0)).toBeUndefined()
+  })
+
   test("sums inclusive usage once and keeps missing and zero-price data distinct", () => {
     const entries = [{ usage: { version: 1 as const, input: 1000, output: 120, total: 1120, cacheRead: 600, cacheWrite: 100, reasoning: 20, cost: 0, costSource: "reported" as const } }, { usage: { version: 1 as const, costSource: "unknown" as const } }]
     expect(usageTotal(entries, "total")).toEqual({ value: 1120, missing: 1 })

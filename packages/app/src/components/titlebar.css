@@ -237,14 +237,46 @@
 }
 
 [data-component="session-chat-panel"][data-snap="true"],
-body:has([data-component="resize-handle"][data-dragging="true"]) [data-component="session-panel-row"],
-body:has([data-component="resize-handle"][data-dragging="true"]) [data-component="session-chat-panel"],
+body:has([data-component="resize-handle"][data-dragging="true"]) [data-component="session-panel-row"]:not([data-chat-resize-snap="true"]),
+body:has([data-component="resize-handle"][data-dragging="true"]) [data-component="session-chat-panel"]:not([data-resize-snap="true"]),
 body:has([data-component="resize-handle"][data-dragging="true"])
   [data-component="project-sidebar-slot"][data-collapsing="false"] {
   transition: none;
 }
 
+[data-component="session-chat-panel"][data-resize-snap="true"],
+[data-component="session-chat-panel"][data-collapsed="true"] {
+  overflow: clip;
+  overflow-clip-margin: 8px;
+}
+
+[data-component="session-panel-row"][data-chat-resize-snap="true"] [data-component="session-right-panel"] {
+  transition:
+    width var(--sidebar-duration) var(--sidebar-easing),
+    transform var(--sidebar-duration) var(--sidebar-easing),
+    visibility 0s;
+}
+
+[data-component="session-chat-panel"][data-resize-snap="true"] > [data-slot="session-chat-content"] {
+  min-width: 320px;
+}
+
+[data-component="session-chat-panel"] > [data-slot="session-chat-content"] {
+  transition: opacity 160ms var(--sidebar-easing), visibility 0s;
+}
+
+[data-component="session-chat-panel"][data-collapsed="true"] > [data-slot="session-chat-content"] {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 160ms var(--sidebar-easing), visibility 0s linear var(--sidebar-duration);
+}
+
 @media (prefers-reduced-motion: reduce) {
+  [data-component="session-chat-panel"] > [data-slot="session-chat-content"],
+  [data-component="session-chat-panel"][data-collapsed="true"] > [data-slot="session-chat-content"],
+  [data-component="session-panel-row"][data-chat-resize-snap="true"] [data-component="session-right-panel"] {
+    transition: none;
+  }
   [data-component="project-accordion"],
   [data-action="home-project-collapse"] svg,
   [data-action="home-server-collapse"] svg {

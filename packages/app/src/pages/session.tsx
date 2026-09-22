@@ -79,6 +79,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
 import {
   clampSessionPanelWidth,
+  resizeSessionPanelWidth,
   SESSION_PANEL_WIDTH_MIN,
   sessionPanelWidthMax,
 } from "@/pages/session/session-panel-width"
@@ -419,6 +420,8 @@ export default function Page() {
   const [ui, setUi] = createStore({
     pendingMessage: undefined as string | undefined,
     reviewSnap: false,
+    chatResizeSnap: false,
+    sessionResizing: false,
     scrollGesture: 0,
     scroll: {
       overflow: false,
@@ -1557,14 +1560,10 @@ export default function Page() {
     working: () => true,
     overflowAnchor: "none",
   })
-  createEffect(
+  createComputed(
     on(
-      () => params.id,
-      (id, previous) => {
-        if (!id || !previous || id === previous) return
-        if (location.hash || store.messageId || ui.pendingMessage) return
-        autoScroll.resume()
-      },
+      sessionKey,
+      () => autoScroll.restore(view().scroll("timeline")?.bottom === false),
     ),
   )
 
@@ -1613,9 +1612,9 @@ export default function Page() {
   // When the user returns to the bottom, treat the active message as "latest".
   createEffect(
     on(
-      autoScroll.userScrolled,
-      (scrolled) => {
-        if (scrolled) return
+      () => [sessionKey(), autoScroll.userScrolled()] as const,
+      ([key, scrolled], previous) => {
+        if (scrolled || previous?.[0] !== key) return
         setStore("messageId", undefined)
         clearMessageHash()
       },
@@ -2037,6 +2036,7 @@ export default function Page() {
     setActiveMessage,
     autoScroll: {
       pause: autoScroll.pause,
+      userScrolled: autoScroll.userScrolled,
       forceScrollToBottom: () => {
         autoScroll.resume()
         scrollToEnd()
@@ -2350,6 +2350,7 @@ export default function Page() {
       <div
         ref={panelRow}
         data-component={newSessionDesign() ? "session-panel-row" : undefined}
+        data-chat-resize-snap={ui.chatResizeSnap}
         style={{ "column-gap": newSessionDesign() && !rightPanelGap() ? "0px" : undefined }}
         class="flex-1 min-h-0 flex flex-col md:flex-row"
         classList={{
@@ -2362,7 +2363,12 @@ export default function Page() {
         <div
           data-component="session-chat-panel"
           data-sidebar-motion={settings.general.newLayoutDesigns()}
-          data-snap={ui.reviewSnap || desktopInlineTerminalOnlyOpen()}
+          data-resize-snap={ui.chatResizeSnap}
+          data-collapsed={desktopSessionResizeOpen() && sessionPanelResizedWidth() === 0}
+          onTransitionEnd={(event) => {
+            if (event.target === event.currentTarget && event.propertyName === "width") setUi("chatResizeSnap", false)
+          }}
+          data-snap={(ui.reviewSnap || desktopInlineTerminalOnlyOpen()) && !ui.chatResizeSnap}
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none": true,
             "transition-[width] duration-[200ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none":
@@ -2376,11 +2382,9 @@ export default function Page() {
           }}
         >
           <div
+            data-slot="session-chat-content"
             class="flex flex-1 min-h-0 min-w-0 flex-col"
             classList={{ "overflow-hidden": !settings.general.newLayoutDesigns() }}
-            style={{
-              visibility: desktopSessionResizeOpen() && sessionPanelResizedWidth() === 0 ? "hidden" : undefined,
-            }}
           >
             {settings.general.newLayoutDesigns() ? (
               <Show when={sessionPanelKey()} keyed>
@@ -2396,8 +2400,12 @@ export default function Page() {
               </SessionPanelFrame>
             )}
           </div>
-          <Show when={desktopSessionResizeOpen() && (sessionPanelResizedWidth() > 0 || size.active())}>
-            <div onPointerDown={() => size.start()}>
+          <Show when={desktopSessionResizeOpen() && (sessionPanelResizedWidth() > 0 || ui.sessionResizing)}>
+            <div onPointerDown={(event) => {
+              if (event.button !== 0 || event.detail > 1) return
+              setUi({ sessionResizing: true, chatResizeSnap: false })
+              size.start()
+            }}>
               <ResizeHandle
                 data-panel-resize="session"
                 edge={settings.general.newLayoutDesigns() && settings.general.sidebarPosition() === "right" ? "start" : "end"}
@@ -2413,6 +2421,7 @@ export default function Page() {
                 onCollapseChange={layout.projectSidebar.previewCollapse}
                 onCollapse={layout.projectSidebar.close}
                 onResizeEnd={(width, startWidth) => {
+                  setUi("sessionResizing", false)
                   if (!newSessionDesign() || width < (sessionPanelAvailable() ?? Infinity) - SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN) return
                   view().reviewPanel.close()
                   view().terminal.close()
@@ -2421,7 +2430,10 @@ export default function Page() {
                 }}
                 onResize={(width) => {
                   size.touch()
-                  layout.session.resize(newSessionDesign() && width < SESSION_PANEL_WIDTH_MIN ? 0 : width)
+                  const next = newSessionDesign() ? resizeSessionPanelWidth(width, layout.session.width() === 0) : width
+                  if (next === layout.session.width()) return
+                  setUi("chatResizeSnap", newSessionDesign() && (next === 0 || layout.session.width() === 0))
+                  layout.session.resize(next)
                 }}
               />
             </div>

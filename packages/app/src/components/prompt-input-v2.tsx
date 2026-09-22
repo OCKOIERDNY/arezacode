@@ -362,7 +362,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
       return (await context.api.skill.list({ location: { directory: context.directory } })).data
     })().catch(() => [])
     return Array.isArray(result) ? result : []
-  })
+  }, { initialValue: [] })
   const slashCommands = createMemo(() => [
     ...sync().data.command.map((item) => ({
       id: `custom.${item.name}`,
@@ -373,7 +373,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
       source: item.source ?? "command",
       template: item.template,
     })),
-    ...(skills.loading ? [] : (skills() ?? []))
+    ...(skills.loading ? [] : skills.latest)
       .filter((item) => !sync().data.command.some((command) => command.name === item.name))
       .map((item) => ({
         id: `skill.${item.name}`,
@@ -401,7 +401,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
   ])
   const commands = createMemo<PromptInputV2Suggestion[]>(() =>
     slashCommands().map((item) => {
-      const skill = item.source === "skill" ? skills()?.find((skill) => skill.name === item.trigger) : undefined
+      const skill = item.source === "skill" && !skills.loading ? skills.latest.find((skill) => skill.name === item.trigger) : undefined
       const location = skill?.location.replaceAll("\\", "/")
       const directory = sdk().directory.replaceAll("\\", "/").replace(/\/$/, "")
       const home = sync().data.path.home.replaceAll("\\", "/").replace(/\/$/, "")

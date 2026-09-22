@@ -11,7 +11,7 @@ test("chat and Context show routing effort, subagent ownership and Headroom hist
   await page.route("**/session/ses_child_activity/message*", (route) => route.fulfill({ json: [{ info: { ...info, id: "msg_child_activity", sessionID: "ses_child_activity", modelID: "gpt-5.6-sol", variant: "low" }, parts: [{ ...task, id: "prt_child_read", messageID: "msg_child_activity", sessionID: "ses_child_activity", tool: "read", callID: "call_child_read", state: { ...task.state, input: { filePath: "routes/web.php" }, metadata: {} } }] }] }))
   await page.route("**/api/session/*/usage", (route) => route.fulfill({ json: [
     { id: "msg_activity_model", kind: "model", model: { providerID: "openai", id: "gpt-6-astra", variant: "high" }, time: { created: 1700000001000 }, usage: { version: 1, costSource: "unknown", input: 900, cacheRead: 600 } },
-    { id: "msg_activity_jev", kind: "jev", model: { providerID: "openrouter", id: "~typesafe/jev-latest" }, time: { created: 1700000000000 }, finish: "stop", decision: { purpose: "routing and skills", outcome: "selected", selected: { providerID: "openai", id: "gpt-6-astra", variant: "high" }, confidence: 0.94, skills: ["az-checklist"] } },
+    { id: "msg_activity_jev", kind: "jev", promptID: "msg_user_regression", model: { providerID: "openrouter", id: "~typesafe/jev-latest" }, time: { created: 1700000000000, completed: 1700000000500 }, finish: "stop", decision: { purpose: "routing and skills", outcome: "selected", task: { kind: "review", relation: "followup" }, selected: { providerID: "openai", id: "gpt-6-astra", variant: "high" }, confidence: 0.94, skills: ["az-checklist"] } },
     { id: "msg_activity_headroom", kind: "automation", model: { providerID: "local", id: "headroom" }, time: { created: 1700000002000 }, finish: "compressed", automation: { name: "Headroom", inputCharacters: 12000, outputCharacters: 3000, cached: true } },
   ] }))
   fixture.transport.enqueue([
@@ -62,12 +62,23 @@ test("chat and Context show routing effort, subagent ownership and Headroom hist
   await page.emulateMedia({ reducedMotion: "reduce" })
   await title.hover()
   await expect(title.locator("span")).toHaveCSS("transform", "none")
+  const routingAction = page.getByTestId("session-jev-action")
+  await expect(routingAction).toHaveAttribute("data-prompt-id", "msg_user_regression")
+  await expect(routingAction).toContainText("Selected gpt-6-astra · high")
+  await expect(routingAction).toContainText("1 call")
+  await routingAction.getByRole("button").click()
+  await expect(routingAction).toContainText("Review · Follow-up correction")
+  await expect(routingAction).toContainText("0.5 sec")
   await page.getByRole("button", { name: "View context usage", exact: true }).click()
   const activity = page.getByTestId("session-model-activity")
   await expect(activity).toContainText("gpt-5.6-sol · low")
   await activity.locator("summary").filter({ hasText: "Jev decisions" }).click()
   await activity.locator("summary").filter({ hasText: "Headroom compression" }).click()
   await expect(activity).toContainText("94%")
+  await expect(activity).toContainText("Review · Follow-up correction")
+  await expect(page.getByTestId("session-execution-timing")).toContainText("Latest request timing")
+  await expect(page.getByTestId("session-execution-timing")).toContainText("0.5 sec")
+  await expect(page.getByTestId("session-execution-timing")).toContainText("Question wait")
   await expect(activity).toContainText("9000 saved")
   await expect(activity).toContainText("Reused cached compression")
   await expect(page.getByTestId("session-tool-activity")).toContainText("read · gpt-5.6-sol · low")

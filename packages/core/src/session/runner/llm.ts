@@ -5,6 +5,7 @@ import {
   LLMEvent,
   Message,
   SystemPart,
+  ToolDefinition,
   isContextOverflowFailure,
   type ProviderErrorEvent,
 } from "@opencode-ai/llm"
@@ -39,6 +40,7 @@ import { toLLMMessages } from "./to-llm-message"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { Snapshot } from "../../snapshot"
 import { AutomaticChecks } from "../../automatic-checks"
+import { Jev } from "../../jev"
 import { Document } from "../../document"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
@@ -244,7 +246,10 @@ const layer = Layer.effect(
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
         messages: [...toLLMMessages(context, model), ...(notice ? [Message.user(notice)] : []), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],
-        tools: toolMaterialization?.definitions ?? [],
+        tools: toolMaterialization?.definitions.map((tool) => Jev.quickEdit(session.id) && Jev.needsQuickEditReason(tool.name) ? new ToolDefinition({
+          ...tool,
+          inputSchema: { ...tool.inputSchema, properties: { ...(tool.inputSchema.properties && typeof tool.inputSchema.properties === "object" ? tool.inputSchema.properties : {}), quickEditReason: Jev.quickEditReason } },
+        }) : tool) ?? [],
         toolChoice: isLastStep ? "none" : undefined,
       })
       if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request }))
@@ -293,12 +298,16 @@ const layer = Layer.effect(
             const assistantMessageID = yield* publisher.assistantMessageID(event.id)
             yield* Effect.uninterruptibleMask((restore) =>
               restore(
-                toolMaterialization.settle({
-                  sessionID: session.id,
-                  agent: agent.id,
-                  assistantMessageID,
-                  call: event,
-                }),
+                Effect.promise(() => Jev.guardTool(session.id, event.name, event.input)).pipe(
+                  Effect.flatMap((guard) => guard.error
+                    ? Effect.succeed({ result: { type: "error" as const, value: guard.error }, output: undefined, outputPaths: [] })
+                    : toolMaterialization.settle({
+                      sessionID: session.id,
+                      agent: agent.id,
+                      assistantMessageID,
+                      call: { ...event, input: guard.input },
+                    })),
+                ),
               ).pipe(
                 Effect.flatMap((settlement) =>
                   publish(

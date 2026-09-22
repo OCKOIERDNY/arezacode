@@ -1,7 +1,31 @@
 import { describe, expect, test, vi } from "bun:test"
-import { createScrollPersistence } from "./layout-scroll"
+import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
 
 describe("createScrollPersistence", () => {
+  test("keeps each chat's reading position and follow mode across switches and persistence", () => {
+    const snapshots: Record<string, Record<string, SessionScroll>> = {}
+    const options = {
+      getSnapshot: (key: string) => snapshots[key],
+      onFlush: (key: string, value: Record<string, SessionScroll>) => {
+        snapshots[key] = value
+      },
+    }
+    const scroll = createScrollPersistence(options)
+    scroll.setScroll("server-a:chat-a", "timeline", { x: 0, y: 420, bottom: true })
+    scroll.flushAll()
+    scroll.setScroll("server-a:chat-a", "timeline", { x: 0, y: 420, bottom: false })
+    scroll.setScroll("server-a:chat-b", "timeline", { x: 0, y: 900, bottom: true })
+    expect(scroll.scroll("server-a:chat-a", "timeline")).toEqual({ x: 0, y: 420, bottom: false })
+    expect(scroll.scroll("server-b:chat-a", "timeline")).toBeUndefined()
+    scroll.flushAll()
+    scroll.dispose()
+
+    const restored = createScrollPersistence(options)
+    expect(restored.scroll("server-a:chat-a", "timeline")).toEqual({ x: 0, y: 420, bottom: false })
+    expect(restored.scroll("server-a:chat-b", "timeline")).toEqual({ x: 0, y: 900, bottom: true })
+    restored.dispose()
+  })
+
   test("debounces persisted scroll writes", () => {
     vi.useFakeTimers()
     try {

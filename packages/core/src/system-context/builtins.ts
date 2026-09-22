@@ -23,7 +23,7 @@ const builtIns = Layer.effectDiscard(
       `  Platform: ${process.platform}`,
       "</env>",
       Jev.workflow,
-      "For routine verification, call project_check with operation verify and the owning project/package workdir once. The application discovers, orders and runs configured lint, typechecks, tests and builds, including workspaces; do not schedule separate shell commands or regenerate Python/shell glue. Read each reported result: missing/skipped checks are not passes. Use operation script for an existing named project script, ci for its declared CI script (or local verification), and deploy only when the user explicitly requests deployment. These execute repository code with normal permissions and do not dispatch remote CI workflows.",
+      "Choose the smallest relevant project_check operation and owning package workdir: diff for a presentation-only edit, test with targeted files for changed behavior, typecheck for affected types, or script for an existing named check. Use verify (all configured lint, typechecks, tests and builds across workspaces) only for cross-cutting changes, release verification or an explicit requirement. Do not repeat unchanged passing checks. Missing/skipped checks are not passes. Use ci for a requested CI check and deploy only when explicitly requested; these execute repository code with normal permissions, not remote workflows.",
     ].join("\n")
     const context = SystemContext.combine([
       SystemContext.make({

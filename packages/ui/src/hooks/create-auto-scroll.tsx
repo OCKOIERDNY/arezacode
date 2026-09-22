@@ -245,6 +245,13 @@ export function createAutoScroll(options: AutoScrollOptions) {
     handleScroll,
     handleInteraction,
     pause: stop,
+    restore: (userScrolled: boolean) => {
+      inspecting = userScrolled
+      auto = undefined
+      if (autoTimer) clearTimeout(autoTimer)
+      autoTimer = undefined
+      setStore("userScrolled", userScrolled)
+    },
     resume: () => {
       if (store.userScrolled) setStore("userScrolled", false)
       scrollToBottom(true)

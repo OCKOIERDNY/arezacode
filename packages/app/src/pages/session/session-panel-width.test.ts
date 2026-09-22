@@ -1,11 +1,22 @@
 import { describe, expect, test } from "bun:test"
 import {
   clampSessionPanelWidth,
+  resizeSessionPanelWidth,
   REVIEW_PANE_WIDTH_MIN,
   REVIEW_PANE_WIDTH_MIN_SPLIT,
   SESSION_PANEL_WIDTH_MIN,
   sessionPanelWidthMax,
 } from "./session-panel-width"
+
+test("chat resize locks narrow, requires further dragging to collapse, and resists boundary flicker", () => {
+  expect(resizeSessionPanelWidth(500, false)).toBe(500)
+  expect(resizeSessionPanelWidth(320, false)).toBe(320)
+  expect(resizeSessionPanelWidth(300, false)).toBe(320)
+  expect(resizeSessionPanelWidth(240, false)).toBe(320)
+  expect(resizeSessionPanelWidth(239, false)).toBe(0)
+  expect(resizeSessionPanelWidth(300, true)).toBe(0)
+  expect(resizeSessionPanelWidth(320, true)).toBe(320)
+})
 
 describe("sessionPanelWidthMax", () => {
   test("reserves the unified review pane minimum", () => {

@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { LLM } from "@opencode-ai/llm"
 import { LLMClient } from "@opencode-ai/llm/route"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Stream } from "effect"
 import { Headers } from "effect/unstable/http"
 import { Credential } from "@opencode-ai/core/credential"
 import { Integration } from "@opencode-ai/core/integration"
@@ -12,6 +12,7 @@ import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
 import { SessionV2 } from "@opencode-ai/core/session"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { it } from "./lib/effect"
+import { dynamicResponse } from "../../llm/test/lib/http"
 
 type Api =
   | {
@@ -104,6 +105,11 @@ describe("SessionRunnerModel", () => {
     Effect.gen(function* () {
       const catalog = model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }, [
         {
+          id: ModelV2.VariantID.make("low"),
+          headers: {},
+          body: { reasoning: { effort: "low" } },
+        },
+        {
           id: ModelV2.VariantID.make("high"),
           headers: { "x-variant": "high" },
           body: {
@@ -139,6 +145,14 @@ describe("SessionRunnerModel", () => {
         temperature: 0.2,
         reasoning: { effort: "high" },
       })
+      const quick = yield* SessionRunnerModel.resolve({ ...session, model: { ...session.model!, variant: ModelV2.VariantID.make("low") } }, catalog)
+      yield* LLMClient.stream(LLM.request({ model: quick, prompt: "Change the heading to 13px", providerOptions: { openai: { promptCacheKey: "quick-edit" } } })).pipe(
+        Stream.runDrain,
+        Effect.provide(dynamicResponse((input) => Effect.sync(() => {
+          expect(JSON.parse(input.text)).toMatchObject({ reasoning: { effort: "low" } })
+          return input.respond('data: {"type":"response.completed","response":{"id":"resp_quick","model":"api-test-model","created_at":0,"status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}\n\n', { headers: { "content-type": "text/event-stream" } })
+        }))),
+      )
     }),
   )
 

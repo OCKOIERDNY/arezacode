@@ -551,6 +551,10 @@ export type SessionsUsageOutput = ReadonlyArray<{
   readonly decision?: {
     readonly purpose: string
     readonly outcome: string
+    readonly task?: {
+      readonly kind: "cosmetic" | "fix" | "feature" | "review"
+      readonly relation: "standalone" | "followup"
+    }
     readonly selected?: { readonly id: string; readonly providerID: string; readonly variant?: string }
     readonly confidence?: number
     readonly skills?: ReadonlyArray<string>
@@ -2798,6 +2802,10 @@ export type JevPrepareInput = {
 
 export type JevPrepareOutput = {
   readonly status: "disabled" | "missing-key" | "unavailable" | "ready"
+  readonly task?: {
+    readonly kind: "cosmetic" | "fix" | "feature" | "review"
+    readonly relation: "standalone" | "followup"
+  }
   readonly model?: { readonly providerID: string; readonly modelID: string; readonly variant?: string } | null
   readonly routing?: "selected" | "manual" | "disabled" | "unavailable" | "uncertain"
   readonly skills: ReadonlyArray<{ readonly name: string; readonly content: string }>

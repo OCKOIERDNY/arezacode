@@ -184,7 +184,7 @@ const layer = Layer.effectDiscard(
               while (checks.size > 100) checks.delete(checks.keys().next().value!)
             }
             const output = `${completed.map((check) => `${check.status}: ${check.name} (${check.workdir})`).join("\n")}\n\n${outputs.join("\n\n")}${truncated ? "\n[output capture truncated]" : ""}`
-            return { exit: failure ? failure.exit || 1 : 0, truncated, checks: completed, ...(failure?.status === "timed-out" ? { timeout: true } : {}), output: input.operation === "review" ? `${output}\nPonytail review: inspect project_check diff, verify reuse of existing owners and shared components, remove unnecessary abstractions, preserve permissions and error paths, and run project_check verify. Whitespace success alone is not a completed code review.` : output }
+            return { exit: failure ? failure.exit || 1 : 0, truncated, checks: completed, ...(failure?.status === "timed-out" ? { timeout: true } : {}), output: input.operation === "review" ? `${output}\nPonytail review: inspect project_check diff, verify reuse of existing owners and shared components, preserve permissions and error paths, and run only checks relevant to the actual change. Reserve full verify for cross-cutting changes, release verification or an explicit requirement. Whitespace success alone is not a completed code review.` : output }
           }).pipe(Effect.mapError((error) => error instanceof ToolFailure ? error : new ToolFailure({ message: "Project operation failed or timed out. Check the package path, configured script, and permissions." }))),
         }), "bash"),
         [name]: Tool.make({

@@ -8,6 +8,7 @@ import {
   onCleanup,
   onMount,
   Show,
+  untrack,
   type Accessor,
   type JSX,
 } from "solid-js"
@@ -63,6 +64,10 @@ import { normalize } from "@opencode-ai/session-ui/session-diff"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { BasicTool } from "@opencode-ai/session-ui/basic-tool"
+import type { SessionMessage } from "@opencode-ai/schema/session-message"
+import { createSessionContextFormatter } from "@/components/session/session-context-format"
+import { useProviders } from "@/hooks/use-providers"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { MessageNavigator } from "./message-navigator"
@@ -71,6 +76,7 @@ import { useSessionArchive } from "@/pages/session/session-archive"
 import { useServerSDK } from "@/context/server-sdk"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
+import { useLayout } from "@/context/layout"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -314,6 +320,8 @@ export function MessageTimeline(props: {
   const language = useLanguage()
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
+  const scrollView = useLayout().view(ownerSessionKey)
+  const savedOffset = untrack(() => scrollView.scroll("timeline")?.y ?? 0)
   const cached = timelineCache.get(ownerSessionKey)
   const initialMeasurements = cached?.measurements
   const coldBottomMount = !initialMeasurements?.length && props.shouldAnchorBottom()
@@ -328,6 +336,28 @@ export function MessageTimeline(props: {
     return sync().data.session_status[id] ?? idle
   })
   const sessionMessages = createMemo(() => (sessionID() ? (sync().data.message[sessionID()!] ?? []) : []))
+  const providers = useProviders(() => sdk().directory)
+  const routingScope = createMemo(() => JSON.stringify([serverSDK().scope, sessionID()]))
+  const routingRefresh = createMemo(() => {
+    const last = sessionMessages().at(-1)
+    return JSON.stringify([routingScope(), last?.id, last?.role === "assistant" ? last.time.completed : undefined, sessionStatus().type])
+  })
+  const [routing, setRouting] = createStore({ scope: "", entries: [] as (typeof SessionMessage.UsageEntry.Encoded)[], error: false })
+  createEffect(on(routingRefresh, () => {
+    const id = sessionID()
+    if (!id || !sessionMessages().length) return
+    const scope = routingScope()
+    let active = true
+    onCleanup(() => { active = false })
+    void serverSDK().tools.sessionUsage(id).then((entries) => {
+      if (active) setRouting({ scope, entries: entries.filter((entry) => entry.kind === "jev" && entry.promptID), error: false })
+    }).catch(() => {
+      if (active) setRouting({ scope, entries: routing.scope === scope ? routing.entries : [], error: true })
+    })
+  }))
+  const routingEntries = () => routing.scope === routingScope() ? routing.entries : []
+  const routingFormat = createMemo(() => createSessionContextFormatter(language.intl()))
+  const routingModel = (model: { providerID: string; id: string; variant?: string }) => [providers.all().get(model.providerID)?.models[model.id]?.name ?? model.id, model.variant].filter(Boolean).join(" · ")
   const [activity, setActivity] = createStore({ preview: false })
   const projectedMessages = createMemo(() => {
     const id = sessionID()
@@ -467,7 +497,7 @@ export function MessageTimeline(props: {
     },
     getScrollElement: () => listRoot() ?? null,
     observeElementOffset: observeElementOffsetReconnectAware,
-    initialOffset: () => (props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : 0),
+    initialOffset: () => (props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : savedOffset),
     initialMeasurementsCache: initialMeasurements,
     estimateSize: () => timelineFallbackItemSize,
     scrollToFn: (offset, options, instance) => {
@@ -607,6 +637,8 @@ export function MessageTimeline(props: {
 
   onCleanup(() => {
     clearPrependAnchor()
+    const root = listRoot()
+    if (root?.isConnected && root.clientHeight > 0) saveScroll(root)
     timelineCache.delete(ownerSessionKey)
     timelineCache.set(ownerSessionKey, { measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen } })
     while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
@@ -699,10 +731,21 @@ export function MessageTimeline(props: {
     if (prependLoading) updatePrependAnchor()
     props.onScheduleScrollState(event.currentTarget)
     props.onHistoryScroll()
-    if (!props.hasScrollGesture()) return
-    props.onUserScroll()
-    props.onAutoScrollHandleScroll()
-    props.onMarkScrollGesture(event.currentTarget)
+    if (props.hasScrollGesture()) {
+      props.onUserScroll()
+      props.onAutoScrollHandleScroll()
+      props.onMarkScrollGesture(event.currentTarget)
+    }
+    saveScroll(event.currentTarget)
+  }
+
+  function saveScroll(root: HTMLDivElement) {
+    if (root.clientHeight === 0) return
+    scrollView.setScroll("timeline", {
+      x: root.scrollLeft,
+      y: root.scrollTop,
+      bottom: root.scrollHeight - root.clientHeight - root.scrollTop < 10,
+    })
   }
 
   onCleanup(() => {
@@ -1038,7 +1081,11 @@ export function MessageTimeline(props: {
     }
   }
 
-  const renderAssistantPartGroup = (row: Accessor<TimelineRowMap["AssistantPart"]>, onSizeChange?: () => void) => {
+  const renderAssistantPartGroup = (
+    row: Accessor<TimelineRowMap["AssistantPart"]>,
+    onSizeChange?: () => void,
+    scrollable = true,
+  ) => {
     if (row().group.type === "context") {
       const parts = createMemo(() => {
         const group = row().group
@@ -1055,6 +1102,7 @@ export function MessageTimeline(props: {
       return (
         <ContextToolGroup
           parts={parts()}
+          scrollable={scrollable}
           open={open()}
           onOpenChange={(value) => setToolOpen(contextOpenKey(), value)}
           busy={
@@ -1208,6 +1256,15 @@ export function MessageTimeline(props: {
           if (!settings.general.newLayoutDesigns()) return []
           return getMsgParts(userMessageRow().userMessageID).flatMap((part) => MessageComment.fromPart(part) ?? [])
         })
+        const decisions = createMemo(() => routingEntries().filter((entry) => entry.promptID === userMessageRow().userMessageID).sort((a, b) => a.time.created - b.time.created))
+        const latest = () => decisions().at(-1)
+        const routingKey = () => `jev:${userMessageRow().userMessageID}`
+        const routingState = () => !latest()?.time.completed ? "running" : latest()?.finish === "error" ? "error" : "completed"
+        const routingResult = () => {
+          const selected = decisions().findLast((entry) => entry.decision?.selected)?.decision?.selected
+          if (selected) return language.t(latest()?.decision?.task?.kind === "cosmetic" ? "session.jev.quickEdit" : "session.jev.selected", { model: routingModel(selected) })
+          return language.t(routingState() === "running" ? "session.jev.running" : routingState() === "error" ? "session.jev.failed" : latest()?.decision?.outcome === "uncertain" ? "session.jev.uncertain" : "session.jev.completed")
+        }
         return (
           <TimelineRowFrame row={userMessageRow}>
             <Show when={message()}>
@@ -1221,6 +1278,30 @@ export function MessageTimeline(props: {
                       useV2Actions={settings.general.newLayoutDesigns()}
                       comments={messageComments()}
                     />
+                    <Show when={decisions().length > 0}>
+                      <div class="mt-3" data-testid="session-jev-action" data-prompt-id={userMessageRow().userMessageID}>
+                        <BasicTool
+                          icon="settings-gear"
+                          status={routingState()}
+                          trigger={{ title: language.t("session.jev.title"), subtitle: routingResult(), args: [language.plural("ui.messagePart.context.call", decisions().length)] }}
+                          open={toolOpen[routingKey()] === true}
+                          onOpenChange={(open) => { setToolOpen(routingKey(), open); onSizeChange?.() }}
+                        >
+                          <div class="flex flex-col gap-3 py-2 text-12-regular text-text-weak">
+                            <For each={decisions()}>{(entry) => <div>
+                              <div>{routingFormat().time(entry.time.created)} · {entry.decision?.purpose} · {entry.decision?.outcome ?? entry.finish}</div>
+                              <Show when={entry.decision?.selected}>{(selected) => <div class="text-text-strong">{routingModel(selected())}</div>}</Show>
+                              <Show when={entry.decision?.task}>{(task) => <div>{language.t(`context.task.${task().kind}`)} · {language.t(`context.task.${task().relation}`)}</div>}</Show>
+                              <Show when={entry.time.completed !== undefined}><div>{routingFormat().duration(entry.time.completed! - entry.time.created)}</div></Show>
+                              <Show when={entry.decision?.skills?.length}><div>{entry.decision?.skills?.join(", ")}</div></Show>
+                            </div>}</For>
+                          </div>
+                        </BasicTool>
+                      </div>
+                    </Show>
+                    <Show when={routing.scope === routingScope() && routing.error && decisions().length === 0 && sdk().jev?.state.enabled && props.userMessages.at(-1)?.id === userMessageRow().userMessageID}>
+                      <p role="status" class="mt-2 text-12-regular text-text-weak">{language.t("session.jev.loadError")}</p>
+                    </Show>
                   </div>
                 </div>
               )}
@@ -1277,10 +1358,10 @@ export function MessageTimeline(props: {
                   <Collapsible.Arrow />
                 </Collapsible.Trigger>
                 <Collapsible.Content>
-                  <ScrollView class="completed-work-scroll">
+                  <ScrollView class="completed-work-scroll" orientation="vertical">
                     <For each={workRow().groups}>{(group) => (
                       <div class="py-1">
-                        {renderAssistantPartGroup(() => ({ userMessageID: workRow().userMessageID, group, previousAssistantPart: false }), onSizeChange)}
+                        {renderAssistantPartGroup(() => ({ userMessageID: workRow().userMessageID, group, previousAssistantPart: false }), onSizeChange, false)}
                       </div>
                     )}</For>
                   </ScrollView>

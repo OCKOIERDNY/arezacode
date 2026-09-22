@@ -54,7 +54,7 @@ test("Jev sends one bounded typed request and rejects invalid, failed, or incomp
   })
   const transport: typeof fetch = Object.assign(
     (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-      expect(String(url)).toBe("https://openrouter.ai/api/alpha/decisions")
+      expect(String(url)).toBe("https://openrouter.ai/api/v1/systemone")
       expect(init?.redirect).toBe("error")
       return fetch(server.url, init)
     },
@@ -62,11 +62,11 @@ test("Jev sends one bounded typed request and rejects invalid, failed, or incomp
   )
   try {
     const sessionID = `ses_usage_${crypto.randomUUID()}`
-    response = { ...response as object, usage: { prompt_tokens: 30, completion_tokens: 5, total_tokens: 35, cost: 0 } }
+    response = { ...response as object, id: "gen-decision", model: "typesafe/jev-1.13-20260917", provider: "TypeSafe", usage: { input_tokens: 30, output_tokens: 5, cost: 0 } }
     const result = await Jev.request("test-only-not-a-real-key", { task: "Fix the typo" }, questions, transport, sessionID)
     expect(result?.model).toEqual({ type: "choice", choice: "fast", confidence: 0.9 })
     expect(requests).toHaveLength(1)
-    expect(await Jev.usage(sessionID)).toMatchObject([{ kind: "jev", usage: { input: 30, output: 5, total: 35, cost: 0, costSource: "reported" } }])
+    expect(await Jev.usage(sessionID)).toMatchObject([{ kind: "jev", usage: { input: 30, output: 5, total: 35, cost: 0, costSource: "reported", responseID: "gen-decision", responseModel: "typesafe/jev-1.13-20260917", responseProvider: "TypeSafe" } }])
     expect(requests[0].model).toBe("~typesafe/jev-latest")
     expect(Object.keys(requests[0].questions as object)).toEqual(["model", "skill"])
     response = {
@@ -83,6 +83,8 @@ test("Jev sends one bounded typed request and rejects invalid, failed, or incomp
     expect(await Jev.request("test-only-not-a-real-key", {}, questions, transport)).toBeUndefined()
     expect(await Jev.request("", {}, questions, transport)).toBeUndefined()
     expect(await Jev.request("test-only-not-a-real-key", "x".repeat(50_000), questions, transport)).toBeUndefined()
+    expect(requests).toHaveLength(4)
+    expect(await Jev.request("test-only-not-a-real-key", {}, { bad: { type: "score", instructions: "Invalid scale", criteria: ["Only one"] } }, transport)).toBeUndefined()
     expect(requests).toHaveLength(4)
     response = { answers: { model: { type: "choice", choice: "fast" }, skill: { type: "score", score: 2 } } }
     expect((await Jev.request("test-only-not-a-real-key", {}, questions, transport))?.model.confidence).toBe(0)

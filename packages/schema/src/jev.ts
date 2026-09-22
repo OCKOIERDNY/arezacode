@@ -14,6 +14,11 @@ export type Settings = typeof Settings.Type
 export const Status = Schema.Struct({ ...Settings.fields, configured: Schema.Boolean })
 export const Update = Settings
 export const Model = Schema.Struct({ providerID: Schema.String, modelID: Schema.String, variant: Schema.String.pipe(optional) })
+export interface Task extends Schema.Schema.Type<typeof Task> {}
+export const Task = Schema.Struct({
+  kind: Schema.Literals(["cosmetic", "fix", "feature", "review"]),
+  relation: Schema.Literals(["standalone", "followup"]),
+}).annotate({ identifier: "Jev.Task" })
 export const Prepare = Schema.Struct({
   sessionID: Schema.String,
   promptID: Schema.String.pipe(optional),
@@ -25,6 +30,7 @@ export const Prepare = Schema.Struct({
 })
 export const Prepared = Schema.Struct({
   status: Schema.Literals(["disabled", "missing-key", "unavailable", "ready"]),
+  task: Task.pipe(optional),
   model: Model.pipe(Schema.optional),
   routing: Schema.Literals(["selected", "manual", "disabled", "unavailable", "uncertain"]).pipe(optional),
   skills: Schema.Array(Schema.Struct({ name: Schema.String, content: Schema.String })),

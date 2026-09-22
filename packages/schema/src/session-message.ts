@@ -8,6 +8,7 @@ import { FileAttachment, Prompt } from "./prompt"
 import { DateTimeUtcFromMillis, RelativePath, statics } from "./schema"
 import { SessionID } from "./session-id"
 import { ascending } from "./identifier"
+import { Jev } from "./jev"
 
 export const ID = Schema.String.check(Schema.isStartsWith("msg_")).pipe(
   Schema.brand("Session.Message.ID"),
@@ -193,6 +194,7 @@ export const UsageEntry = Schema.Struct({
   decision: Schema.Struct({
     purpose: Schema.String,
     outcome: Schema.String,
+    task: Jev.Task.pipe(optional),
     selected: Model.Ref.pipe(optional),
     confidence: Schema.Finite.pipe(optional),
     skills: Schema.Array(Schema.String).pipe(optional),

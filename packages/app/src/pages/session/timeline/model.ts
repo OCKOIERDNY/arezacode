@@ -81,7 +81,11 @@ export function createTimelineModel(input: {
     lastUserMessage: createMemo(() => visibleUserMessages().at(-1)),
     messages,
     ready,
-    resource,
+    resource: () => {
+      const error = resource.error
+      if (error !== undefined) throw error
+      if (!ready()) return resource()
+    },
     userMessages,
     visibleUserMessages,
   }

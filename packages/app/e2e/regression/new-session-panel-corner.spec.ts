@@ -434,7 +434,7 @@ test("overlays project actions with working status until hover or keyboard focus
   await expect(spinner).toHaveCSS("opacity", "1")
   await row.hover()
   await expect(spinner).toBeHidden()
-  await slow.evaluate((el) => el.remove())
+  await slow.evaluate((el) => el.parentNode?.removeChild(el))
   await expect(menu).toHaveCSS("opacity", "1")
   await expect(newChat).toHaveCSS("opacity", "1")
   expect((await row.boundingBox())!.width).toBe(width)

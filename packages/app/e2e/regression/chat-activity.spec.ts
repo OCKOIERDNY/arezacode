@@ -346,8 +346,52 @@ test("swaps the sidebars from settings and keeps resize directions correct", asy
     await page.mouse.move(handle.x + handle.width / 2, handle.y + 80)
     await page.mouse.down()
     await page.mouse.move(handle.x + handle.width / 2 + direction * (currentWidth - 300), handle.y + 80, { steps: 8 })
-    await expect(chat).toHaveCSS("width", "0px")
+    await expect(chat).toHaveCSS("width", "320px")
     await page.mouse.up()
+    await expect(chat).toHaveCSS("width", "320px")
+    await page.screenshot({ path: `/tmp/areza-chat-narrow-${side}.png` })
+    const narrow = (await divider.boundingBox())!
+    const origin = narrow.x + narrow.width / 2
+    await page.mouse.move(origin, narrow.y + 80)
+    await page.mouse.down()
+    await page.mouse.move(origin + direction * 70, narrow.y + 80, { steps: 4 })
+    await expect(chat).toHaveCSS("width", "320px")
+    await page.mouse.move(origin + direction * 100, narrow.y + 80)
+    await expect(chat).toHaveAttribute("data-collapsed", "true")
+    const midway = await chat.evaluate((element) => {
+      const animation = element.getAnimations().find((item) => item instanceof CSSTransition && item.transitionProperty === "width")
+      if (!animation) throw new Error("Chat collapsed without a width transition")
+      for (const panel of element.parentElement!.querySelectorAll('[data-component="session-chat-panel"], [data-component="session-right-panel"], [data-slot="session-chat-content"]')) {
+        for (const transition of panel.getAnimations()) {
+          transition.pause()
+          transition.currentTime = 80
+        }
+      }
+      for (const transition of element.parentElement!.getAnimations()) {
+        transition.pause()
+        transition.currentTime = 80
+      }
+      return element.getBoundingClientRect().width
+    })
+    expect(midway).toBeGreaterThan(0)
+    expect(midway).toBeLessThan(320)
+    const chatBounds = (await chat.boundingBox())!
+    const fileBounds = (await files.boundingBox())!
+    const gap = side === "left" ? fileBounds.x - chatBounds.x - chatBounds.width : chatBounds.x - fileBounds.x - fileBounds.width
+    expect(gap).toBeGreaterThanOrEqual(-1)
+    expect(gap).toBeLessThanOrEqual(17)
+    await page.screenshot({ path: `/tmp/areza-chat-collapsing-${side}.png` })
+    await chat.evaluate((element) => element.parentElement!.getAnimations({ subtree: true }).forEach((animation) => {
+      if (animation instanceof CSSTransition) animation.finish()
+    }))
+    await expect(chat).toHaveCSS("width", "0px")
+    await page.mouse.move(origin + direction * 40, narrow.y + 80)
+    await expect(chat).toHaveCSS("width", "0px")
+    await page.mouse.move(origin, narrow.y + 80)
+    await expect(chat).toHaveCSS("width", "320px")
+    await page.mouse.move(origin + direction * 100, narrow.y + 80)
+    await page.mouse.up()
+    await expect(chat).toHaveCSS("width", "0px")
     await expect(files).toBeVisible()
     await page.screenshot({ path: `/tmp/areza-chat-collapsed-${side}.png` })
     await page.getByRole("button", { name: "Show chat", exact: true }).click()
@@ -426,6 +470,15 @@ test("swaps the sidebars from settings and keeps resize directions correct", asy
   await filesToggle.click()
   await expect(files).toBeVisible()
   expect(await files.evaluate((element) => element.getAnimations().length)).toBe(0)
+  const reducedHandle = (await divider.boundingBox())!
+  const reducedWidth = (await chat.boundingBox())!.width
+  await page.mouse.move(reducedHandle.x + reducedHandle.width / 2, reducedHandle.y + 80)
+  await page.mouse.down()
+  await page.mouse.move(reducedHandle.x + reducedHandle.width / 2 - (reducedWidth - 220), reducedHandle.y + 80)
+  await page.mouse.up()
+  await expect(chat).toHaveCSS("width", "0px")
+  expect(await chat.evaluate((element) => element.getAnimations().length)).toBe(0)
+  expect(await chat.locator('[data-slot="session-chat-content"]').evaluate((element) => element.getAnimations().length)).toBe(0)
 })
 
 test("shows live work, jumps to the latest reply, and previews every changed file", async ({ page }) => {

@@ -19,7 +19,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { getSessionContext, usageTotal } from "./session-context-metrics"
+import { executionTiming, getSessionContext, usageTotal } from "./session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
 
@@ -189,6 +189,24 @@ export function SessionContextTab() {
     }])
   }).sort((a, b) => a.start - b.start))
   const [usageLimit, setUsageLimit] = createSignal(50)
+  const timing = createMemo(() => {
+    const user = visibleUserMessages().at(-1)
+    if (!user) return
+    const replies = messages().flatMap((message) => message.role === "assistant" && message.parentID === user.id ? [message] : [])
+    if (!replies.length) return
+    const end = replies.at(-1)?.time.completed ?? Date.now()
+    const spans: Parameters<typeof executionTiming>[2] = replies.map((message) => ({ kind: "model", start: message.time.created, end: message.time.completed ?? end }))
+    spans.push(...usageEntries().filter((entry) => entry.kind === "jev" && entry.promptID === user.id).map((entry) => ({ kind: "routing" as const, start: entry.time.created, end: entry.time.completed ?? end })))
+    replies.forEach((message) => (sync().data.part[message.id] ?? []).forEach((part) => {
+      if (part.type !== "tool" || part.state.status === "pending") return
+      spans.push({
+        kind: part.tool === "question" || part.tool === "request_user_input" ? "wait" : part.tool === "project_check" ? "checks" : "tools",
+        start: part.state.time.start,
+        end: part.state.status === "running" ? end : part.state.time.end,
+      })
+    }))
+    return { elapsed: Math.max(0, end - user.time.created), ...executionTiming(user.time.created, end, spans) }
+  })
   const money = (value: number | undefined) => value === undefined ? "—" : new Intl.NumberFormat(language.intl(), { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value)
   const usageKeys = ["input", "uncachedInput", "cacheRead", "cacheWrite", "output", "reasoning", "total"] as const
   const usageValue = (entries: ReturnType<typeof usageEntries>, key: typeof usageKeys[number]) => {
@@ -372,6 +390,13 @@ export function SessionContextTab() {
           <Stat label={language.t("context.activity.orchestrator")} value={[...new Set(usageEntries().filter((entry) => entry.kind !== "jev").map((entry) => modelName(entry.model.providerID, entry.model.id, entry.model.variant)))].join(", ") || modelLabel()} />
           <Show when={children().length}><Stat label={language.t("context.activity.subagent")} value={[...new Set(children().flatMap((session) => session.messages.flatMap(({ info }) => info.role === "assistant" ? [modelName(info.providerID, info.modelID, info.variant)] : [])))].join(", ") || "—"} /></Show>
           <Show when={childActivity.error}><p role="alert">{language.t("context.activity.childrenError")}</p></Show>
+          <Show when={timing()}>{(time) => <div data-testid="session-execution-timing" class="flex flex-col gap-3">
+            <div class="text-12-medium text-text-strong">{language.t("context.timing.title")}</div>
+            <div class="grid grid-cols-2 @[32rem]:grid-cols-3 gap-4">
+              <For each={["elapsed", "routing", "model", "tools", "checks", "wait", "other"] as const}>{(kind) => <Stat label={language.t(`context.timing.${kind}`)} value={formatter().duration(time()[kind])} />}</For>
+            </div>
+            <p class="text-12-regular text-text-weak">{language.t("context.timing.note")}</p>
+          </div>}</Show>
           <details>
             <summary class="cursor-pointer text-12-medium">{language.t("context.activity.decision")} · {usageEntries().filter((entry) => entry.kind === "jev").length}</summary>
             <ScrollView class="max-h-80 mt-2" data-testid="jev-decision-history">
@@ -379,6 +404,7 @@ export function SessionContextTab() {
                 <For each={usageEntries().filter((entry) => entry.kind === "jev")}>{(entry) => <div class="text-12-regular text-text-weak">
                   <div>{formatter().time(entry.time.created)} · {entry.decision?.purpose ?? "Jev"} · {entry.decision?.outcome ?? entry.finish}</div>
                   <Show when={entry.decision?.selected}>{(selected) => <div class="text-text-strong">{modelName(selected().providerID, selected().id, selected().variant)} · {Math.round((entry.decision?.confidence ?? 0) * 100)}%</div>}</Show>
+                  <Show when={entry.decision?.task}>{(task) => <div>{language.t(`context.task.${task().kind}`)} · {language.t(`context.task.${task().relation}`)}</div>}</Show>
                   <Show when={entry.decision?.skills?.length}><div>{entry.decision?.skills?.join(", ")}</div></Show>
                 </div>}</For>
               </div>

@@ -1050,6 +1050,7 @@ export function AssistantMessageDisplay(props: {
 
 export function ContextToolGroup(props: {
   parts: ToolPart[]
+  scrollable?: boolean
   busy?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -1122,7 +1123,12 @@ export function ContextToolGroup(props: {
         </div>
       </Collapsible.Trigger>
       <Collapsible.Content>
-        <ScrollView data-component="tool-group-scroll" class="scroll-view--fade" orientation="vertical">
+        <Dynamic
+          component={props.scrollable === false ? "div" : ScrollView}
+          data-component={props.scrollable === false ? undefined : "tool-group-scroll"}
+          class={props.scrollable === false ? "min-w-0" : "scroll-view--fade"}
+          orientation={props.scrollable === false ? undefined : "vertical"}
+        >
         <div data-component="context-tool-group-list">
           <Index each={props.parts}>
             {(partAccessor) => {
@@ -1161,7 +1167,7 @@ export function ContextToolGroup(props: {
             }}
           </Index>
         </div>
-        </ScrollView>
+        </Dynamic>
       </Collapsible.Content>
     </Collapsible>
   )

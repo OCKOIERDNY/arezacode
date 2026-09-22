@@ -35,7 +35,7 @@ const transport: typeof fetch = Object.assign(
         Object.entries(body.questions).map(([id, question]) => [
           id,
           (question as { type: string }).type === "choice"
-            ? { type: "choice", choice: "model0", confidence: 0.95 }
+            ? { type: "choice", choice: id === "kind" ? "fix" : id === "relation" ? "standalone" : "model0", confidence: 0.95 }
             : { type: "score", score: 2, confidence: 0.95 },
         ]),
       ),
@@ -70,7 +70,7 @@ const routing: typeof fetch = Object.assign(async (_: Parameters<typeof fetch>[0
   const body = JSON.parse(String(init?.body))
   assert.deepEqual(Object.keys(body.questions.model.criteria), ["model0", "model1"])
   assert.match(body.questions.model.criteria.model1, /high/)
-  return Response.json({ answers: { model: { type: "choice", choice: "model1", confidence: 0.94 } } })
+  return Response.json({ answers: { model: { type: "choice", choice: "model1", confidence: 0.94 }, kind: { type: "choice", choice: "review", confidence: 0.95 }, relation: { type: "choice", choice: "standalone", confidence: 0.95 } } })
 }, { preconnect: fetch.preconnect })
 const routed = await Jev.prepare({ ...input, promptID: "msg_routing_test", models: variants }, { models: [...variants, candidates.models[1]], skills: [] }, routing)
 assert.deepEqual(routed.model, { providerID: "allowed", modelID: "fast", variant: "high" })
@@ -79,7 +79,7 @@ const child = await Jev.delegate(input.sessionID, "child", "Review authenticatio
 assert.deepEqual(child?.model, routed.model)
 const history = await Jev.usage(input.sessionID)
 assert.ok(history.some((entry) => entry.promptID === "msg_routing_test" && entry.decision?.selected?.variant === "high"))
-const uncertain: typeof fetch = Object.assign(async () => Response.json({ answers: { model: { type: "choice", choice: "model0", confidence: 0.4 } } }), { preconnect: fetch.preconnect })
+const uncertain: typeof fetch = Object.assign(async () => Response.json({ answers: { model: { type: "choice", choice: "model0", confidence: 0.4 }, kind: { type: "choice", choice: "cosmetic", confidence: 0.4 }, relation: { type: "choice", choice: "followup", confidence: 0.4 } } }), { preconnect: fetch.preconnect })
 assert.equal((await Jev.prepare({ ...input, models: variants }, { models: variants, skills: [] }, uncertain)).routing, "uncertain")
 await Jev.recordCompression(input.sessionID, 12000, 3000, true)
 assert.ok((await Jev.usage(input.sessionID)).some((entry) => entry.automation?.cached && entry.automation.outputCharacters === 3000))
@@ -91,12 +91,76 @@ const explicit = await Jev.prepare({ ...input, auto: false, text: "Use $requeste
 assert.equal(explicit.skills[0].name, "requested")
 assert.equal(explicit.skills.length, 3)
 assert.ok((await Jev.usage(input.sessionID)).some((entry) => entry.decision?.skills?.includes("requested") && entry.decision.skills.length === 3))
+const cosmetic: typeof fetch = Object.assign(async (_: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+  const body = JSON.parse(String(init?.body))
+  assert.equal(body.state.previousTask, "Use $requested")
+  assert.equal(body.state.task, "Use $editing to make the sidebar heading 13px")
+  assert.match(body.questions.model.instructions, /low reasoning/)
+  const response = await transport(_, init)
+  const result = await response.json() as { answers: Record<string, { choice: string }> }
+  result.answers.kind.choice = "cosmetic"
+  result.answers.relation.choice = "followup"
+  return Response.json(result)
+}, { preconnect: fetch.preconnect })
+const beforeCosmetic = calls
+const small = await Jev.prepare({ ...input, promptID: "msg_cosmetic", text: "Use $editing to make the sidebar heading 13px" }, { ...candidates, skills: [...candidates.skills, { ...candidates.skills[0], name: "audit" }] }, cosmetic)
+assert.equal(calls, beforeCosmetic + 1)
+assert.deepEqual(small.task, { kind: "cosmetic", relation: "followup" })
+assert.deepEqual(small.skills.map((skill) => skill.name), ["editing"])
+assert.ok((await Jev.usage(input.sessionID)).some((entry) => entry.promptID === "msg_cosmetic" && entry.decision?.task?.kind === "cosmetic" && entry.decision.skills?.join() === "editing"))
+assert.match(await Jev.guidance(input.sessionID, "msg_cosmetic", 0), /No delegation/)
+assert.doesNotMatch(await Jev.guidance(input.sessionID, "msg_cosmetic", 0), /Effort checkpoint/)
+assert.match(await Jev.guidance(input.sessionID, "msg_cosmetic", 4), /Effort checkpoint/)
+assert.deepEqual(await Jev.prepare({ ...input, promptID: "msg_cosmetic", text: "Use $editing to make the sidebar heading 13px" }, { ...candidates, skills: [...candidates.skills, { ...candidates.skills[0], name: "audit" }] }, cosmetic), small)
+assert.equal(calls, beforeCosmetic + 1)
+assert.equal(Jev.quickEdit(input.sessionID), true)
+assert.deepEqual(await Jev.guardTool(input.sessionID, "read", { path: "sidebar.tsx", limit: 2000, offset: 300 }), { input: { path: "sidebar.tsx", limit: 250, offset: 300 } })
+assert.equal((await Jev.guardTool(input.sessionID, "edit", { filePath: "sidebar.tsx" })).error, undefined)
+assert.equal((await Jev.guardTool(input.sessionID, "bash", { command: "git diff -- sidebar.tsx" })).error, undefined)
+for (const [name, args] of [["task", { prompt: "Audit everything" }], ["bash", { command: "bun run build" }], ["project_check", { operation: "verify" }], ["bash", { command: "git diff; bun run build" }], ["code_mode", { code: "runEverything()" }], ["apply_patch", { patchText: "*** Begin Patch\n*** Add File: new-component.tsx\n+new component\n*** End Patch" }]] as const) {
+  assert.match((await Jev.guardTool(input.sessionID, name, args)).error!, /Quick Edit blocked/)
+}
+assert.equal((await Jev.guardTool(input.sessionID, "project_check", { operation: "test", files: ["sidebar.test.ts"] })).error, undefined)
+assert.equal(await Jev.context("large output".repeat(500), input.sessionID, cosmetic), undefined)
+assert.deepEqual(await Jev.prioritize(["one", "two"], input.sessionID, cosmetic), ["one", "two"])
+assert.equal(calls, beforeCosmetic + 1)
+let expansions = 0
+const expand: typeof fetch = Object.assign(async (_: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+  expansions++
+  const body = JSON.parse(String(init?.body))
+  assert.equal(body.state.tool, "project_check")
+  assert.equal("quickEditReason" in body.state.input, false)
+  return Response.json({ answers: { scope: { type: "choice", choice: "expand", confidence: expansions === 1 ? 0.4 : 0.95 } } })
+}, { preconnect: fetch.preconnect })
+const required = { operation: "verify", quickEditReason: "AGENTS.md requires full verification before changes to the shared theme." }
+assert.match((await Jev.guardTool(input.sessionID, "project_check", required, expand)).error!, /not expanded/)
+assert.equal(Jev.quickEdit(input.sessionID), true)
+assert.match((await Jev.guardTool(input.sessionID, "project_check", required, expand)).error!, /not expanded/)
+assert.equal(expansions, 1)
+assert.equal((await Jev.guardTool(input.sessionID, "project_check", { ...required, quickEditReason: "AGENTS.md: changes to the shared theme must pass the configured verify script before completion." }, expand)).error, undefined)
+assert.equal(Jev.quickEdit(input.sessionID), false)
+assert.equal((await Jev.guardTool(input.sessionID, "project_check", required, expand)).error, undefined)
+assert.equal(expansions, 2)
+assert.ok((await Jev.usage(input.sessionID)).some((entry) => entry.promptID === "msg_cosmetic" && entry.decision?.outcome === "expanded" && entry.decision.task?.kind === "fix"))
+assert.equal(await Jev.guidance(input.sessionID, "msg_other", 8), "")
+assert.equal(Jev.quickEdit(input.sessionID), false)
+const overthinking: typeof fetch = Object.assign(async () => Response.json({ answers: { model: { type: "choice", choice: "model1", confidence: 0.96 }, kind: { type: "choice", choice: "cosmetic", confidence: 0.99 }, relation: { type: "choice", choice: "standalone", confidence: 0.99 } } }), { preconnect: fetch.preconnect })
+const efficient = await Jev.prepare({ ...input, promptID: "msg_low_effort", models: variants }, { models: variants, skills: [] }, overthinking)
+assert.equal(efficient.model?.variant, "low")
+assert.ok((await Jev.usage(input.sessionID)).some((entry) => entry.promptID === "msg_low_effort" && entry.decision?.selected?.variant === "low"))
+const highOnly = await Jev.prepare({ ...input, promptID: "msg_high_only", models: [variants[1]] }, { models: variants, skills: [] }, Object.assign(async () => Response.json({ answers: { model: { type: "choice", choice: "model0", confidence: 0.96 }, kind: { type: "choice", choice: "cosmetic", confidence: 0.99 }, relation: { type: "choice", choice: "standalone", confidence: 0.99 } } }), { preconnect: fetch.preconnect }))
+assert.equal(highOnly.model?.variant, "high")
+const unsure = await Jev.prepare({ ...input, promptID: "msg_uncertain", models: variants }, { models: variants, skills: [] }, uncertain)
+assert.equal(unsure.task, undefined)
+assert.equal(await Jev.guidance(input.sessionID, "msg_uncertain", 8), "")
 const ranking: typeof fetch = Object.assign(async (_: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
   const body = JSON.parse(String(init?.body))
   const values: string[] = body.state.chunks ?? body.state.findings ?? []
-  return Response.json({ answers: Object.fromEntries(Object.keys(body.questions).map((id, index) => [id, {
-    type: "score", score: values[index]?.includes("important") ? 2 : 0, confidence: 0.95,
-  }])) })
+  return Response.json({ answers: Object.fromEntries(Object.keys(body.questions).map((id, index) => [id,
+    id === "kind" || id === "relation" ? { type: "choice", choice: id === "kind" ? "fix" : "standalone", confidence: 0.95 } : {
+      type: "score", score: values[index]?.includes("important") ? 2 : 0, confidence: 0.95,
+    },
+  ])) })
 }, { preconnect: fetch.preconnect })
 const forced = await Jev.prepare({ ...input, auto: false, text: "$editing" }, candidates, ranking)
 assert.equal(forced.skills[0].name, "editing")

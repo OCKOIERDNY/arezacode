@@ -23,6 +23,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Jev } from "@opencode-ai/core/jev"
 
 const MCP_RESOURCE_TOOLS = {
   list: "list_mcp_resources",
@@ -385,7 +386,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     })
   }
 
-  if (flags.experimentalCodeMode) return tools
+  if (flags.experimentalCodeMode) return yield* Effect.promise(() => quickEditTools(tools, input.session.id))
 
   for (const [key, entry] of Object.entries(yield* mcp.tools())) {
     const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
@@ -489,8 +490,26 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     tools[key] = item
   }
 
-  return tools
+  return yield* Effect.promise(() => quickEditTools(tools, input.session.id))
 })
+
+async function quickEditTools(tools: Record<string, AITool>, sessionID: string) {
+  if (!Jev.quickEdit(sessionID)) return tools
+  await Promise.all(Object.entries(tools).map(async ([name, item]) => {
+    const execute = item.execute
+    if (!execute) return
+    if (Jev.needsQuickEditReason(name)) {
+      const schema = await asSchema(item.inputSchema).jsonSchema
+      item.inputSchema = jsonSchema({ ...schema, properties: { ...schema.properties, quickEditReason: Jev.quickEditReason } })
+    }
+    item.execute = async (args, options) => {
+      const guard = await Jev.guardTool(sessionID, name, args)
+      if (guard.error) throw new Error(guard.error)
+      return execute(guard.input, options)
+    }
+  }))
+  return tools
+}
 
 function toRecord(value: unknown) {
   if (isRecord(value)) return value

@@ -15,7 +15,7 @@ export const useSessionHashScroll = (input: {
   pendingMessage: () => string | undefined
   setPendingMessage: (value: string | undefined) => void
   setActiveMessage: (message: UserMessage | undefined) => void
-  autoScroll: { pause: () => void; forceScrollToBottom: () => void }
+  autoScroll: { pause: () => void; forceScrollToBottom: () => void; userScrolled: () => boolean }
   scroller: () => HTMLDivElement | undefined
   anchor: (id: string) => string
   revealMessage?: (id: string, behavior: ScrollBehavior) => boolean
@@ -98,6 +98,7 @@ export const useSessionHashScroll = (input: {
   const applyHash = (behavior: ScrollBehavior) => {
     const hash = location.hash.slice(1)
     if (!hash) {
+      if (input.autoScroll.userScrolled()) return
       input.autoScroll.forceScrollToBottom()
       const el = input.scroller()
       if (el) input.scheduleScrollState(el)

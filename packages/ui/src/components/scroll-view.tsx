@@ -97,6 +97,39 @@ export function scrollTopFromThumbPointer(input: {
   return (thumbTop / maxThumbTop) * Math.max(0, input.scrollHeight - (input.scrollClientHeight ?? input.clientHeight))
 }
 
+export function observeScrollView(viewport: HTMLElement, track: HTMLElement | undefined, update: () => void) {
+  let frame: number | undefined
+  const schedule = () => {
+    if (frame !== undefined) return
+    frame = requestAnimationFrame(() => {
+      frame = undefined
+      update()
+    })
+  }
+  const resize = new ResizeObserver(schedule)
+  const observe = () => {
+    resize.disconnect()
+    ;[viewport, ...viewport.children, track].forEach((element) => {
+      if (element) resize.observe(element)
+    })
+    schedule()
+  }
+  const mutations = new MutationObserver((records) => {
+    if (records.some((record) => record.type === "childList" && record.target === viewport)) {
+      observe()
+      return
+    }
+    schedule()
+  })
+  mutations.observe(viewport, { childList: true, characterData: true, subtree: true })
+  observe()
+  return () => {
+    if (frame !== undefined) cancelAnimationFrame(frame)
+    resize.disconnect()
+    mutations.disconnect()
+  }
+}
+
 export function ScrollView(props: ScrollViewProps) {
   const i18n = useI18n()
   const merged = mergeProps({ orientation: "both", thumbVisibility: "hover" }, props)
@@ -160,6 +193,7 @@ export function ScrollView(props: ScrollViewProps) {
   const showThumb = () => state.showThumb
 
   let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined
+  let stopDragging: (() => void) | undefined
 
   const markScrolling = () => {
     setState("isScrolling", true)
@@ -175,6 +209,7 @@ export function ScrollView(props: ScrollViewProps) {
 
   onCleanup(() => {
     if (scrollIdleTimer !== undefined) clearTimeout(scrollIdleTimer)
+    stopDragging?.()
   })
 
   const updateThumb = () => {
@@ -195,7 +230,7 @@ export function ScrollView(props: ScrollViewProps) {
     setState({
       above: scrollTop > 1,
       below: scrollTop + clientHeight < scrollHeight - 1,
-      showThumb: local.orientation !== "horizontal" && scrollHeight > clientHeight,
+      showThumb: local.orientation !== "horizontal" && clientHeight > 0 && scrollHeight > clientHeight,
       thumbHeight: Math.max(0, height),
       thumbTop:
         8 +
@@ -206,7 +241,8 @@ export function ScrollView(props: ScrollViewProps) {
             trackHeight - height,
           ),
         ),
-      showHorizontal: local.orientation !== "vertical" && viewportRef.scrollWidth > viewportRef.clientWidth,
+      showHorizontal:
+        local.orientation !== "vertical" && viewportRef.clientWidth > 0 && viewportRef.scrollWidth > viewportRef.clientWidth,
       thumbWidth: Math.max(0, width),
       thumbLeft:
         8 + (viewportRef.matches(":dir(rtl)") ? 1 - horizontalProgress : horizontalProgress) * (trackWidth - width),
@@ -224,21 +260,12 @@ export function ScrollView(props: ScrollViewProps) {
       if (typeof events.onScroll === "function") events.onScroll(event as any)
     }
     viewport.addEventListener("scroll", onScroll, { passive: true })
-    const resize = new ResizeObserver(updateThumb)
-    const observe = () => {
-      resize.disconnect()
-      ;[viewportRef, ...viewportRef.children, thumbMount()].forEach((element) => {
-        if (element) resize.observe(element)
-      })
-      updateThumb()
-    }
-    const children = new MutationObserver(observe)
-    children.observe(viewportRef, { childList: true })
-    observe()
+    const dispose = observeScrollView(viewport, thumbMount(), updateThumb)
+    updateThumb()
     onCleanup(() => {
+      stopDragging?.()
       viewport.removeEventListener("scroll", onScroll)
-      resize.disconnect()
-      children.disconnect()
+      dispose()
     })
   })
 
@@ -258,8 +285,10 @@ export function ScrollView(props: ScrollViewProps) {
   })
 
   const onThumbPointerDown = (e: PointerEvent, horizontal = false) => {
+    if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
+    stopDragging?.()
     setState("isDragging", true)
     const thumbRef = e.currentTarget as HTMLDivElement
     const grabOffset = horizontal
@@ -287,17 +316,21 @@ export function ScrollView(props: ScrollViewProps) {
       updateThumb()
     }
 
-    const done = (e: PointerEvent) => {
+    const done = () => {
       setState("isDragging", false)
-      thumbRef.releasePointerCapture(e.pointerId)
       thumbRef.removeEventListener("pointermove", onPointerMove)
       thumbRef.removeEventListener("pointerup", done)
       thumbRef.removeEventListener("pointercancel", done)
+      thumbRef.removeEventListener("lostpointercapture", done)
+      if (thumbRef.hasPointerCapture(e.pointerId)) thumbRef.releasePointerCapture(e.pointerId)
+      stopDragging = undefined
     }
 
+    stopDragging = done
     thumbRef.addEventListener("pointermove", onPointerMove)
     thumbRef.addEventListener("pointerup", done)
     thumbRef.addEventListener("pointercancel", done)
+    thumbRef.addEventListener("lostpointercapture", done)
   }
 
   const renderThumb = (horizontal = false) => (
@@ -367,6 +400,7 @@ export function ScrollView(props: ScrollViewProps) {
   return (
     <div
       class={`scroll-view ${local.class || ""}`}
+      data-orientation={local.orientation}
       data-scroll-above={state.above || undefined}
       data-scroll-below={state.below || undefined}
       style={local.style}

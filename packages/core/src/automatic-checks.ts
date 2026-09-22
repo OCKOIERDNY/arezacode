@@ -73,7 +73,7 @@ export async function session(directory: string, sessionID: string) {
         Jev.remember(sessionID, user.text)
         if (await engineEnabled("ponytail")) await engineResult("ponytail", "Build hook active: reuse preflight and mechanical tool checks enabled. Guidance supplied; compliance is verified separately.")
       }
-      return notice
+      return [notice, user ? await Jev.guidance(sessionID, user.id, context.slice(context.indexOf(user) + 1).filter((message) => message.type === "assistant").length) : ""].filter(Boolean).join("\n")
     },
     after: async (_context: readonly SessionMessage.Message[], signal?: AbortSignal) => {
       const security = process.env.AREZACODE_SEMGREP !== "0" && await engineEnabled("semgrep")

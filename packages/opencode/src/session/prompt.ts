@@ -14,6 +14,7 @@ import { type Tool as AITool, tool, jsonSchema } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
 import { SystemPrompt } from "./system"
+import { Jev } from "@opencode-ai/core/jev"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
 import { MAX_STEPS_PROMPT } from "@opencode-ai/core/session/runner/max-steps"
@@ -1222,6 +1223,7 @@ const layer = Layer.effect(
             const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
+            const taskGuidance = yield* Effect.promise(() => Jev.guidance(sessionID, lastUser.id, msgs.filter((message) => message.info.role === "assistant" && message.info.parentID === lastUser.id).length))
 
             const tools = yield* SessionTools.resolve({
               agent,
@@ -1264,6 +1266,7 @@ const layer = Layer.effect(
             const system = [
               ...env,
               ...instructions,
+              taskGuidance,
               ...(mcpInstructions ? [mcpInstructions] : []),
               ...(skills ? [skills] : []),
             ]
