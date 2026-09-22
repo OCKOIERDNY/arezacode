@@ -144,3 +144,17 @@ failure appears during canary work:
 ## Everything is hotreloadable - ???
 
 Instead of needing to tear down things when something changes every service should emit granular events so services can react to them and reconfigure themselves. Allows frontend to receive these too, eg model.added. also prevents startup from blocking
+
+## ArezaCode product backlog
+
+- [ ] Project-level shared components: let the agent create and maintain reusable components within a project. Discover and reuse existing components before creating new ones.
+- [ ] Project overview dashboard: provide a central overview of each project's work and current status.
+- [ ] Compacting message display: stop rendering the full internal compaction summary as a normal chat reply. Show a compact, collapsed entry with details available on demand while retaining the summary for model context.
+- [ ] Cross-project component library: let users ask the agent to create a reusable component, such as a React component, and save it in a persistent library for use in any project. Keep it distinct from project-local components and record its framework, dependencies, and usage so the agent can find and reuse it appropriately.
+- [ ] Fix expanded file-diff scrolling: keep the diff within the available panel height and allow wheel/trackpad scrolling so content below the viewport remains reachable.
+- [ ] Fix the OpenCode Zen accordion in Models settings opening and immediately closing when entering the page.
+- [ ] Right-side Markdown editor and preview: create, open, edit, save, and preview project `.md` files, including to-do lists, in the existing right-side tabs. Make Markdown file links in chat open the corresponding file there; support editing checklist items and switching between source and rendered preview using shared file-panel components.
+- [ ] Multi-agent view and request scheduling: show up to four simultaneous agent chats and their running/queued status. Requests sent while an agent is working should queue automatically and start after its current request finishes. Add a button beside each queued message to move it into a new chat and run separately, removing it from the original queue so it executes only once. Enforce the four-chat concurrency limit and preserve queued requests when capacity is full.
+- [ ] Accurate connection errors: when sending a message without internet, show a clear offline/connection error instead of reporting that JEV could not identify a model. Distinguish network failures from model-selection failures and preserve the unsent message for retry.
+- [ ] Interrupted-run recovery: persist the transcript and execution progress incrementally so manual stops, timeouts, provider failures, and app crashes retain the last known state. Show where the run stopped, completed and pending work, and any tool action with an unknown outcome. Let the user resume with that context without blindly repeating actions that may already have completed.
+- [ ] Reusable implementation guides: add browsable, editable documentation in the app that the agent retrieves when building a matching feature, such as magic-link authentication. Cover the complete flow, validation, security, error/loading/success states, layout, accessibility, animations, and relevant tests. Adapt guides to the project's installed framework versions and existing components/backend logic, reuse what exists, and ask for missing product decisions instead of guessing. Support shared guides with project-specific overrides and keep their sources and version applicability visible.
