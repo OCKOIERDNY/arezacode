@@ -94,6 +94,8 @@ export const dict = {
   "jev.model": "TypeSafe: Jev Latest",
   "jev.modelDescription": "Decision model connected through OpenRouter. Use the Jev toggle for automation and Auto for routing; Jev does not generate chat replies.",
   "jev.name": "Jev",
+  "prompt.browser.automatic": "Automatic browser checks. Click to use manual tests instead.",
+  "prompt.browser.manual": "Manual tests only. Click to allow automatic browser checks.",
   "jev.auto": "Auto",
   "jev.routingUnavailable": "Jev could not confidently select an enabled model. Retry or choose a model manually. Your message has not been sent.",
   "context.activity.title": "Tools and model activity",

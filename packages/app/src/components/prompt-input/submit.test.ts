@@ -315,6 +315,26 @@ beforeEach(() => {
 })
 
 describe("prompt submit worktree selection", () => {
+  test("sends the captured browser preference for each draft", async () => {
+    const { sendFollowupDraft } = await import("./submit")
+    const requests: Array<{ text: string; legacyParts: Array<{ metadata?: { browserVerification?: string } }> }> = []
+    for (const automatic of [false, true, false]) {
+      await sendFollowupDraft({
+        api: { prompt: async (input: (typeof requests)[number]) => { requests.push(input) } },
+        serverSync: { session: { set: () => undefined } },
+        sync: { data: { command: [] }, session: { optimistic: { add: () => undefined, remove: () => undefined } } },
+        draft: {
+          sessionID: "session-browser", sessionDirectory: "/repo", prompt: [{ type: "text", content: "Check layout", start: 0, end: 12 }],
+          context: [], agent: "build", model: { providerID: "provider", modelID: "model" }, browserVerification: automatic,
+        },
+      } as unknown as Parameters<typeof sendFollowupDraft>[0])
+    }
+    expect(requests.map((request) => request.legacyParts.at(-1)?.metadata?.browserVerification)).toEqual(["manual", "automatic", "manual"])
+    expect(requests[0].text).toContain("Do not run browser checks")
+    expect(requests[1].text).toContain("Browser checks are already approved")
+    expect(requests[2].text).toContain("marked unverified")
+  })
+
   test("waits for Jev and executes its model and effort; uncertain Auto never sends", async () => {
     const { sendFollowupDraft } = await import("./submit")
     const gate = Promise.withResolvers<{ status: "ready"; routing: "selected"; model: { providerID: string; modelID: string; variant: string }; skills: [] }>()
@@ -554,13 +574,18 @@ describe("prompt submit worktree selection", () => {
     expect(sentPrompts).toEqual(["/repo/main"])
     expect(promptInputs[0]).toMatchObject({
       sessionID: "session-1",
-      text: "ls",
+      text: expect.stringContaining("Browser verification preference selected by the user: MANUAL."),
       files: [],
       agents: [],
     })
     expect((promptInputs[0] as { id?: string }).id).toStartWith("msg_")
-    expect((promptInputs[0] as { legacyParts?: { id: string; type: string; text?: string }[] }).legacyParts).toEqual([
+    expect((promptInputs[0] as { legacyParts?: { id: string; type: string; text?: string; synthetic?: boolean; metadata?: Record<string, string> }[] }).legacyParts).toEqual([
       { id: expect.stringMatching(/^prt_/), type: "text", text: "ls" },
+      {
+        id: expect.stringMatching(/^prt_/), type: "text", synthetic: true,
+        text: expect.stringContaining("Do not ask the user to choose manual or automatic."),
+        metadata: { browserVerification: "manual" },
+      },
     ])
   })
 
@@ -576,6 +601,7 @@ describe("prompt submit worktree selection", () => {
       imageAttachments: () => [],
       commentCount: () => 0,
       autoAccept: () => false,
+      browserVerification: () => true,
       mode: () => "normal",
       working: () => false,
       editor: () => undefined,
@@ -598,7 +624,10 @@ describe("prompt submit worktree selection", () => {
         arguments: "staged changes",
         agent: "agent",
         model: { id: "model", providerID: "provider", variant: "high" },
-        files: [],
+        files: [{
+          name: "browser-verification.txt",
+          uri: expect.stringContaining(encodeURIComponent("Browser verification preference selected by the user: AUTOMATIC.")),
+        }],
       },
     ])
     expect(serverSessionSyncs).toBe(0)

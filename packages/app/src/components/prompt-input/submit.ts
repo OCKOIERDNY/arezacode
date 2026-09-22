@@ -41,6 +41,7 @@ export type FollowupDraft = {
   agent: string
   model: { providerID: string; modelID: string }
   variant?: string
+  browserVerification?: boolean
   jev?: { auto: boolean; models: { providerID: string; modelID: string; variant?: string }[] }
 }
 
@@ -62,6 +63,9 @@ const draftText = (prompt: Prompt) => prompt.map((part) => ("content" in part ? 
 const draftImages = (prompt: Prompt) => prompt.filter((part): part is ImageAttachmentPart => part.type === "image")
 
 export async function sendFollowupDraft(input: FollowupSendInput) {
+  const browserVerification = input.draft.browserVerification
+    ? "Browser verification preference selected by the user: AUTOMATIC. Browser checks are already approved for this request; perform relevant checks without asking the user to choose manual or automatic. Keep checks focused. Apply this preference to subagents. Other tool permissions still apply."
+    : "Browser verification preference selected by the user: MANUAL. Do not run browser checks, shell-driven browser automation, or delegated browser checks. Do not ask the user to choose manual or automatic. Provide a brief manual test checklist with expected results, marked unverified. Apply this preference to subagents."
   const text = draftText(input.draft.prompt)
   const images = draftImages(input.draft.prompt)
   const setBusy = () => {
@@ -123,7 +127,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
           providerID: decision.result?.model?.providerID ?? input.draft.model.providerID,
           variant: decision.result?.model ? decision.result.model.variant : input.draft.variant,
         },
-        files: [...await Promise.all(
+        files: [{ uri: `data:text/plain;charset=utf-8,${encodeURIComponent(browserVerification)}`, name: "browser-verification.txt" }, ...await Promise.all(
           images.map(async (attachment) => ({
             uri: await blobDataUrl(attachment.blob, attachment.mime),
             name: attachment.filename,
@@ -208,6 +212,11 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         metadata: { jevSkill: skill.name },
       })
     }
+    requestParts.push({
+      id: Identifier.ascending("part"), type: "text", synthetic: true,
+      text: browserVerification,
+      metadata: { browserVerification: input.draft.browserVerification ? "automatic" : "manual" },
+    })
     await input.api.prompt({
       sessionID: input.draft.sessionID,
       id: messageID,
@@ -257,6 +266,7 @@ type PromptSubmitInput = {
   commentCount: Accessor<number>
   autoAccept: Accessor<boolean>
   approvalMode?: Accessor<"default" | "ask" | "auto" | "full">
+  browserVerification?: Accessor<boolean>
   mode: Accessor<"normal" | "shell">
   working: Accessor<boolean>
   editor: () => HTMLDivElement | undefined
@@ -505,6 +515,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       variant,
+      browserVerification: input.browserVerification?.() ?? false,
       jev: {
         auto: modelSelection.auto?.() ?? false,
         models: sdk().jev?.state.enabled ? modelSelection.list().filter((item) => modelSelection.visible({ providerID: item.provider.id, modelID: item.id }))

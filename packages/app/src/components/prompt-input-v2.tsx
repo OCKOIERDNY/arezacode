@@ -24,6 +24,7 @@ import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/f
 import { useComments } from "@/context/comments"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
+import { useSettings } from "@/context/settings"
 import { useLayout } from "@/context/layout"
 import { usePermission } from "@/context/permission"
 import { type ImageAttachmentPart, usePrompt } from "@/context/prompt"
@@ -55,6 +56,7 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
   const jev = () => serverSDK().jev
+  const settings = useSettings()
   createEffect(on(() => serverSync().data.provider.connected.includes("openrouter"), () => void jev().refresh()))
   const dialog = useDialog()
   const command = useCommand()
@@ -116,6 +118,13 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
             </ButtonV2>
           </TooltipV2>
           </Show>
+          <TooltipV2 value={language.t(settings.general.browserVerification() ? "prompt.browser.automatic" : "prompt.browser.manual")}>
+            <ButtonV2 type="button" variant={settings.general.browserVerification() ? "neutral" : "ghost-muted"} size="small" data-action="prompt-browser"
+              aria-pressed={settings.general.browserVerification()} disabled={!settings.ready()}
+              onClick={() => settings.general.setBrowserVerification(!settings.general.browserVerification())}>
+              {language.t("session.panel.browser")}
+            </ButtonV2>
+          </TooltipV2>
           </div>
         }
       />
@@ -124,6 +133,7 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
 }
 
 export function usePromptInputV2Controller(props: PromptInputV2ControllerProps): PromptInputV2ComposerController {
+  const settings = useSettings()
   const serverSDK = useServerSDK()
   const sdk = useSDK()
   const sync = useSync()
@@ -268,6 +278,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     commentCount,
     autoAccept: accepting,
     approvalMode: () => approval.mode,
+    browserVerification: settings.general.browserVerification,
     mode,
     working,
     editor: () => editor,

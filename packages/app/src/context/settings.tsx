@@ -24,6 +24,7 @@ export interface Settings {
     autoSave: boolean
     releaseNotes: boolean
     followup: "queue" | "steer"
+    browserVerification: boolean
     showFileTree: boolean
     showNavigation: boolean
     showSearch: boolean
@@ -186,6 +187,7 @@ const defaultSettings: Settings = {
     autoSave: true,
     releaseNotes: true,
     followup: "steer",
+    browserVerification: false,
     showFileTree: false,
     showNavigation: false,
     showSearch: false,
@@ -363,6 +365,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         return store
       },
       general: {
+        browserVerification: withFallback(() => store.general?.browserVerification, false),
+        setBrowserVerification(value: boolean) {
+          setStore("general", "browserVerification", value)
+        },
         sidebarPosition: withFallback(() => store.general?.sidebarPosition, defaultSettings.general.sidebarPosition),
         setSidebarPosition(value: "left" | "right") {
           setStore("general", "sidebarPosition", value)
