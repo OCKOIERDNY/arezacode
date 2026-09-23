@@ -31,7 +31,7 @@ import {
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
-import { inlineCodeKind } from "./markdown-inline-code-kind"
+import { markInlineCode } from "./markdown-inline-code"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -262,16 +262,6 @@ function markCodeLinks(root: HTMLDivElement) {
     link.rel = "noopener noreferrer"
     code.parentNode?.replaceChild(link, code)
     link.appendChild(code)
-  }
-}
-
-function markInlineCode(root: HTMLDivElement) {
-  const codeNodes = Array.from(root.querySelectorAll(":not(pre) > code"))
-  for (const code of codeNodes) {
-    if (!(code instanceof HTMLElement)) continue
-    delete code.dataset.inlineCodeKind
-    const kind = inlineCodeKind(code.textContent ?? "")
-    if (kind) code.dataset.inlineCodeKind = kind
   }
 }
 

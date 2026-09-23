@@ -1,6 +1,5 @@
 import { checksum } from "@opencode-ai/core/util/encode"
 import DOMPurify from "dompurify"
-import { parseMarkdown } from "./markdown-worker"
 
 export type MarkdownCacheEntry = {
   raw: string
@@ -20,6 +19,11 @@ const config = {
 }
 
 if (typeof window !== "undefined" && DOMPurify.isSupported) {
+  DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
+    if (node instanceof HTMLAnchorElement && data.attrName === "href" && /^file:\/\/\//i.test(data.attrValue)) {
+      data.forceKeepAttr = true
+    }
+  })
   DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
     if (!(node instanceof HTMLAnchorElement)) return
     if (node.target !== "_blank") return
@@ -61,6 +65,7 @@ export async function preloadMarkdown(text: string, cacheKey: string) {
   }
   const hash = checksum(text)
   if (!hash) return
+  const { parseMarkdown } = await import("./markdown-worker")
   touchCachedMarkdown(key, {
     raw: text,
     hash,

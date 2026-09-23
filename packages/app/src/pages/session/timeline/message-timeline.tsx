@@ -77,6 +77,9 @@ import { useServerSDK } from "@/context/server-sdk"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { useLayout } from "@/context/layout"
+import { useFile } from "@/context/file"
+import { createOpenSessionFileTab } from "@/pages/session/helpers"
+import { openMarkdownFileLink } from "@/utils/file-link"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -327,6 +330,15 @@ export function MessageTimeline(props: {
   const coldBottomMount = !initialMeasurements?.length && props.shouldAnchorBottom()
   const platform = usePlatform()
   const panels = useSessionLayout()
+  const file = useFile()
+  const openFile = createOpenSessionFileTab({
+    normalizeTab: file.tab,
+    openTab: (tab) => panels.tabs().open(tab),
+    pathFromTab: file.pathFromTab,
+    loadFile: file.load,
+    openReviewPanel: () => panels.view().reviewPanel.open(),
+    setActive: (tab) => queueMicrotask(() => panels.tabs().setActive(tab)),
+  })
 
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const sessionID = createMemo(() => params.id)
@@ -1494,6 +1506,7 @@ export function MessageTimeline(props: {
   return (
     <div class="relative w-full h-full min-w-0" data-message-navigation={props.userMessages.length > 0 || undefined} ref={(element) => {
       const openLink = (event: MouseEvent) => {
+        if (openMarkdownFileLink(event, openFile)) return
         if (!platform.browser || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !(event.target instanceof Element)) return
         const link = event.target.closest<HTMLAnchorElement>('a[href]')
         if (!link || !/^https?:$/.test(new URL(link.href).protocol) || new URL(link.href).origin === window.location.origin) return

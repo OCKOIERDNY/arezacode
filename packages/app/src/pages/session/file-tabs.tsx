@@ -14,7 +14,9 @@ import { LineCommentV2OverflowIcon } from "@opencode-ai/ui/v2/line-comment-v2"
 import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
+import { Markdown } from "@opencode-ai/session-ui/markdown"
 import { showToast } from "@/utils/toast"
+import { openMarkdownFileLink } from "@/utils/file-link"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { useComments } from "@/context/comments"
 import { useLanguage } from "@/context/language"
@@ -22,7 +24,7 @@ import { usePrompt } from "@/context/prompt"
 import { useSettings } from "@/context/settings"
 import { getSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { createSessionTabs } from "@/pages/session/helpers"
+import { createOpenSessionFileTab, createSessionTabs } from "@/pages/session/helpers"
 
 type SessionFileViewProps = {
   tab: string
@@ -215,10 +217,58 @@ export function FileTabContent(props: { tab: string }) {
 
 export function SessionFileView(props: SessionFileViewProps) {
   const settings = useSettings()
-
-  return (
+  const file = useFile()
+  const language = useLanguage()
+  const panels = useSessionLayout()
+  const path = createMemo(() => file.pathFromTab(props.tab))
+  const state = createMemo(() => {
+    const value = path()
+    return value ? file.get(value) : undefined
+  })
+  const [preview, setPreview] = createStore({ mode: "preview" })
+  createEffect(on(path, () => setPreview("mode", "preview")))
+  const openFile = createOpenSessionFileTab({
+    normalizeTab: file.tab,
+    openTab: (tab) => panels.tabs().open(tab),
+    pathFromTab: file.pathFromTab,
+    loadFile: file.load,
+    openReviewPanel: () => panels.view().reviewPanel.open(),
+    setActive: (tab) => queueMicrotask(() => panels.tabs().setActive(tab)),
+  })
+  const code = () => (
     <Show when={settings.general.newLayoutDesigns()} fallback={<SessionFileViewV1 tab={props.tab} />}>
       <SessionFileViewV2 tab={props.tab} />
+    </Show>
+  )
+
+  return (
+    <Show when={/\.(?:md|markdown|mdown|mkd)$/i.test(path() ?? "")} fallback={code()}>
+      <Tabs value={preview.mode} onChange={(mode) => setPreview("mode", mode)} class="flex h-full min-h-0 flex-col">
+        <Tabs.List class="shrink-0">
+          <Tabs.Trigger value="preview">{language.t("session.file.preview")}</Tabs.Trigger>
+          <Tabs.Trigger value="code">{language.t("session.file.code")}</Tabs.Trigger>
+        </Tabs.List>
+        <Tabs.Content value="preview" class="min-h-0 flex-1">
+          <ScrollView class="h-full">
+            <Switch>
+              <Match when={state()?.loaded}>
+                <Markdown
+                  text={state()?.content?.content ?? ""}
+                  class="px-6 py-4 select-text"
+                  on:click={(event) => openMarkdownFileLink(event, openFile, path())}
+                />
+              </Match>
+              <Match when={state()?.loading}>
+                <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
+              </Match>
+              <Match when={state()?.error}>{(error) => <div class="px-6 py-4 text-text-weak">{error()}</div>}</Match>
+            </Switch>
+          </ScrollView>
+        </Tabs.Content>
+        <Tabs.Content value="code" class="min-h-0 flex-1">
+          {code()}
+        </Tabs.Content>
+      </Tabs>
     </Show>
   )
 }

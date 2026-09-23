@@ -12,6 +12,7 @@
     "./message-part-text": "./src/components/message-part-text.ts",
     "./markdown-stream": "./src/components/markdown-stream.ts",
     "./markdown-cache": "./src/components/markdown-cache.tsx",
+    "./markdown-inline-code": "./src/components/markdown-inline-code.ts",
     "./line-comment-styles": "./src/components/line-comment-styles.ts",
     "./pierre": "./src/pierre/index.ts",
     "./pierre/*": "./src/pierre/*.ts",
