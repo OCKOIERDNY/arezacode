@@ -3,6 +3,8 @@ import { DESKTOP_NATIVE_ENGLISH } from "./desktop-native"
 export const dict = {
   "session.file.preview": "Preview",
   "session.file.code": "Code",
+  "session.message.elapsed": "Elapsed {{duration}}",
+  "session.message.duration": "Duration {{duration}}",
   "session.panel.new-tab": "New tab",
   "session.panel.agents": "Agents",
   "session.panel.browser": "Browser",

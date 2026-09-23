@@ -90,6 +90,8 @@ import { observeElementOffsetReconnectAware } from "./observe-element-offset"
 import { createTimelineProjection } from "./projection"
 import { MessageComment, SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
 import { filterVirtualIndexes } from "./virtual-items"
+import { MessageElapsed } from "./message-elapsed"
+import { getTurnDurationMs } from "./turn-duration"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -1062,18 +1064,7 @@ export function MessageTimeline(props: {
   const turnDurationMs = (userMessageID: string) => {
     const message = messageByID().get(userMessageID)
     if (!message || message.role !== "user") return
-    const end = (assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages).reduce<number | undefined>(
-      (max, item) => {
-        const completed = item.time.completed
-        if (typeof completed !== "number") return max
-        if (max === undefined) return completed
-        return Math.max(max, completed)
-      },
-      undefined,
-    )
-    if (typeof end !== "number") return
-    if (end < message.time.created) return
-    return end - message.time.created
+    return getTurnDurationMs(message.time.created, assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages)
   }
 
   const assistantCopyPartID = (userMessageID: string) => {
@@ -1289,6 +1280,11 @@ export function MessageTimeline(props: {
                       actions={props.actions}
                       useV2Actions={settings.general.newLayoutDesigns()}
                       comments={messageComments()}
+                    />
+                    <MessageElapsed
+                      created={message().time.created}
+                      assistants={assistantMessagesByParent().get(userMessageRow().userMessageID) ?? emptyAssistantMessages}
+                      running={workingTurn(userMessageRow().userMessageID)}
                     />
                     <Show when={decisions().length > 0}>
                       <div class="mt-3" data-testid="session-jev-action" data-prompt-id={userMessageRow().userMessageID}>
