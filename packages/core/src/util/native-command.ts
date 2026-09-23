@@ -7,6 +7,7 @@ import { chmod, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "no
 import { Schema } from "effect"
 import { Integration } from "@opencode-ai/schema/integration"
 import { Global } from "../global"
+import { Shell } from "../shell"
 
 export const engineVersions = {
   markitdown: "0.1.7",
@@ -271,10 +272,13 @@ export function nativeCommand(
   return new Promise<string>((resolve, reject) => {
     const controller = new AbortController()
     const signal = AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])])
+    if (signal.aborted) {
+      reject(new Error(`${path.basename(command)} failed (cancelled or timed out); no successful result was recorded.`))
+      return
+    }
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
-      signal,
       windowsHide: true,
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
@@ -282,14 +286,20 @@ export function nativeCommand(
     const chunks: Buffer[] = []
     let size = 0
     let failure: Error | undefined
+    let stopping: Promise<void> | undefined
     const stop = () => {
+      stopping ??= Shell.killTree(child)
+      return stopping
+    }
+    const exit = () => {
       if (!child.pid) return
       if (process.platform === "win32") { child.kill(); return }
-      try { process.kill(-child.pid, "SIGTERM") } catch {}
+      try { process.kill(-child.pid, "SIGKILL") } catch {}
     }
+    const abort = () => { void stop() }
     const timer = setTimeout(() => controller.abort(), options.timeout ?? 30_000)
-    signal.addEventListener("abort", stop, { once: true })
-    process.once("exit", stop)
+    signal.addEventListener("abort", abort, { once: true })
+    process.once("exit", exit)
     const collect = (data: Buffer, stdout: boolean) => {
       size += data.length
       if (size > 16 * 1024 * 1024) { controller.abort(); return }
@@ -298,15 +308,16 @@ export function nativeCommand(
     child.stdout.on("data", (data: Buffer) => collect(data, true))
     child.stderr.on("data", (data: Buffer) => collect(data, false))
     child.on("error", (error) => { failure = error })
-    child.on("close", (code) => {
+    child.on("close", async (code) => {
       clearTimeout(timer)
-      signal.removeEventListener("abort", stop)
-      process.removeListener("exit", stop)
+      signal.removeEventListener("abort", abort)
       if (code !== 0 || failure || signal.aborted) {
-        stop()
+        await stop()
+        process.removeListener("exit", exit)
         reject(new Error(`${path.basename(command)} failed (${signal.aborted ? "cancelled or timed out" : code ?? "unavailable"}); no successful result was recorded.`))
         return
       }
+      process.removeListener("exit", exit)
       resolve(Buffer.concat(chunks).toString("utf8"))
     })
     child.stdin.on("error", () => {})
