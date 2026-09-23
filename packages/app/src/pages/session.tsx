@@ -665,7 +665,7 @@ export default function Page() {
   })
 
   const [followup, setFollowup] = persisted(
-    Persist.serverWorkspace(serverSDK().scope, sdk().directory, "followup", ["followup.v1"]),
+    Persist.prompt(Persist.serverWorkspace(serverSDK().scope, sdk().directory, "followup", ["followup.v1"])),
     createStore<{
       items: Record<string, FollowupItem[] | undefined>
       failed: Record<string, string | undefined>

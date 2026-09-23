@@ -251,10 +251,15 @@ describe("RequestExecutor", () => {
   it.effect("retries retryable status responses before returning the stream", () =>
     Effect.gen(function* () {
       const executor = yield* RequestExecutor.Service
-      const response = yield* executor.execute(request)
+      const timings: RequestExecutor.TimingEvent[] = []
+      const response = yield* executor.execute(request).pipe(Effect.provideService(RequestExecutor.Observer, (event) => Effect.sync(() => { timings.push(event) })))
 
       expect(response.status).toBe(200)
       expect(yield* response.text).toBe("ok")
+      expect(timings.map((event) => event.type)).toEqual(["dispatch", "response", "retry", "dispatch", "response"])
+      expect(timings[2]).toMatchObject({ attempt: 1, reason: "ProviderInternal", delayMs: 0 })
+      expect(timings.every((event) => Number.isFinite(event.time))).toBe(true)
+      expect(JSON.stringify(timings)).not.toContain("secret")
     }).pipe(
       Effect.provide(
         responsesLayer([

@@ -207,6 +207,14 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
         return tab
       },
       async newDraft(draft: Omit<DraftTab, "type" | "draftID">, prompt?: string, model?: PromptModel) {
+        if (!ready()) await ready.promise
+        const existing = prompt ? undefined : store.find((tab) =>
+          tab.type === "draft" && tab.server === draft.server && tab.directory === draft.directory,
+        )
+        if (existing?.type === "draft") {
+          navigateTab(existing)
+          return existing
+        }
         const draftID = uuid()
         const tab = { type: "draft" as const, draftID, ...draft }
         memory.ensure(tabKey(tab), "prompt", () => createDraftPromptSession(draftID, { prompt, model }))

@@ -24,6 +24,26 @@ function createPromptStore() {
 }
 
 describe("prompt input v2 store", () => {
+  test("captures the originating store while retaining its latest draft", () => {
+    const a = createStore<PromptInputV2PersistedState>({ prompt: [], cursor: 0, context: { items: [] } })
+    const b = createStore<PromptInputV2PersistedState>({ prompt: [], cursor: 0, context: { items: [] } })
+    let active = a
+    const draft = createPromptInputV2Store(() => active)
+    const target = draft.capture()
+    draft.setText("edited during upload")
+    active = b
+    draft.setText("other chat")
+    target.set([...target.current(), {
+      type: "image", id: "attachment", filename: "notes.txt", mime: "text/plain",
+      blob: { id: "blob", url: "blob:notes" },
+    }], target.cursor())
+
+    expect(a[0].prompt).toHaveLength(2)
+    expect(a[0].prompt[0]).toMatchObject({ content: "edited during upload" })
+    expect(b[0].prompt).toEqual([{ type: "text", content: "other chat", start: 0, end: 10 }])
+    expect(a[0].cursor).toBe(20)
+  })
+
   test("accepts an accessor for the backing store", () => {
     const [state, setState] = createStore<PromptInputV2PersistedState>({
       prompt: [{ type: "text", content: "", start: 0, end: 0 }],

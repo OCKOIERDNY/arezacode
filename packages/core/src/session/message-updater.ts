@@ -101,6 +101,7 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
   return Effect.gen(function* () {
     yield* SessionEvent.All.match(event, {
       "session.next.approval.changed": () => Effect.void,
+      "session.next.compaction.accounted": () => Effect.void,
       "session.next.agent.switched": (event) => {
         return adapter.appendMessage(
           SessionMessage.AgentSwitched.make({
@@ -213,7 +214,7 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
           draft.time.completed = event.data.timestamp
           draft.finish = event.data.finish
           draft.cost = event.data.cost
-          draft.usage = event.data.usage
+          draft.usage = castDraft(event.data.usage)
           draft.tokens = event.data.tokens
           if (event.data.snapshot || event.data.files)
             draft.snapshot = {
@@ -228,7 +229,7 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
           draft.time.completed = event.data.timestamp
           draft.finish = "error"
           draft.error = event.data.error
-          draft.usage = event.data.usage ?? draft.usage
+          draft.usage = castDraft(event.data.usage) ?? draft.usage
           draft.cost = event.data.usage?.cost ?? draft.cost
         })
       },

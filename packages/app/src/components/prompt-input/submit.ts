@@ -56,6 +56,7 @@ type FollowupSendInput = {
   messageID?: string
   optimisticBusy?: boolean
   before?: () => Promise<boolean> | boolean
+  onCancel?: () => void
 }
 
 const draftText = (prompt: Prompt) => prompt.map((part) => ("content" in part ? part.content : "")).join("")
@@ -84,10 +85,13 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     if (ok === false) return false
     const abort = new AbortController()
     const key = input.scope ? ScopedKey.from(input.scope, input.draft.sessionID) : undefined
-    const entry = { abort, cleanup }
+    const entry = { abort, cleanup: () => { cleanup(); input.onCancel?.() } }
     if (key) pending.set(key, entry)
+    const cancelled = Promise.withResolvers<undefined>()
+    const cancel = () => cancelled.resolve(undefined)
+    abort.signal.addEventListener("abort", cancel, { once: true })
     try {
-      decision.result = await input.jev?.prepare({
+      decision.result = await Promise.race([input.jev?.prepare({
         sessionID: input.draft.sessionID,
         promptID,
         text,
@@ -95,12 +99,13 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         auto: input.draft.jev?.auto ?? false,
         images: images.length > 0,
         models: input.draft.jev?.models ?? [],
-      }, input.draft.sessionDirectory)
+      }, input.draft.sessionDirectory, abort.signal), cancelled.promise])
       if (!input.jev?.state.enabled) decision.result = undefined
       if (!abort.signal.aborted && input.draft.jev?.auto && input.jev?.state.enabled && input.jev.state.routing && !decision.result?.model)
         throw new Error(input.routingError ?? "jev.routingUnavailable")
       return !abort.signal.aborted
     } finally {
+      abort.signal.removeEventListener("abort", cancel)
       if (key && pending.get(key) === entry) pending.delete(key)
     }
   }
@@ -170,11 +175,11 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     model: { ...input.draft.model, modelID: input.draft.jev?.auto && input.jev?.state.enabled && input.jev.state.routing ? "" : input.draft.model.modelID, variant: input.draft.variant },
   }
 
-  const add = () =>
+  const add = (model = message.model) =>
     input.sync.session.optimistic.add({
       directory: input.draft.sessionDirectory,
       sessionID: input.draft.sessionID,
-      message,
+      message: { ...message, model },
       parts: optimisticParts,
     })
 
@@ -202,8 +207,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     const prepared = decision.result
     const selected = prepared?.model ?? input.draft.model
     if (prepared?.model || !message.model.modelID) {
-      message.model = { ...selected, variant: prepared?.model ? prepared.model.variant : input.draft.variant }
-      add()
+      add({ ...selected, variant: prepared?.model ? prepared.model.variant : input.draft.variant })
     }
     if (input.jev?.state.enabled) {
       for (const skill of prepared?.skills ?? []) requestParts.push({
@@ -673,6 +677,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       messageID,
       optimisticBusy: sessionDirectory === projectDirectory,
       before: waitForWorktree,
+      onCancel: () => {
+        if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
+      },
     }).then((sent) => {
       if (!sent && restoreInput()) restoreCommentItems(submission.target(), commentItems)
     }).catch((err) => {

@@ -18,7 +18,7 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 
 ## Features — Context and Usage Dashboard
 
-- [ ] Redesign the Context details page as one compact, understandable dashboard. The current page is excessively long and confusing, with repeated provider-attempt groups and original-prompt/request lists obscuring useful information.
+- [x] Redesign the Context details page as one compact, understandable dashboard. Implemented summary cards, role/model averages and shares, effort counts, Jev/Headroom summaries, and transport timing over the full session tree. Automated aggregation checks pass; visual verification remains pending.
   - Remove raw requests, original prompts, prompt IDs, and per-request/provider-attempt lists from the user-facing page. Preserve the underlying records and backend access for AI review and diagnostics; hiding them must not delete evidence.
   - Keep Headroom results and Jev decisions visible as concise summaries, with focused detail only when useful.
   - Show average token usage per model, with input, output, and cache usage clearly distinguished; label the averaging unit and reporting scope.
@@ -32,28 +32,28 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 
 ### API, Authorization, and Session Reliability
 
-- [ ] **P1 — Align the app's V2 client with the current server.** The vendored client disagrees with server prompt payloads and catalog routes; the wire mismatch was reproduced.
+- [x] **P1 — Align the app's V2 client with the current server.** The existing shared compatibility adapter uses the current generated client for prompt payloads and catalog routes; focused contract tests pass.
   - Evidence: `packages/app/package.json:59`, `packages/protocol/src/groups/session.ts:215`.
   - Expected: the app uses compatible prompt payloads and catalog routes through the shared API client owner.
-- [ ] **P1 — Enforce external-directory authorization in Core search.** Grep and glob can access paths that Read would require permission to access.
+- [x] **P1 — Enforce external-directory authorization in Core search.** Existing grep/glob authorization uses canonical path resolution and the shared external-directory permission boundary; focused permission regressions pass.
   - Evidence: `packages/core/src/tool/grep.ts:112`, `packages/core/src/tool/glob.ts:62`.
   - Expected: external-directory searches honor the same authorization boundary as Read.
-- [ ] **P1 — Reject truncated compaction summaries.** Incomplete summaries can replace the model's working history; reproduced with a scripted stream.
+- [x] **P1 — Reject truncated compaction summaries.** Existing completion validation rejects truncated, missing-finish, errored, empty, and post-finish output; scripted-stream regressions pass.
   - Evidence: `packages/core/src/session/compaction.ts:199`.
   - Expected: an incomplete summary cannot replace valid working history.
-- [ ] **P1 — Reconcile existing V2 sessions after reconnecting.** Status/history can remain stale, leaving finished sessions busy and incomplete and blocking queued work.
+- [x] **P1 — Reconcile existing V2 sessions after reconnecting.** Existing reconnect reconciliation refreshes cached history before clearing stale status and preserves newer events; focused regressions pass. Manual reconnect verification remains pending.
   - Evidence: `packages/app/src/context/server-sync.tsx:547`.
   - Expected: reconnect restores history and current status, clears completed runs' busy state, and unblocks queued work.
 - [ ] Ensure native processes terminate after cancellation; investigate processes that continue running after their owning operation is cancelled.
 
 ### Composer, Attachments, and Chat Layout
 
-- [ ] **P2 — Keep pending attachments in their originating chat.** Switching chats during processing changes the attachment target; reproduced.
+- [x] **P2 — Keep pending attachments in their originating chat.** Capture the originating draft before processing or opening a picker. Upload, native-picker, file-input, and draft-preservation regressions pass; manual UI verification remains pending.
   - Evidence: `packages/session-ui/src/v2/components/prompt-input/interaction.ts:88`.
   - Expected: starting an attachment in A and switching to B never attaches it to B.
-- [ ] Fix queued images breaking after reload; queued image inputs must remain usable when the session is restored.
+- [x] Fix queued images breaking after reload; queued follow-ups now use blob-backed draft persistence. Durable-reference hydration is unit-tested; reload/send verification remains pending.
 - [ ] Preserve resource identity when serializing MCP mentions so mentions continue to refer to the intended resource.
-- [ ] Preserve each project's unsent new-chat draft when navigating away or clicking New Chat for that project again, instead of clearing the typed text.
+- [x] Preserve each project's unsent new-chat draft when navigating away or clicking New Chat for that project again. New Chat reuses the existing draft for the same server and project after tab hydration; explicitly supplied prompt text still creates a new draft. Manual navigation verification remains pending.
 - [ ] Fix the plan panel's scrollbar overflowing over the chat; keep it contained within the plan panel.
 - [ ] Make resizing accessible by keyboard, including Home's resize controls.
 
@@ -69,8 +69,8 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 
 ### Status and Draft Bugs
 
-- [ ] Fix the status label under a sent message remaining stuck on "Jev is selecting a model" after Jev has selected the model.
-- [ ] Preserve the active draft when Stop is pressed during Jev preparation instead of losing the user's input.
+- [x] Fix the status label under a sent message remaining stuck on "Jev is selecting a model" after Jev has selected the model. Optimistic model updates are immutable and refresh Jev decision history immediately; manual UI verification remains pending.
+- [x] Preserve the active draft when Stop is pressed during Jev preparation instead of losing the user's input. Abort preparation and restore the captured draft immediately; cancellation and late-result regressions pass.
 
 ### Model Routing and Efficiency
 
@@ -88,6 +88,8 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 ### Request Latency and Avoidable Model Work
 
 - [ ] Instrument request dispatch, first response, retry reason, and backoff; recover stalls safely while preserving partial output and avoiding repeated completed actions.
+  - [x] Native HTTP dispatch, response headers, retry reasons, and backoff are recorded with request correlation; V2 model usage retains timing and durable retry events. Existing pre-response retry limits remain in place; tests confirm response-stream failures are not retried.
+  - Remaining: production stall diagnosis and a dedicated automatic stall-recovery policy. Other transports may lack timing; the dashboard labels this coverage explicitly.
   - Evidence: one Mesto record waited 18m24s before its first stored response step; existing records cannot identify the source of that wait.
 - [ ] Reduce administrative model round trips by batching independent lookups and deriving deterministic progress updates from actual tool results.
   - Evidence: 151 assistant steps only executed `todowrite`, carrying 34.5 million cumulative input tokens. Their entire duration is not necessarily removable.
@@ -106,7 +108,7 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 
 ### Provider Caching and Usage Accounting
 
-- [ ] Include compaction tokens, cache usage, and costs in session totals; these calls currently disappear from totals.
+- [x] Include compaction tokens, cache usage, and known costs in session totals, including rejected summaries. Dedicated durable accounting events preserve usage independently of summary acceptance; replay and totals regressions pass. Unreported costs remain unknown in usage records.
 - [ ] Fix OpenRouter cache hints lost in multimodal and certain assistant/tool placements.
 - [ ] Verify live-provider cache behavior and record actual billed costs; stored zero values do not establish zero primary-provider cost.
 - [ ] Measure production performance and before/after optimization results while preserving relevant test coverage. Actual speedups and billed savings remain unmeasured.
@@ -122,6 +124,16 @@ These tasks support the corresponding fixes above; extend existing implementatio
 - [ ] Share resize-handle behavior with Home's separate keyboard implementation; coordinate with keyboard accessibility fixes.
 
 ## Verification and Audit Follow-Up
+
+### Completed Implementation Checks — September 23, 2026
+
+- [x] Mark implemented attachment ownership, queued-image persistence, project draft preservation, Jev cancellation/status, Context dashboard, and compaction-accounting work above.
+- [x] Run 187 focused regression tests and seven package typechecks for the implementation batch; regenerate the shared client contract.
+- [x] Recheck the four existing P1 fixes with focused regressions before marking them complete.
+- [x] Rebuild the web app and desktop app, including the embedded backend, using each package's `bun run build` script.
+- Visual verification, live-provider billing, production performance, and automatic stall recovery remain pending as noted above.
+
+### Remaining Audit Follow-Up
 
 - [ ] Investigate the four localization test failures reported by the audit.
 - [ ] Resolve the reported lint error and triage warnings.

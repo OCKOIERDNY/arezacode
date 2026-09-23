@@ -389,10 +389,11 @@ describe("prompt submit worktree selection", () => {
     const { sendFollowupDraft } = await import("./submit")
     const gate = Promise.withResolvers<{ status: "ready"; routing: "selected"; model: { providerID: string; modelID: string; variant: string }; skills: [] }>()
     const requests: unknown[] = []
+    const messages: Array<{ model: { modelID: string; variant?: string } }> = []
     const base = {
       api: { prompt: async (input: unknown) => { requests.push(input) } },
       serverSync: { session: { set: () => undefined } },
-      sync: { data: { command: [] }, session: { optimistic: { add: () => undefined, remove: () => undefined } } },
+      sync: { data: { command: [] }, session: { optimistic: { add: (input: { message: typeof messages[number] }) => messages.push(input.message), remove: () => undefined } } },
       draft: { sessionID: "session-route", sessionDirectory: "/repo", prompt: [{ type: "text", content: "Review authentication", start: 0, end: 21 }], context: [], agent: "build", model: { providerID: "original", modelID: "original" }, variant: "low", jev: { auto: true, models: [{ providerID: "chosen", modelID: "astra", variant: "high" }] } },
       jev: { state: { enabled: true, routing: true }, prepare: () => gate.promise },
       routingError: "Choose a model or retry",
@@ -403,9 +404,43 @@ describe("prompt submit worktree selection", () => {
     gate.resolve({ status: "ready", routing: "selected", model: { providerID: "chosen", modelID: "astra", variant: "high" }, skills: [] })
     expect(await pending).toBe(true)
     expect(requests).toMatchObject([{ model: { providerID: "chosen", modelID: "astra" }, variant: "high" }])
+    expect(messages[0].model.modelID).toBe("")
+    expect(messages[1].model).toMatchObject({ modelID: "astra", variant: "high" })
+    expect(messages[1]).not.toBe(messages[0])
     const uncertain = { ...base, jev: { state: base.jev.state, prepare: async () => ({ status: "ready", routing: "uncertain", skills: [] }) } }
     await expect(sendFollowupDraft(uncertain as unknown as Parameters<typeof sendFollowupDraft>[0])).rejects.toThrow("Choose a model or retry")
     expect(requests).toHaveLength(1)
+  })
+
+  test("Stop cancels pending Jev preparation immediately without sending a late decision", async () => {
+    const { sendFollowupDraft } = await import("./submit")
+    params = { id: "session-cancel" }
+    const started = Promise.withResolvers<AbortSignal>()
+    const decision = Promise.withResolvers<undefined>()
+    let restored = false
+    let sent = false
+    const sending = sendFollowupDraft({
+      scope: "local",
+      api: { prompt: async () => { sent = true } },
+      serverSync: { session: { set() {} } },
+      sync: { data: { command: [] }, session: { optimistic: { add() {}, remove() {} } } },
+      draft: { sessionID: params.id, sessionDirectory: "/repo/main", prompt: promptValue, context: [], agent: "build", model: { providerID: "provider", modelID: "model" } },
+      jev: { state: { enabled: true }, prepare: (_: unknown, __: string, signal: AbortSignal) => { started.resolve(signal); return decision.promise } },
+      onCancel: () => { restored = true },
+    } as unknown as Parameters<typeof sendFollowupDraft>[0])
+    const signal = await started.promise
+    const submit = createPromptSubmit({
+      prompt, info: () => ({ id: "session-cancel" }), imageAttachments: () => [], commentCount: () => 0,
+      autoAccept: () => false, mode: () => "normal", working: () => true, editor: () => undefined,
+      queueScroll() {}, promptLength: () => 2, addToHistory() {}, resetHistoryNavigation() {}, setMode() {}, setPopover() {},
+    })
+    await submit.abort()
+    expect(signal.aborted).toBe(true)
+    expect(restored).toBe(true)
+    expect(await sending).toBe(false)
+    decision.resolve(undefined)
+    await Promise.resolve()
+    expect(sent).toBe(false)
   })
 
   test("reads the latest worktree accessor value per submit", async () => {

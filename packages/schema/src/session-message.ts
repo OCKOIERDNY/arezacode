@@ -177,6 +177,13 @@ export const Usage = Schema.Struct({
   responseProvider: Schema.String.pipe(optional),
   costSource: Schema.Literals(["reported", "estimated", "unknown"]),
   prices: Model.Cost.pipe(optional),
+  timing: Schema.Struct({
+    startedAt: Schema.Finite,
+    dispatchedAt: Schema.Finite.pipe(optional),
+    firstResponseAt: Schema.Finite.pipe(optional),
+    firstEventAt: Schema.Finite.pipe(optional),
+    retries: Schema.Array(Schema.Struct({ time: Schema.Finite, attempt: Schema.Int, reason: Schema.String, delayMs: Schema.Finite })),
+  }).pipe(optional),
   request: Schema.Struct({
     systemCharacters: Schema.Int,
     messageCharacters: Schema.Int,
@@ -188,7 +195,7 @@ export type Usage = typeof Usage.Type
 
 export const UsageEntry = Schema.Struct({
   id: ID,
-  kind: Schema.Literals(["model", "jev", "automation"]).pipe(optional),
+  kind: Schema.Literals(["model", "jev", "automation", "compaction"]).pipe(optional),
   promptID: ID.pipe(optional),
   model: Model.Ref,
   decision: Schema.Struct({

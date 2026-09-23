@@ -58,10 +58,12 @@ for (const reason of ["stop", "length", "content-filter", "tool-calls", "error",
   it.effect(`compaction only commits a complete summary: ${reason}`, () =>
     Effect.gen(function* () {
       const published: string[] = []
+      const accounting: unknown[] = []
       const events = EventV2.Service.of({
         transaction: (effect) => effect,
         publish: (definition, data) => Effect.sync(() => {
           published.push(definition.type)
+          if (definition.type === SessionEvent.Compaction.Accounted.type) accounting.push(data)
           return { id: EventV2.ID.create(), type: definition.type, data }
         }),
         subscribe: () => Stream.empty,
@@ -78,7 +80,7 @@ for (const reason of ["stop", "length", "content-filter", "tool-calls", "error",
       const text = LLMEvent.textDelta({ id: "summary", text: "Checkpoint" })
       const stream = [
         ...(reason === "empty" ? [] : [text]),
-        ...(reason === "eof" ? [] : [LLMEvent.finish({ reason: reason === "provider-error" || reason === "late-text" || reason === "empty" ? "stop" : reason })]),
+        ...(reason === "eof" ? [] : [LLMEvent.finish({ reason: reason === "provider-error" || reason === "late-text" || reason === "empty" ? "stop" : reason, usage: { inputTokens: 100, outputTokens: 20, cacheReadInputTokens: 50, cost: 0.01 } })]),
         ...(reason === "provider-error" ? [LLMEvent.providerError({ message: "failed" })] : []),
         ...(reason === "late-text" ? [text] : []),
       ]
@@ -95,9 +97,12 @@ for (const reason of ["stop", "length", "content-filter", "tool-calls", "error",
         }) }],
       })
       expect(result).toBe(reason === "stop")
+      expect(accounting).toHaveLength(1)
+      if (reason === "length" || reason === "content-filter" || reason === "tool-calls") expect(accounting[0]).toMatchObject({ finish: reason })
+      expect(accounting[0]).toMatchObject({ usage: reason === "eof" ? { costSource: "unknown" } : { input: 100, output: 20, cacheRead: 50, cost: 0.01, costSource: "reported" } })
       expect(published).toEqual(reason === "stop"
-        ? [SessionEvent.Compaction.Started.type, SessionEvent.Compaction.Ended.type]
-        : [SessionEvent.Compaction.Started.type])
+        ? [SessionEvent.Compaction.Started.type, SessionEvent.Compaction.Accounted.type, SessionEvent.Compaction.Ended.type]
+        : [SessionEvent.Compaction.Started.type, SessionEvent.Compaction.Accounted.type])
     }),
   )
 }

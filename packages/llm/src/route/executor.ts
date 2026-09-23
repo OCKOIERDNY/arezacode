@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Layer, Random } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Random } from "effect"
 import {
   FetchHttpClient,
   Headers,
@@ -31,6 +31,21 @@ export interface Interface {
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/LLM/RequestExecutor") {}
+
+export type TimingEvent =
+  | { type: "dispatch"; time: number }
+  | { type: "response"; time: number; status: number }
+  | { type: "retry"; time: number; attempt: number; reason: string; delayMs: number }
+
+export class Observer extends Context.Reference<(event: TimingEvent) => Effect.Effect<void>>("@opencode/LLM/RequestObserver", {
+  defaultValue: () => () => Effect.void,
+}) {}
+
+const observe = (event: TimingEvent) => Effect.gen(function* () {
+  const observer = yield* Observer
+  yield* Effect.logInfo("llm.request", event)
+  yield* observer(event)
+})
 
 const BODY_LIMIT = 16_384
 const MAX_RETRIES = 2
@@ -358,6 +373,7 @@ const retryStatusFailures = <A, R>(
   Effect.catchTag(effect, "LLM.Error", (error): Effect.Effect<A, LLMError, R> => {
     if (!error.retryable || retries <= 0) return Effect.fail(error)
     return retryDelay(error, attempt).pipe(
+      Effect.tap((delayMs) => Clock.currentTimeMillis.pipe(Effect.flatMap((time) => observe({ type: "retry", time, attempt: attempt + 1, reason: error.reason._tag, delayMs })))),
       Effect.flatMap((delay) => Effect.sleep(delay)),
       Effect.flatMap(() => retryStatusFailures(effect, retries - 1, attempt + 1)),
     )
@@ -370,12 +386,19 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient> = Layer.e
     const executeOnce = (request: HttpClientRequest.HttpClientRequest) =>
       Effect.gen(function* () {
         const redactedNames = yield* Headers.CurrentRedactedNames
+        yield* observe({ type: "dispatch", time: yield* Clock.currentTimeMillis })
         return yield* http
           .execute(request)
-          .pipe(Effect.mapError(toHttpError(redactedNames)), Effect.flatMap(statusError(request, redactedNames)))
+          .pipe(
+            Effect.tap((response) => Clock.currentTimeMillis.pipe(Effect.flatMap((time) => observe({ type: "response", time, status: response.status })))),
+            Effect.mapError(toHttpError(redactedNames)),
+            Effect.flatMap(statusError(request, redactedNames)),
+          )
       })
     return Service.of({
-      execute: (request) => retryStatusFailures(executeOnce(request)),
+      execute: (request) => Effect.suspend(() =>
+        retryStatusFailures(executeOnce(request)).pipe(Effect.annotateLogs({ requestID: crypto.randomUUID() })),
+      ),
     })
   }),
 )

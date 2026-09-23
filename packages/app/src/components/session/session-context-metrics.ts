@@ -1,6 +1,33 @@
 import type { AssistantMessage, Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { SessionMessage } from "@opencode-ai/schema/session-message"
 import { sessionUsage } from "@/utils/session-message"
+import type { ContextUsageEntry } from "./session-context-data"
+
+export function modelUsage(entries: readonly ContextUsageEntry[]) {
+  const calls = entries.filter((entry) => entry.kind !== "jev" && entry.kind !== "automation")
+  const groups = new Map<string, { role: ContextUsageEntry["role"]; model: ContextUsageEntry["model"]; entries: ContextUsageEntry[] }>()
+  for (const entry of calls) {
+    const key = JSON.stringify([entry.role, entry.model.providerID, entry.model.id])
+    const group = groups.get(key) ?? { role: entry.role, model: entry.model, entries: [] }
+    group.entries.push(entry)
+    groups.set(key, group)
+  }
+  return [...groups.values()].map((group) => ({
+    ...group,
+    share: group.entries.length / calls.length * 100,
+    modelCalls: calls.filter((entry) => entry.model.providerID === group.model.providerID && entry.model.id === group.model.id).length,
+    modelShare: calls.filter((entry) => entry.model.providerID === group.model.providerID && entry.model.id === group.model.id).length / calls.length * 100,
+    efforts: [...new Set(group.entries.map((entry) => entry.model.variant))].map((effort) => ({
+      effort, count: group.entries.filter((entry) => entry.model.variant === effort).length,
+    })),
+  })).sort((a, b) => b.entries.length - a.entries.length)
+}
+
+export function usageCacheRate(entries: readonly { usage?: SessionMessage.Usage }[]) {
+  const known = entries.flatMap(({ usage }) => usage?.input !== undefined && usage.cacheRead !== undefined && usage.input > 0 && usage.cacheRead >= 0 && usage.cacheRead <= usage.input ? [usage] : [])
+  const input = known.reduce((sum, usage) => sum + (usage.input ?? 0), 0)
+  return { value: input ? known.reduce((sum, usage) => sum + (usage.cacheRead ?? 0), 0) / input * 100 : undefined, missing: entries.length - known.length }
+}
 
 export function recordedUsage(message: AssistantMessage): SessionMessage.Usage | undefined {
   const usage = sessionUsage(message)

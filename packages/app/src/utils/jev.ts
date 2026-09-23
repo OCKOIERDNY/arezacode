@@ -43,10 +43,10 @@ export function createJevClient(server: ServerConnection.HttpBase, fetcher: type
     saving: false,
     error: false,
   })
-  const request = async (method: string, suffix = "", body?: unknown, directory?: string) => {
+  const request = async (method: string, suffix = "", body?: unknown, directory?: string, signal?: AbortSignal) => {
     const url = new URL(`/api/jev${suffix}`, server.url)
     if (directory) url.searchParams.set("location[directory]", directory)
-    return send(method, url.pathname + url.search, body, AbortSignal.timeout(10_000))
+    return send(method, url.pathname + url.search, body, signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000))
   }
   const refresh = async () => {
     const value = await request("GET").catch(() => undefined)
@@ -76,10 +76,11 @@ export function createJevClient(server: ServerConnection.HttpBase, fetcher: type
       setState({ ...value, loaded: true })
       return true
     },
-    async prepare(input: typeof Jev.Prepare.Type, directory: string): Promise<typeof Jev.Prepared.Type | undefined> {
+    async prepare(input: typeof Jev.Prepare.Type, directory: string, signal?: AbortSignal): Promise<typeof Jev.Prepared.Type | undefined> {
       if (!state.loaded) await refresh()
+      if (signal?.aborted) return
       if (!state.enabled) return
-      return request("POST", "/prepare", input, directory)
+      return request("POST", "/prepare", input, directory, signal)
         .then(Schema.decodeUnknownSync(Jev.Prepared))
         .catch(() => undefined)
     },

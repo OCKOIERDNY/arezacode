@@ -88,11 +88,7 @@ export function createPromptInputV2Controller(input: {
   const attachments = input.attachments
     ? createPromptInputV2Attachments({
         ...input.attachments,
-        capture: () => ({
-          current: () => draft.state.prompt,
-          cursor: () => draft.state.cursor,
-          set: draft.setPrompt,
-        }),
+        capture: draft.capture,
         editor: () => editor,
         focusEditor: () => editor?.focus(),
         addPart,
@@ -430,7 +426,7 @@ export function createPromptInputV2Controller(input: {
       fileInput = element
     },
     addAttachments(files: File[]) {
-      if (attachments) void attachments.addAttachments(files)
+      if (attachments) void attachments.addPickedAttachments(files)
     },
     setQuery(value: string) {
       dispatch({ type: "popover.query", value })

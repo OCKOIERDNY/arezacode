@@ -406,6 +406,20 @@ export const Retried = Event.define({
 export type Retried = typeof Retried.Type
 
 export namespace Compaction {
+  export const Accounted = Event.define({
+    type: "session.next.compaction.accounted",
+    ...options,
+    schema: {
+      ...Base,
+      messageID: SessionMessage.ID,
+      model: Model.Ref,
+      startedAt: Base.timestamp,
+      usage: SessionMessage.Usage,
+      tokens: Step.Ended.data.fields.tokens,
+      finish: Schema.String,
+    },
+  })
+
   export const Started = Event.define({
     type: "session.next.compaction.started",
     ...options,
@@ -482,6 +496,7 @@ export const DurableDefinitions = Event.inventory(
   Retried,
   Compaction.Started,
   Compaction.Ended,
+  Compaction.Accounted,
   RevertEvent.Staged,
   RevertEvent.Cleared,
   RevertEvent.Committed,
@@ -518,6 +533,7 @@ export const Definitions = Event.inventory(
   Compaction.Started,
   Compaction.Delta,
   Compaction.Ended,
+  Compaction.Accounted,
   RevertEvent.Staged,
   RevertEvent.Cleared,
   RevertEvent.Committed,

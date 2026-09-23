@@ -560,7 +560,7 @@ export type SessionsUsageInput = { readonly sessionID: { readonly sessionID: str
 
 export type SessionsUsageOutput = ReadonlyArray<{
   readonly id: string
-  readonly kind?: "model" | "jev" | "automation"
+  readonly kind?: "model" | "jev" | "automation" | "compaction"
   readonly promptID?: string
   readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
   readonly decision?: {
@@ -599,6 +599,18 @@ export type SessionsUsageOutput = ReadonlyArray<{
       readonly input: number
       readonly output: number
       readonly cache: { readonly read: number; readonly write: number }
+    }
+    readonly timing?: {
+      readonly startedAt: number
+      readonly dispatchedAt?: number
+      readonly firstResponseAt?: number
+      readonly firstEventAt?: number
+      readonly retries: ReadonlyArray<{
+        readonly time: number
+        readonly attempt: number
+        readonly reason: string
+        readonly delayMs: number
+      }>
     }
     readonly request?: {
       readonly systemCharacters: number
@@ -766,6 +778,18 @@ export type SessionsContextOutput = {
             readonly input: number
             readonly output: number
             readonly cache: { readonly read: number; readonly write: number }
+          }
+          readonly timing?: {
+            readonly startedAt: number
+            readonly dispatchedAt?: number
+            readonly firstResponseAt?: number
+            readonly firstEventAt?: number
+            readonly retries: ReadonlyArray<{
+              readonly time: number
+              readonly attempt: number
+              readonly reason: string
+              readonly delayMs: number
+            }>
           }
           readonly request?: {
             readonly systemCharacters: number
@@ -993,6 +1017,18 @@ export type SessionsHistoryOutput = {
               readonly output: number
               readonly cache: { readonly read: number; readonly write: number }
             }
+            readonly timing?: {
+              readonly startedAt: number
+              readonly dispatchedAt?: number
+              readonly firstResponseAt?: number
+              readonly firstEventAt?: number
+              readonly retries: ReadonlyArray<{
+                readonly time: number
+                readonly attempt: number
+                readonly reason: string
+                readonly delayMs: number
+              }>
+            }
             readonly request?: {
               readonly systemCharacters: number
               readonly messageCharacters: number
@@ -1033,6 +1069,18 @@ export type SessionsHistoryOutput = {
               readonly input: number
               readonly output: number
               readonly cache: { readonly read: number; readonly write: number }
+            }
+            readonly timing?: {
+              readonly startedAt: number
+              readonly dispatchedAt?: number
+              readonly firstResponseAt?: number
+              readonly firstEventAt?: number
+              readonly retries: ReadonlyArray<{
+                readonly time: number
+                readonly attempt: number
+                readonly reason: string
+                readonly delayMs: number
+              }>
             }
             readonly request?: {
               readonly systemCharacters: number
@@ -1081,6 +1129,18 @@ export type SessionsHistoryOutput = {
               readonly input: number
               readonly output: number
               readonly cache: { readonly read: number; readonly write: number }
+            }
+            readonly timing?: {
+              readonly startedAt: number
+              readonly dispatchedAt?: number
+              readonly firstResponseAt?: number
+              readonly firstEventAt?: number
+              readonly retries: ReadonlyArray<{
+                readonly time: number
+                readonly attempt: number
+                readonly reason: string
+                readonly delayMs: number
+              }>
             }
             readonly request?: {
               readonly systemCharacters: number
@@ -1301,6 +1361,66 @@ export type SessionsHistoryOutput = {
           readonly reason: "auto" | "manual"
           readonly text: string
           readonly recent: string
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "session.next.compaction.accounted"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly timestamp: number
+          readonly sessionID: string
+          readonly messageID: string
+          readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+          readonly startedAt: number
+          readonly usage: {
+            readonly version: 1
+            readonly input?: number
+            readonly output?: number
+            readonly reasoning?: number
+            readonly cacheRead?: number
+            readonly cacheWrite?: number
+            readonly total?: number
+            readonly cost?: number
+            readonly upstreamCost?: number
+            readonly responseID?: string
+            readonly responseModel?: string
+            readonly responseProvider?: string
+            readonly costSource: "reported" | "estimated" | "unknown"
+            readonly prices?: {
+              readonly tier?: { readonly type: "context"; readonly size: number }
+              readonly input: number
+              readonly output: number
+              readonly cache: { readonly read: number; readonly write: number }
+            }
+            readonly timing?: {
+              readonly startedAt: number
+              readonly dispatchedAt?: number
+              readonly firstResponseAt?: number
+              readonly firstEventAt?: number
+              readonly retries: ReadonlyArray<{
+                readonly time: number
+                readonly attempt: number
+                readonly reason: string
+                readonly delayMs: number
+              }>
+            }
+            readonly request?: {
+              readonly systemCharacters: number
+              readonly messageCharacters: number
+              readonly toolCharacters: number
+              readonly cacheKey: string
+            }
+          }
+          readonly tokens: {
+            readonly input: number
+            readonly output: number
+            readonly reasoning: number
+            readonly cache: { readonly read: number; readonly write: number }
+          }
+          readonly finish: string
         }
       }
     | {
@@ -1544,6 +1664,18 @@ export type SessionsEventsOutput =
             readonly output: number
             readonly cache: { readonly read: number; readonly write: number }
           }
+          readonly timing?: {
+            readonly startedAt: number
+            readonly dispatchedAt?: number
+            readonly firstResponseAt?: number
+            readonly firstEventAt?: number
+            readonly retries: ReadonlyArray<{
+              readonly time: number
+              readonly attempt: number
+              readonly reason: string
+              readonly delayMs: number
+            }>
+          }
           readonly request?: {
             readonly systemCharacters: number
             readonly messageCharacters: number
@@ -1584,6 +1716,18 @@ export type SessionsEventsOutput =
             readonly input: number
             readonly output: number
             readonly cache: { readonly read: number; readonly write: number }
+          }
+          readonly timing?: {
+            readonly startedAt: number
+            readonly dispatchedAt?: number
+            readonly firstResponseAt?: number
+            readonly firstEventAt?: number
+            readonly retries: ReadonlyArray<{
+              readonly time: number
+              readonly attempt: number
+              readonly reason: string
+              readonly delayMs: number
+            }>
           }
           readonly request?: {
             readonly systemCharacters: number
@@ -1632,6 +1776,18 @@ export type SessionsEventsOutput =
             readonly input: number
             readonly output: number
             readonly cache: { readonly read: number; readonly write: number }
+          }
+          readonly timing?: {
+            readonly startedAt: number
+            readonly dispatchedAt?: number
+            readonly firstResponseAt?: number
+            readonly firstEventAt?: number
+            readonly retries: ReadonlyArray<{
+              readonly time: number
+              readonly attempt: number
+              readonly reason: string
+              readonly delayMs: number
+            }>
           }
           readonly request?: {
             readonly systemCharacters: number
@@ -1857,6 +2013,66 @@ export type SessionsEventsOutput =
   | {
       readonly id: string
       readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.compaction.accounted"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly model: { readonly id: string; readonly providerID: string; readonly variant?: string }
+        readonly startedAt: number
+        readonly usage: {
+          readonly version: 1
+          readonly input?: number
+          readonly output?: number
+          readonly reasoning?: number
+          readonly cacheRead?: number
+          readonly cacheWrite?: number
+          readonly total?: number
+          readonly cost?: number
+          readonly upstreamCost?: number
+          readonly responseID?: string
+          readonly responseModel?: string
+          readonly responseProvider?: string
+          readonly costSource: "reported" | "estimated" | "unknown"
+          readonly prices?: {
+            readonly tier?: { readonly type: "context"; readonly size: number }
+            readonly input: number
+            readonly output: number
+            readonly cache: { readonly read: number; readonly write: number }
+          }
+          readonly timing?: {
+            readonly startedAt: number
+            readonly dispatchedAt?: number
+            readonly firstResponseAt?: number
+            readonly firstEventAt?: number
+            readonly retries: ReadonlyArray<{
+              readonly time: number
+              readonly attempt: number
+              readonly reason: string
+              readonly delayMs: number
+            }>
+          }
+          readonly request?: {
+            readonly systemCharacters: number
+            readonly messageCharacters: number
+            readonly toolCharacters: number
+            readonly cacheKey: string
+          }
+        }
+        readonly tokens: {
+          readonly input: number
+          readonly output: number
+          readonly reasoning: number
+          readonly cache: { readonly read: number; readonly write: number }
+        }
+        readonly finish: string
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
       readonly type: "session.next.revert.staged"
       readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
       readonly location?: { readonly directory: string; readonly workspaceID?: string }
@@ -2058,6 +2274,18 @@ export type SessionsMessageOutput = {
             readonly output: number
             readonly cache: { readonly read: number; readonly write: number }
           }
+          readonly timing?: {
+            readonly startedAt: number
+            readonly dispatchedAt?: number
+            readonly firstResponseAt?: number
+            readonly firstEventAt?: number
+            readonly retries: ReadonlyArray<{
+              readonly time: number
+              readonly attempt: number
+              readonly reason: string
+              readonly delayMs: number
+            }>
+          }
           readonly request?: {
             readonly systemCharacters: number
             readonly messageCharacters: number
@@ -2256,6 +2484,18 @@ export type MessagesListOutput = {
             readonly input: number
             readonly output: number
             readonly cache: { readonly read: number; readonly write: number }
+          }
+          readonly timing?: {
+            readonly startedAt: number
+            readonly dispatchedAt?: number
+            readonly firstResponseAt?: number
+            readonly firstEventAt?: number
+            readonly retries: ReadonlyArray<{
+              readonly time: number
+              readonly attempt: number
+              readonly reason: string
+              readonly delayMs: number
+            }>
           }
           readonly request?: {
             readonly systemCharacters: number

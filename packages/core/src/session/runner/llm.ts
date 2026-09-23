@@ -9,6 +9,7 @@ import {
   isContextOverflowFailure,
   type ProviderErrorEvent,
 } from "@opencode-ai/llm"
+import { RequestExecutor } from "@opencode-ai/llm/route"
 import { Cause, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
@@ -32,6 +33,7 @@ import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
 import { SessionHealth } from "../health"
+import { SessionMessage } from "../message"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { type RunError, Service } from "./index"
@@ -259,6 +261,7 @@ const layer = Layer.effect(
       if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request }))
         return yield* Effect.die(continueAfterCompaction(currentStep))
       const startSnapshot = yield* snapshots.capture()
+      let timing: NonNullable<SessionMessage.Usage["timing"]> = { startedAt: Date.now(), retries: [] }
       const publisher = createLLMEventPublisher(events, {
         sessionID: session.id,
         agent: agent.id,
@@ -268,6 +271,7 @@ const layer = Layer.effect(
           ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
         },
         snapshot: startSnapshot,
+        timing: () => timing,
         prices: yield* Effect.serviceOption(Catalog.Service).pipe(Effect.flatMap((catalog) => Option.isSome(catalog)
           ? catalog.value.model.available().pipe(Effect.map((items) => items.find((item) => String(item.providerID) === model.provider && String(item.api.id) === model.id)?.cost))
           : Effect.succeed(undefined))),
@@ -285,6 +289,7 @@ const layer = Layer.effect(
       const providerStream = llm.stream(request).pipe(
         Stream.runForEach((event) =>
           Effect.gen(function* () {
+            if (timing.firstEventAt === undefined) timing = { ...timing, firstEventAt: Date.now() }
             if (overflowFailure || publisher.hasProviderError()) return
             if (LLMEvent.is.providerError(event)) {
               if (isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
@@ -329,6 +334,19 @@ const layer = Layer.effect(
           }),
         ),
         Effect.ensuring(withPublication(publisher.flush())),
+        Effect.provideService(RequestExecutor.Observer, (event) => Effect.gen(function* () {
+          if (event.type === "dispatch" && timing.dispatchedAt === undefined) timing = { ...timing, dispatchedAt: event.time }
+          if (event.type === "response" && timing.firstResponseAt === undefined) timing = { ...timing, firstResponseAt: event.time }
+          if (event.type !== "retry") return
+          timing = { ...timing, retries: [...timing.retries, { time: event.time, attempt: event.attempt, reason: event.reason, delayMs: event.delayMs }] }
+          yield* events.publish(SessionEvent.Retried, {
+            sessionID: session.id,
+            timestamp: DateTime.makeUnsafe(event.time),
+            attempt: event.attempt,
+            error: { message: event.reason, isRetryable: true, metadata: { delayMs: String(event.delayMs) } },
+          })
+        })),
+        Effect.annotateLogs({ sessionID: session.id, provider: model.provider, model: model.id }),
       )
 
       return yield* Effect.uninterruptibleMask((restore) =>

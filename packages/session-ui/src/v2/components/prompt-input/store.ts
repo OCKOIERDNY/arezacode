@@ -29,6 +29,21 @@ export function createPromptInputV2Store(input: PromptInputV2StoreInput) {
     get state() {
       return store()
     },
+    capture() {
+      const target = tuple()
+      const state = typeof target[0] === "function" ? target[0]() : target[0]
+      const set = target[1]
+      return {
+        current: () => state.prompt,
+        cursor: () => state.cursor,
+        set(prompt: PromptInputV2Prompt, cursor?: number) {
+          batch(() => {
+            set("prompt", prompt)
+            if (cursor !== undefined) set("cursor", cursor)
+          })
+        },
+      }
+    },
     setPrompt(prompt: PromptInputV2Prompt, cursor?: number) {
       batch(() => {
         setStore()("prompt", prompt)

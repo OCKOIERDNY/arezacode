@@ -592,12 +592,23 @@ describe("SessionRunnerLLM", () => {
     expect(records).toHaveLength(1)
     expect(records[0]?.promptID).toBeDefined()
     expect(records[0]?.usage).toMatchObject({ input: 1000, output: 120, total: 1120, cacheRead: 600, cacheWrite: 100, cost: 0.012, costSource: "reported" })
+    expect(records[0]?.usage?.timing?.firstEventAt).toBeGreaterThanOrEqual(records[0]?.usage?.timing?.startedAt ?? 0)
     const compactionID = SessionMessage.ID.create()
     yield* events.publish(SessionEvent.Compaction.Started, { sessionID, messageID: compactionID, timestamp: DateTime.nowUnsafe(), reason: "manual" })
     yield* events.publish(SessionEvent.Compaction.Ended, { sessionID, messageID: compactionID, timestamp: DateTime.nowUnsafe(), reason: "manual", text: "summary", recent: "" })
     yield* replaySessionProjection(sessionID)
     expect(yield* session.usage(sessionID)).toEqual(records)
     expect((yield* session.get(sessionID)).cost).toBeCloseTo(0.012)
+    yield* events.publish(SessionEvent.Compaction.Accounted, {
+      sessionID, messageID: compactionID, timestamp: DateTime.nowUnsafe(), startedAt: DateTime.nowUnsafe(),
+      model: { providerID: ProviderV2.ID.make("test"), id: ModelV2.ID.make("summary") },
+      usage: { version: 1, input: 100, output: 20, cacheRead: 50, cost: 0.01, costSource: "reported" },
+      tokens: { input: 50, output: 20, reasoning: 0, cache: { read: 50, write: 0 } }, finish: "length",
+    })
+    expect((yield* session.usage(sessionID)).find((entry) => entry.kind === "compaction")).toMatchObject({ usage: { cost: 0.01, cacheRead: 50 }, finish: "length" })
+    expect((yield* session.get(sessionID)).cost).toBeCloseTo(0.022)
+    yield* replaySessionProjection(sessionID)
+    expect((yield* session.get(sessionID)).cost).toBeCloseTo(0.022)
     requests.length = 0
     response = []
   }))

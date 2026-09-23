@@ -1,6 +1,6 @@
 export * as SessionCompaction from "./compaction"
 
-import { LLM, LLMError, LLMEvent, Message, type LLMRequest, type Model } from "@opencode-ai/llm"
+import { LLM, LLMError, LLMEvent, Message, type LLMRequest, type Model, type Usage } from "@opencode-ai/llm"
 import { DateTime, Effect, Stream } from "effect"
 import type { Config } from "../config"
 import type { EventV2 } from "../event"
@@ -8,6 +8,9 @@ import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { Token } from "../util/token"
+import { accountUsage, usageTokens } from "./runner/publish-llm-event"
+import { ModelV2 } from "../model"
+import { ProviderV2 } from "../provider"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
@@ -189,16 +192,19 @@ export const make = (dependencies: Dependencies) => {
     const summaryOutput = Math.min(output || SUMMARY_OUTPUT_TOKENS, SUMMARY_OUTPUT_TOKENS)
     if (Token.estimate(summaryPrompt) > context - summaryOutput) return false
     const messageID = SessionMessage.ID.create()
+    const startedAt = yield* DateTime.now
     yield* dependencies.events.publish(SessionEvent.Compaction.Started, {
       sessionID: input.sessionID,
       messageID,
-      timestamp: yield* DateTime.now,
+      timestamp: startedAt,
       reason: "auto",
     })
 
     const chunks: string[] = []
     let failed = false
     let finished = false
+    let usage: Usage | undefined
+    let finish = "incomplete"
     const summarized = yield* dependencies.llm
       .stream(
         LLM.request({
@@ -212,16 +218,30 @@ export const make = (dependencies: Dependencies) => {
       .pipe(
         Stream.runForEach((event) => {
           if (finished) failed = true
-          if (LLMEvent.is.providerError(event)) failed = true
+          if (LLMEvent.is.providerError(event)) { failed = true; finish = "error" }
+          if (LLMEvent.is.stepFinish(event) || LLMEvent.is.finish(event)) usage = event.usage ?? usage
           if (LLMEvent.is.finish(event)) {
             finished = true
+            finish = event.reason
             if (event.reason !== "stop") failed = true
           }
           if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
           return Effect.void
         }),
         Effect.as(true),
-        Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
+        Effect.catchTag("LLM.Error", () => { finish = "error"; return Effect.succeed(false) }),
+        Effect.ensuring(Effect.gen(function* () {
+          yield* dependencies.events.publish(SessionEvent.Compaction.Accounted, {
+            sessionID: input.sessionID,
+            messageID,
+            model: { providerID: ProviderV2.ID.make(input.model.provider), id: ModelV2.ID.make(input.model.id) },
+            timestamp: yield* DateTime.now,
+            startedAt,
+            usage: accountUsage(usage),
+            tokens: usageTokens(usage),
+            finish: failed && finish === "stop" ? "incomplete" : finish,
+          })
+        })),
       )
     const summary = chunks.join("")
     if (!summarized || !finished || failed || !summary.trim()) return false

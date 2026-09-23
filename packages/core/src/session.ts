@@ -333,12 +333,13 @@ const layer = Layer.effect(
         const rows = yield* db.select({
           type: EventTable.type,
           data: sql<string>`json_remove(${EventTable.data}, '$.prompt')`,
-        }).from(EventTable).where(and(eq(EventTable.aggregate_id, sessionID), or(...[SessionEvent.Prompted, SessionEvent.Step.Started, SessionEvent.Step.Ended, SessionEvent.Step.Failed].map((event) => like(EventTable.type, `${event.type}.%`))))).orderBy(asc(EventTable.seq)).all().pipe(Effect.orDie)
+        }).from(EventTable).where(and(eq(EventTable.aggregate_id, sessionID), or(...[SessionEvent.Prompted, SessionEvent.Step.Started, SessionEvent.Step.Ended, SessionEvent.Step.Failed, SessionEvent.Compaction.Accounted].map((event) => like(EventTable.type, `${event.type}.%`))))).orderBy(asc(EventTable.seq)).all().pipe(Effect.orDie)
         const entries = new Map<SessionMessage.ID, SessionMessage.UsageEntry>()
         let promptID: SessionMessage.ID | undefined
         let currentID: SessionMessage.ID | undefined
         const decode = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({
           timestamp: SessionEvent.Step.Started.data.fields.timestamp,
+          startedAt: SessionEvent.Step.Started.data.fields.timestamp.pipe(Schema.optional),
           messageID: SessionMessage.ID.pipe(Schema.optional),
           assistantMessageID: SessionMessage.ID.pipe(Schema.optional),
           model: ModelV2.Ref.pipe(Schema.optional),
@@ -348,6 +349,13 @@ const layer = Layer.effect(
         for (const row of rows) {
           const data = yield* decode(row.data).pipe(Effect.orDie)
           if (row.type.startsWith(SessionEvent.Prompted.type + ".")) { promptID = data.messageID; continue }
+          if (row.type.startsWith(SessionEvent.Compaction.Accounted.type + ".")) {
+            if (data.messageID && data.model) entries.set(data.messageID, {
+              id: data.messageID, promptID, kind: "compaction", model: data.model, usage: data.usage, finish: data.finish,
+              time: { created: data.startedAt ?? data.timestamp, completed: data.timestamp },
+            })
+            continue
+          }
           const id = data.assistantMessageID ?? currentID
           if (!id) continue
           if (row.type.startsWith(SessionEvent.Step.Started.type + ".") && data.model) {
@@ -367,7 +375,7 @@ const layer = Layer.effect(
             model: { providerID: message.providerID, id: message.modelID, variant: message.variant ? ModelV2.VariantID.make(message.variant) : undefined },
             usage: { version: 1, input: message.tokens.input + message.tokens.cache.read + message.tokens.cache.write,
               cacheRead: message.tokens.cache.read, cacheWrite: message.tokens.cache.write, output: message.tokens.output + message.tokens.reasoning,
-              reasoning: message.tokens.reasoning, total: message.tokens.total, cost: message.cost, costSource: "unknown" },
+              reasoning: message.tokens.reasoning, total: message.tokens.total, cost: message.cost > 0 ? message.cost : undefined, costSource: "unknown" },
             finish: message.error ? "error" : message.finish,
             time: { created: DateTime.makeUnsafe(message.time.created), completed: message.time.completed === undefined ? undefined : DateTime.makeUnsafe(message.time.completed) },
           })

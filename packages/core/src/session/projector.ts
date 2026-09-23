@@ -426,6 +426,9 @@ const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.Reasoning.Ended, (event) => run(db, event))
     // yield* events.project(SessionEvent.Retried, (event) => run(db, event))
     yield* events.project(SessionEvent.Compaction.Ended, (event) => run(db, event))
+    yield* events.project(SessionEvent.Compaction.Accounted, (event) =>
+      applyUsage(db, event.data.sessionID, { cost: event.data.usage.cost ?? 0, tokens: event.data.tokens }),
+    )
     yield* events.project(SessionEvent.RevertEvent.Staged, (event) =>
       db
         .update(SessionTable)

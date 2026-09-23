@@ -340,7 +340,7 @@ export function MessageTimeline(props: {
   const routingScope = createMemo(() => JSON.stringify([serverSDK().scope, sessionID()]))
   const routingRefresh = createMemo(() => {
     const last = sessionMessages().at(-1)
-    return JSON.stringify([routingScope(), last?.id, last?.role === "assistant" ? last.time.completed : undefined, sessionStatus().type])
+    return JSON.stringify([routingScope(), last?.id, last?.role === "assistant" ? last.time.completed : last?.model, sessionStatus().type])
   })
   const [routing, setRouting] = createStore({ scope: "", entries: [] as (typeof SessionMessage.UsageEntry.Encoded)[], error: false })
   createEffect(on(routingRefresh, () => {
