@@ -103,8 +103,9 @@ export function SessionTodoDock(props: {
           settings.general.newLayoutDesigns(),
       }}
       style={{
-        "overflow-x": "visible",
-        "overflow-y": "hidden",
+        position: "relative",
+        isolation: "isolate",
+        overflow: "clip",
         "max-height": `${Math.max(78, full() - value() * (full() - 78))}px`,
       }}
     >
@@ -220,7 +221,7 @@ export function SessionTodoDock(props: {
 function TodoList(props: { todos: Todo[] }) {
   return (
     <ScrollView
-      viewportClass="px-3 pb-11 flex flex-col gap-1.5"
+      viewportClass="max-h-42 px-3 pb-11 flex flex-col gap-1.5"
       class="max-h-42 scroll-view--fade"
       orientation="vertical"
       style={{ "overflow-anchor": "none" }}
