@@ -31,6 +31,7 @@ import { SessionCompaction } from "../compaction"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
+import { SessionHealth } from "../health"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { type RunError, Service } from "./index"
@@ -204,10 +205,13 @@ const layer = Layer.effect(
           promoted += yield* SessionInput.promoteSteers(db, events, session.id, cutoff)
         }
         if (promoted > 0) currentStep = 1
+        if (promoted === 0 && step === 1 && (yield* SessionHealth.get(db, session.id)).locked)
+          return { needsContinuation: false, step: currentStep }
       }
       const system =
         initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
       const model = yield* models.resolve(session)
+      if (model.route.defaults.limits?.context) yield* SessionHealth.recordModel(db, session.id, { id: session.model?.id ?? model.id, providerID: session.model?.providerID ?? model.provider, context: model.route.defaults.limits.context })
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const original = entries.map((entry) => entry.message)
       const notice = yield* Effect.promise(() => automations.get(session.id)?.before(original) ?? Promise.resolve(""))
@@ -442,6 +446,7 @@ const layer = Layer.effect(
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
     }) {
+      if ((yield* SessionHealth.get(db, input.sessionID)).locked) return
       const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
       if (!input.force && !hasSteer && !hasQueue) return
@@ -464,9 +469,9 @@ const layer = Layer.effect(
           needsContinuation = result.needsContinuation
           step = result.step + 1
           promotion = "steer"
-          if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+          if (!needsContinuation && !(yield* SessionHealth.get(db, input.sessionID)).locked) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
         }
-        shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
+        shouldRun = !(yield* SessionHealth.get(db, input.sessionID)).locked && (yield* SessionInput.hasPending(db, input.sessionID, "queue"))
         promotion = shouldRun ? "queue" : undefined
       }
     }, Effect.scoped)

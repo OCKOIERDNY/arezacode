@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AssistantMessage, Message } from "@opencode-ai/sdk/v2/client"
-import { executionTiming, getSessionContext, getSessionCost, recordedUsage, usageTotal } from "./session-context-metrics"
+import { executionTiming, getSessionContext, getSessionCost, recordedUsage, responsePerformance, usageTotal } from "./session-context-metrics"
 
 test("execution timing separates overlapping work, checks, question waits and unmeasured time", () => {
   const timing = executionTiming(0, 100, [
@@ -52,6 +52,29 @@ const user = (id: string) => {
     time: { created: 1 },
   } as unknown as Message
 }
+
+test("response performance excludes incomplete calls and separates checks, tools and user waits", () => {
+  const messages = Array.from({ length: 10 }, (_, index) => ({
+    ...assistant(`response-${index}`, { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0),
+    time: { created: 0, completed: (index + 1) * 1000 },
+  }))
+  const result = responsePerformance([
+    ...messages,
+    assistant("incomplete", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0),
+  ], {
+    "response-9": [
+      { tool: "bash", start: 1000, end: 7000 },
+      { tool: "project_check", start: 5000, end: 6000 },
+      { tool: "question", start: 6000, end: 8000 },
+    ].map((item) => ({
+      id: item.tool, sessionID: "session", messageID: "response-9", callID: item.tool, type: "tool",
+      tool: item.tool,
+      state: { status: "completed", input: {}, output: "", title: "", metadata: {}, time: { start: item.start, end: item.end } },
+    })),
+  })
+  expect(result).toMatchObject({ last: 10_000, recent: 8000, previous: 3000, tools: 4000, checks: 1000, wait: 2000, other: 3000, model: 0 })
+  expect(responsePerformance([], {})).toBeUndefined()
+})
 
 describe("getSessionContext", () => {
   test("shows the detailed breakdown stored in legacy token fields", () => {

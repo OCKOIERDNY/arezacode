@@ -391,6 +391,20 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
+    if (params.id) {
+      const sessionID = params.id
+      const origin = sdk()
+      const health = await origin.api.session.health({ sessionID }).catch((error) => {
+        showToast({ variant: "error", title: language.t("common.requestFailed"), description: errorMessage(error) })
+      })
+      if (!health) return
+      if (health.locked) {
+        showToast({ title: language.t("context.health.lockedMessage") })
+        return
+      }
+      if (params.id !== sessionID || sdk() !== origin || !submission.current(prompt.capture()) || target.current() !== currentPrompt) return
+    }
+
     const modelSelection = input.model ?? local.model
     const currentModel = modelSelection.current()
     const currentAgent = local.agent.current()
@@ -659,6 +673,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       messageID,
       optimisticBusy: sessionDirectory === projectDirectory,
       before: waitForWorktree,
+    }).then((sent) => {
+      if (!sent && restoreInput()) restoreCommentItems(submission.target(), commentItems)
     }).catch((err) => {
       pending.delete(pendingKey(session.id))
       if (sessionDirectory === projectDirectory) {

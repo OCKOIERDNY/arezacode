@@ -12,7 +12,8 @@ import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
-import { getSessionContext, getSessionCost, recordedUsage, usageTotal } from "@/components/session/session-context-metrics"
+import { getSessionContext, getSessionCost, recordedUsage, responsePerformance, usageTotal } from "@/components/session/session-context-metrics"
+import { useSessionHealth } from "@/hooks/use-session-health"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { useSettings } from "@/context/settings"
@@ -27,7 +28,7 @@ function ContextTooltipRow(props: { name: JSX.Element; value: JSX.Element }) {
   return (
     <div class="flex min-w-0 items-center gap-4">
       <span class="shrink-0 text-v2-text-text-muted">{props.name}</span>
-      <span class="ml-auto min-w-0 truncate text-right text-v2-text-text-base">{props.value}</span>
+      <span class="ms-auto min-w-0 truncate text-end text-v2-text-text-base">{props.value}</span>
     </div>
   )
 }
@@ -52,6 +53,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const settings = useSettings()
   const providers = useProviders(() => sdk().directory)
   const { params, tabs, view } = useSessionLayout()
+  const health = useSessionHealth(() => params.id)
   const isDesktop = createMediaQuery("(min-width: 768px)")
 
   const variant = createMemo(() => props.variant ?? "button")
@@ -75,6 +77,14 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   )
 
   const context = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
+  const workingUsage = createMemo(() => {
+    const info = health.query.data
+    if (info?.inputTokens === undefined || !info.limit) return
+    return Math.round(info.inputTokens / info.limit * 100)
+  })
+  const performance = createMemo(() => responsePerformance(messages(), sync().data.part))
+  const duration = (value?: number) => value === undefined ? "—"
+    : new Intl.NumberFormat(language.intl(), { style: "unit", unit: "second", unitDisplay: "short", maximumFractionDigits: 1 }).format(value / 1000)
   const cost = createMemo(() => {
     const value = getSessionCost(messages(), info()?.cost)
     return value === undefined ? "—" : usd().format(value)
@@ -108,7 +118,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
       <ProgressCircle
         size={16}
         strokeWidth={2}
-        percentage={context()?.usage ?? 0}
+        percentage={Math.min(100, workingUsage() ?? 0)}
         style={
           variant() === "indicator"
             ? {
@@ -123,17 +133,19 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   )
   const circleV2 = () => (
     <div class="flex items-center justify-center">
-      <ProgressCircleV2 percentage={context()?.usage ?? 0} />
+      <ProgressCircleV2 percentage={Math.min(100, workingUsage() ?? 0)} />
     </div>
   )
 
   const tooltipValue = () => (
     <div class="flex w-[320px] max-w-[80vw] flex-col gap-2" data-component="context-usage-breakdown">
       <ContextTooltipRow name={language.t("context.usage.cost")} value={cost()} />
-      <ContextTooltipRow name={language.t("context.usage.usage")} value={context()?.usage === null || context()?.usage === undefined ? "—" : `${context()?.usage}%`} />
+      <ContextTooltipRow name={language.t("context.health.state")} value={health.query.isSuccess ? language.t(`context.health.${health.state()}`) : "—"} />
+      <ContextTooltipRow name={language.t("context.health.limit")} value={health.query.data?.limit.toLocaleString(language.intl()) ?? "—"} />
+      <ContextTooltipRow name={language.t("context.usage.usage")} value={workingUsage() === undefined ? "—" : `${workingUsage()}%`} />
       <ContextTooltipRow
-        name={language.t("context.usage.tokens")}
-        value={context()?.total.toLocaleString(language.intl()) ?? "—"}
+        name={language.t("context.health.input")}
+        value={health.query.data?.inputTokens?.toLocaleString(language.intl()) ?? "—"}
       />
       <div class="border-t border-v2-border-border-base pt-2 text-v2-text-text-muted">{language.t("context.accounting.latest")}</div>
       <For each={["input", "uncachedInput", "cacheRead", "cacheWrite", "output", "reasoning"] as const}>{(key) => (
@@ -143,6 +155,11 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
         />
       )}</For>
       <div class="pt-1 text-v2-text-text-muted">{language.t("context.accounting.details")}</div>
+      <For each={["last", "recent", "previous", "tools", "checks", "wait", "other"] as const}>{(key) => (
+        <ContextTooltipRow name={language.t(`context.health.timing.${key}`)} value={duration(performance()?.[key])} />
+      )}</For>
+      <ContextTooltipRow name={language.t("context.health.providerWait")} value="—" />
+      <div class="text-v2-text-text-muted">{language.t("context.health.elapsedNote")}</div>
     </div>
   )
 

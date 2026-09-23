@@ -1,9 +1,12 @@
 import type { ServerApi } from "./server"
 import type { ServerProtocol } from "./server-protocol"
+import { OpenCode } from "@opencode-ai/client-current"
 import type { AgentPartInput, FilePartInput, OpencodeClient, Session, TextPartInput } from "@opencode-ai/sdk/v2/client"
 import type {
   Project,
   ProjectCurrent,
+  OpenCodeClient,
+  JsonValue,
   SessionApi,
   SessionCommandInput,
   SessionCommandOutput,
@@ -19,10 +22,12 @@ import type {
 type LegacyClient = OpencodeClient
 type LegacyFor = (directory?: string) => LegacyClient
 type CompatibleSessionApi = Omit<
-  SessionApi,
+  ServerApi["session"],
   "prompt" | "command" | "shell" | "compact" | "rename" | "archive" | "remove"
 > & {
-  prompt: (input: SessionPromptInput & LegacyPrompt) => Promise<SessionPromptOutput>
+  prompt: (
+    input: SessionPromptInput & LegacyPrompt,
+  ) => Promise<SessionPromptOutput | Awaited<ReturnType<ServerApi["session"]["prompt"]>>>
   command: (input: SessionCommandInput) => Promise<SessionCommandOutput>
   shell: (input: SessionShellInput & LegacyPrompt) => Promise<SessionShellOutput>
   compact: (input: SessionCompactInput & { model?: LegacyPrompt["model"] }) => Promise<SessionCompactOutput>
@@ -81,6 +86,104 @@ function sessionInfo(session: Session): SessionInfo {
       snapshot: session.revert.snapshot,
     },
   }
+}
+
+export function withCurrentContract(legacy: OpenCodeClient, options: Parameters<typeof OpenCode.make>[0]): ServerApi {
+  const current = OpenCode.make(options)
+  return {
+    ...legacy,
+    session: {
+      ...legacy.session,
+      active: current.sessions.active,
+      health: current.sessions.health,
+      handoff: current.sessions.handoff,
+      async prompt(value, requestOptions) {
+        return current.sessions.prompt(
+          {
+            sessionID: value.sessionID,
+            id: value.id,
+            delivery: value.delivery,
+            resume: value.resume,
+            prompt: {
+              text: value.text,
+              files: value.files?.map(({ mention, ...file }) => ({ ...file, source: mention })),
+              agents: value.agents?.map(({ mention, ...agent }) => ({ ...agent, source: mention })),
+            },
+          },
+          requestOptions,
+        )
+      },
+    },
+    agent: {
+      async list(value, requestOptions) {
+        const result = await current.agents.list(value, requestOptions)
+        return {
+          ...result,
+          data: result.data.map((agent) => ({
+            ...agent,
+            name: agent.id,
+            request: {
+              headers: agent.request.headers,
+              body: mutableSettings(agent.request.body),
+              settings: mutableSettings(agent.request.body),
+            },
+            permissions: [...agent.permissions],
+          })),
+        }
+      },
+    },
+    provider: {
+      ...legacy.provider,
+      async list(value, requestOptions) {
+        const result = await current.providers.list(value, requestOptions)
+        return {
+          ...result,
+          data: result.data.map((provider) => ({
+            ...provider,
+            package: provider.api.type === "aisdk" ? provider.api.package : provider.id,
+            settings: provider.api.settings && mutableSettings(provider.api.settings),
+          })),
+        }
+      },
+    },
+    model: {
+      ...legacy.model,
+      async list(value, requestOptions) {
+        const result = await current.models.list(value, requestOptions)
+        return {
+          ...result,
+          data: result.data.map((model) => ({
+            ...model,
+            modelID: model.api.id,
+            package: model.api.type === "aisdk" ? model.api.package : undefined,
+            settings: mutableSettings(model.request.body),
+            headers: model.request.headers,
+            capabilities: {
+              ...model.capabilities,
+              input: [...model.capabilities.input],
+              output: [...model.capabilities.output],
+            },
+            cost: [...model.cost],
+            variants: model.variants.map((variant) => ({
+              ...variant,
+              body: mutableSettings(variant.body),
+              settings: mutableSettings(variant.body),
+            })),
+          })),
+        }
+      },
+    },
+  }
+}
+
+function mutableSettings(value: Readonly<Record<string, import("@opencode-ai/client-current").JsonValue>>) {
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, mutableJson(item)]))
+}
+
+function mutableJson(value: import("@opencode-ai/client-current").JsonValue): JsonValue {
+  if (value === null || typeof value !== "object") return value
+  if (Array.isArray(value)) return value.map(mutableJson)
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, mutableJson(item)]))
 }
 
 export function createCompatibleApi(input: CompatibleInput): CompatibleApi {

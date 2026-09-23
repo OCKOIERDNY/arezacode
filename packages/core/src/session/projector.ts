@@ -11,6 +11,7 @@ import { WorkspaceTable } from "../control-plane/workspace.sql"
 import { SessionMessage } from "./message"
 import { SessionMessageUpdater } from "./message-updater"
 import { SessionInput } from "./input"
+import { SessionHealth } from "./health"
 import { WorkspaceV2 } from "../workspace"
 import { MessageTable, PartTable, SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
 import type { DeepMutable } from "../schema"
@@ -197,6 +198,7 @@ function run(db: DatabaseService, event: SessionEvent.Event) {
           },
         }
         yield* updateMessage(message)
+        yield* SessionHealth.get(db, event.data.sessionID)
         if ([delta.cost, delta.tokens.input, delta.tokens.output, delta.tokens.reasoning, delta.tokens.cache.read, delta.tokens.cache.write].some((value) => value !== 0)) yield* applyUsage(db, event.data.sessionID, delta, 1)
       }),
       updateShell: updateMessage,
@@ -251,7 +253,10 @@ const layer = Layer.effectDiscard(
     yield* events.project(SessionV1.Event.Updated, (event) =>
       db
         .update(SessionTable)
-        .set(sessionRow(event.data.info))
+        .set({
+          ...sessionRow(event.data.info),
+          metadata: sql`json_patch(${JSON.stringify(event.data.info.metadata ?? {})}, json_object('contextLock', json_extract(${SessionTable.metadata}, '$.contextLock'), 'contextModel', json_extract(${SessionTable.metadata}, '$.contextModel')))`,
+        })
         .where(eq(SessionTable.id, event.data.sessionID))
         .run()
         .pipe(Effect.orDie),
@@ -286,6 +291,8 @@ const layer = Layer.effectDiscard(
           .onConflictDoUpdate({ target: MessageTable.id, set: { data } })
           .run()
           .pipe(Effect.orDie)
+        if (event.data.info.role === "assistant" && SessionHealth.inclusiveInput(event.data.info.tokens) > 0)
+          yield* SessionHealth.get(db, sessionID)
       }),
     )
     yield* events.project(SessionV1.Event.MessageRemoved, (event) =>

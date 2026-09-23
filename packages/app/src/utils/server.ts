@@ -2,8 +2,10 @@ import { Permission } from "@opencode-ai/schema/permission"
 import { Schema } from "effect"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { OpenCode, type OpenCodeClient } from "@opencode-ai/client/promise"
+import type { SessionsPromptOutput, SessionsHealthOutput, SessionsHandoffOutput } from "@opencode-ai/client-current"
 import type { ServerConnection } from "@/context/server"
 import { decode64 } from "@/utils/base64"
+import { withCurrentContract } from "./server-compat"
 
 export function authTokenFromCredentials(input: { username?: string; password: string }) {
   return btoa(`${input.username ?? "opencode"}:${input.password}`)
@@ -46,8 +48,8 @@ export function createSdkForServer({
 export function createApiForServer(input: {
   server: ServerConnection.HttpBase
   fetch?: typeof globalThis.fetch
-}): OpenCodeClient {
-  return OpenCode.make({
+}): ServerApi {
+  const options = {
     baseUrl: input.server.url,
     fetch: input.fetch,
     headers: input.server.password
@@ -58,7 +60,8 @@ export function createApiForServer(input: {
           })}`,
         }
       : undefined,
-  })
+  }
+  return withCurrentContract(OpenCode.make(options), options)
 }
 
 export function createApprovalApiForServer(input: { server: ServerConnection.HttpBase; fetch?: typeof globalThis.fetch }) {
@@ -86,4 +89,10 @@ export function createApprovalApiForServer(input: { server: ServerConnection.Htt
   }
 }
 
-export type ServerApi = OpenCodeClient
+export type ServerApi = Omit<OpenCodeClient, "session"> & {
+  session: Omit<OpenCodeClient["session"], "prompt"> & {
+    prompt: (...input: Parameters<OpenCodeClient["session"]["prompt"]>) => Promise<SessionsPromptOutput>
+    health: (input: { sessionID: string }, options?: { signal?: AbortSignal }) => Promise<SessionsHealthOutput>
+    handoff: (input: { sessionID: string }, options?: { signal?: AbortSignal }) => Promise<SessionsHandoffOutput>
+  }
+}

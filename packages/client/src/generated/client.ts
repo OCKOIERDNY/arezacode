@@ -29,6 +29,10 @@ import type {
   SessionsClearOutput,
   SessionsCommitInput,
   SessionsCommitOutput,
+  SessionsHealthInput,
+  SessionsHealthOutput,
+  SessionsHandoffInput,
+  SessionsHandoffOutput,
   SessionsUsageInput,
   SessionsUsageOutput,
   SessionsContextInput,
@@ -458,6 +462,28 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [404, 400, 409, 401],
             empty: true,
+          },
+          requestOptions,
+        ),
+      health: (input: SessionsHealthInput, requestOptions?: RequestOptions) =>
+        request<SessionsHealthOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/health`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 409, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      handoff: (input: SessionsHandoffInput, requestOptions?: RequestOptions) =>
+        request<SessionsHandoffOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/handoff`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 409, 401],
+            empty: false,
           },
           requestOptions,
         ),

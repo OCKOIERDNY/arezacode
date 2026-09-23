@@ -1963,6 +1963,45 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  it.effect("context soft lock finishes active tools and continuation but holds queued and steering inputs", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const database = yield* Database.Service
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Finish this task" }), resume: false })
+      requests.length = 0
+      executions.length = 0
+      responses = [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-limit", name: "echo", input: { text: "Required check" } }),
+          LLMEvent.stepFinish({ index: 0, reason: "tool-calls", usage: { inputTokens: 250_000, cacheReadInputTokens: 200_000 } }),
+          LLMEvent.finish({ reason: "tool-calls" }),
+        ],
+        [LLMEvent.stepStart({ index: 0 }), LLMEvent.stepFinish({ index: 0, reason: "stop" }), LLMEvent.finish({ reason: "stop" })],
+      ]
+      streamGate = yield* Deferred.make<void>()
+      streamStarted = yield* Deferred.make<void>()
+      const running = yield* session.resume(sessionID).pipe(Effect.forkChild)
+      yield* Deferred.await(streamStarted)
+      const queued = yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Later work" }), delivery: "queue", resume: false })
+      const steer = yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "New direction" }), resume: false })
+      yield* Deferred.succeed(streamGate, undefined)
+      yield* Fiber.join(running)
+      streamGate = undefined
+      streamStarted = undefined
+      expect(requests).toHaveLength(2)
+      expect(executions).toEqual(["Required check"])
+      expect(userTexts(requests[1]!)).toEqual(["Finish this task"])
+      expect((yield* session.health(sessionID)).locked).toBe(true)
+      expect((yield* SessionInput.find(database.db, queued.id))?.promotedSeq).toBeUndefined()
+      expect((yield* SessionInput.find(database.db, steer.id))?.promotedSeq).toBeUndefined()
+      yield* session.resume(sessionID)
+      expect(requests).toHaveLength(2)
+      expect((yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Blocked" }) }).pipe(Effect.flip))._tag).toBe("Session.ContextLockedError")
+    }),
+  )
+
   it.effect("promotes queued input after continuation ends", () =>
     Effect.gen(function* () {
       yield* setup

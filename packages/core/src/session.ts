@@ -34,6 +34,8 @@ import { LocationServiceMap } from "./location-service-map"
 import { MessageDecodeError } from "./session/error"
 import { SessionEvent } from "./session/event"
 import { SessionInput } from "./session/input"
+import { SessionHealth } from "./session/health"
+import { SessionHandoff } from "./session/handoff"
 import { Snapshot } from "./snapshot"
 import { SessionRevert } from "./session/revert"
 import { Revert } from "@opencode-ai/schema/revert"
@@ -120,6 +122,8 @@ export interface Interface {
   readonly setApproval: (input: { sessionID: SessionSchema.ID; mode: Permission.ApprovalMode }) => Effect.Effect<void, NotFoundError>
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info, NotFoundError>
   readonly usage: (sessionID: SessionSchema.ID) => Effect.Effect<SessionMessage.UsageEntry[], NotFoundError>
+  readonly health: (sessionID: SessionSchema.ID) => Effect.Effect<SessionHealth.Info, NotFoundError>
+  readonly handoff: (sessionID: SessionSchema.ID) => Effect.Effect<SessionHealth.Handoff, NotFoundError>
   readonly messages: (input: {
     sessionID: SessionSchema.ID
     limit?: number
@@ -156,7 +160,7 @@ export interface Interface {
     prompt: PromptInput.Prompt
     delivery?: SessionInput.Delivery
     resume?: boolean
-  }) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError>
+  }) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError | SessionHealth.LockedError>
   readonly shell: (input: {
     id?: EventV2.ID
     sessionID: SessionSchema.ID
@@ -315,6 +319,14 @@ const layer = Layer.effect(
           Effect.orDie,
         )
         return (direction === "previous" ? rows.toReversed() : rows).map((row) => fromRow(row))
+      }),
+      health: Effect.fn("V2Session.health")(function* (sessionID) {
+        yield* result.get(sessionID)
+        return yield* SessionHealth.get(db, sessionID)
+      }),
+      handoff: Effect.fn("V2Session.handoff")(function* (sessionID) {
+        yield* result.get(sessionID)
+        return yield* SessionHandoff.get(db, sessionID)
       }),
       usage: Effect.fn("V2Session.usage")(function* (sessionID) {
         yield* result.get(sessionID)

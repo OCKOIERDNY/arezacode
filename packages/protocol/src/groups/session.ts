@@ -1,6 +1,7 @@
 import { Permission } from "@opencode-ai/schema/permission"
 import { SessionMessage } from "@opencode-ai/schema/session-message"
 import { SessionInput } from "@opencode-ai/schema/session-input"
+import { SessionHealth } from "@opencode-ai/schema/session-health"
 import { PromptInput } from "@opencode-ai/schema/prompt-input"
 import { Session } from "@opencode-ai/schema/session"
 import { Project } from "@opencode-ai/schema/project"
@@ -297,6 +298,20 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         .annotateMerge(
           OpenApi.annotations({ identifier: "v2.session.revert.commit", summary: "Commit staged revert" }),
         ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.health", "/api/session/:sessionID/health", {
+        params: { sessionID: Session.ID },
+        success: SessionHealth.Info,
+        error: SessionNotFoundError,
+      }).middleware(sessionLocationMiddleware).annotateMerge(OpenApi.annotations({ identifier: "v2.session.health", summary: "Get session context health" })),
+    )
+    .add(
+      HttpApiEndpoint.get("session.handoff", "/api/session/:sessionID/handoff", {
+        params: { sessionID: Session.ID },
+        success: SessionHealth.Handoff,
+        error: SessionNotFoundError,
+      }).middleware(sessionLocationMiddleware).annotateMerge(OpenApi.annotations({ identifier: "v2.session.handoff", summary: "Build a local session handoff without a model request" })),
     )
     .add(
       HttpApiEndpoint.get("session.usage", "/api/session/:sessionID/usage", {

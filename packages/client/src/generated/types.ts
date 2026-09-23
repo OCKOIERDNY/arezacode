@@ -541,6 +541,21 @@ export type SessionsCommitInput = { readonly sessionID: { readonly sessionID: st
 
 export type SessionsCommitOutput = void
 
+export type SessionsHealthInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsHealthOutput = {
+  readonly sessionID: string
+  readonly inputTokens?: number
+  readonly limit: number
+  readonly modelContext?: number
+  readonly locked: boolean
+  readonly lockedAt?: number
+}
+
+export type SessionsHandoffInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsHandoffOutput = { readonly text: string }
+
 export type SessionsUsageInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
 
 export type SessionsUsageOutput = ReadonlyArray<{

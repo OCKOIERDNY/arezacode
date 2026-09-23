@@ -41,6 +41,8 @@ let selected = "/repo/worktree-a"
 let variant: string | undefined
 let permissionServer = "server-a"
 let createSessionGate: Promise<void> | undefined
+let contextLocked = false
+let healthGate: Promise<void> | undefined
 
 let promptValue: Prompt = [{ type: "text", content: "ls", start: 0, end: 2 }]
 const [promptStore, setPromptStore] = createStore<PromptStore>({
@@ -76,6 +78,10 @@ const clientFor = (directory: string) => {
   return {
     api: {
       session: {
+        health: async (input: { sessionID: string }) => {
+          await healthGate
+          return { sessionID: input.sessionID, limit: 250_000, locked: contextLocked }
+        },
         create: async (input: (typeof sessionCreateInputs)[number]) => {
           await createSessionGate
           const location = input.location?.directory ?? directory
@@ -310,11 +316,55 @@ beforeEach(() => {
   variant = undefined
   permissionServer = "server-a"
   createSessionGate = undefined
+  contextLocked = false
+  healthGate = undefined
   serverSessionSyncs = 0
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
 })
 
 describe("prompt submit worktree selection", () => {
+  for (const mode of ["normal", "shell"] as const) {
+    test(`preserves the draft and queue when context is locked in ${mode} mode`, async () => {
+      params = { id: "session-1" }
+      contextLocked = true
+      const original = promptValue
+      let queued = false
+      let history = false
+      const submit = createPromptSubmit({
+        prompt, info: () => ({ id: "session-1" }), imageAttachments: () => [], commentCount: () => 0,
+        autoAccept: () => false, mode: () => mode, working: () => true, editor: () => undefined,
+        queueScroll: () => undefined, promptLength: () => 2, addToHistory: () => { history = true },
+        resetHistoryNavigation: () => undefined, setMode: () => undefined, setPopover: () => undefined,
+        shouldQueue: () => true, onQueue: () => { queued = true },
+      })
+      await submit.handleSubmit({ preventDefault() {} } as Event)
+      expect(promptValue).toBe(original)
+      expect(queued).toBe(false)
+      expect(history).toBe(false)
+      expect(sentPrompts).toEqual([])
+      expect(sentShell).toEqual([])
+      expect(optimistic).toEqual([])
+    })
+  }
+
+  test("does not submit into another chat after a delayed health check", async () => {
+    params = { id: "session-1" }
+    const gate = Promise.withResolvers<void>()
+    healthGate = gate.promise
+    const submit = createPromptSubmit({
+      prompt, info: () => params.id ? ({ id: params.id }) : undefined, imageAttachments: () => [], commentCount: () => 0,
+      autoAccept: () => false, mode: () => "normal", working: () => false, editor: () => undefined,
+      queueScroll: () => undefined, promptLength: () => 2, addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined, setMode: () => undefined, setPopover: () => undefined,
+    })
+    const sending = submit.handleSubmit({ preventDefault() {} } as Event)
+    params.id = "session-2"
+    gate.resolve()
+    await sending
+    expect(sentPrompts).toEqual([])
+    expect(optimistic).toEqual([])
+  })
+
   test("sends the captured browser preference for each draft", async () => {
     const { sendFollowupDraft } = await import("./submit")
     const requests: Array<{ text: string; legacyParts: Array<{ metadata?: { browserVerification?: string } }> }> = []

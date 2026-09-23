@@ -61,6 +61,8 @@ import { useTabs } from "@/context/tabs"
 import { TerminalProvider, useTerminal } from "@/context/terminal"
 import { PromptInput } from "@/components/prompt-input"
 import { PromptInputV2Composer, usePromptInputV2Controller } from "@/components/prompt-input-v2"
+import { SessionContextLock } from "@/components/session-context-lock"
+import { useSessionHealth } from "@/hooks/use-session-health"
 import { useSettingsCommand } from "@/components/settings-dialog"
 import { setCursorPosition } from "@/components/prompt-input/editor-dom"
 import { promptLength } from "@/components/prompt-input/history"
@@ -1757,6 +1759,10 @@ export default function Page() {
   }
 
   const busy = (sessionID: string) => sync().data.session_working(sessionID)
+  const contextHealth = useSessionHealth(() => params.id)
+  const handoffDraft = (parts: FollowupDraft["prompt"]) => parts.map((part) =>
+    part.type === "image" ? `[Attachment: ${part.filename}; retained in original chat]` : part.content,
+  ).join("")
 
   const queuedFollowups = createMemo(() => {
     const id = params.id
@@ -1775,6 +1781,17 @@ export default function Page() {
       const owner = sessionOwnership.capture()
       const item = (followup.items[input.sessionID] ?? []).find((entry) => entry.id === input.id)
       if (!item) return
+
+      const origin = sdk()
+      const health = await origin.api.session.health({ sessionID: input.sessionID }).catch((error) => {
+        setFollowup("failed", input.sessionID, input.id)
+        fail(error)
+      })
+      if (!health || sdk() !== origin) return
+      if (health.locked) {
+        setFollowup("paused", input.sessionID, true)
+        return
+      }
 
       if (input.manual) setFollowup("paused", input.sessionID, undefined)
       setFollowup("failed", input.sessionID, undefined)
@@ -1845,6 +1862,7 @@ export default function Page() {
   const followupDock = createMemo(() => queuedFollowups().map((item) => ({ id: item.id, text: followupText(item) })))
 
   const sendFollowup = (sessionID: string, id: string, opts?: { manual?: boolean }) => {
+    if (contextHealth.locked()) return Promise.resolve()
     if (sync().session.get(sessionID)?.parentID) return Promise.resolve()
     const item = (followup.items[sessionID] ?? []).find((entry) => entry.id === id)
     if (!item) return Promise.resolve()
@@ -1854,6 +1872,7 @@ export default function Page() {
   }
 
   const editFollowup = (id: string) => {
+    if (contextHealth.locked()) return
     const sessionID = params.id
     if (!sessionID) return
     if (followupBusy(sessionID)) return
@@ -1993,6 +2012,7 @@ export default function Page() {
     if (followupBusy(sessionID)) return
     if (followup.failed[sessionID] === item.id) return
     if (followup.paused[sessionID]) return
+    if (!contextHealth.query.isSuccess || contextHealth.locked()) return
     if (isChildSession()) return
     if (composer.blocked()) return
     if (busy(sessionID)) return
@@ -2216,6 +2236,7 @@ export default function Page() {
                 ? {
                     items: followupDock(),
                     sending: sendingFollowup(),
+                    disabled: !contextHealth.query.isSuccess || contextHealth.locked(),
                     onSend: (id) => void sendFollowup(params.id!, id, { manual: true }),
                     onEdit: editFollowup,
                   }
@@ -2250,6 +2271,22 @@ export default function Page() {
             <SessionComposerRegion
               controller={controller}
               promptInput={
+                <>
+                <SessionContextLock
+                  sessionID={params.id}
+                  health={contextHealth}
+                  localContext={() => [
+                    "## Unsent local draft (not executed)",
+                    handoffDraft(prompt.current()) || "None recorded.",
+                    "## Client-side queued follow-ups (not executed)",
+                    ...queuedFollowups().map((item) => handoffDraft(item.prompt)),
+                  ].join("\n\n")}
+                />
+                <Show when={!contextHealth.readonly()} fallback={
+                  <div class="rounded-md border border-border-weak-base p-3 text-text-weak whitespace-pre-wrap" dir="auto">
+                    {handoffDraft(prompt.current())}
+                  </div>
+                }>
                 <Show
                   when={newSessionDesign()}
                   fallback={
@@ -2307,6 +2344,8 @@ export default function Page() {
                     return <PromptInputV2Composer controller={controller} borderUnderlay />
                   }}
                 </Show>
+                </Show>
+                </>
               }
             />
           )

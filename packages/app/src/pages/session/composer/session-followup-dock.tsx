@@ -9,6 +9,7 @@ import { useLanguage } from "@/context/language"
 export function SessionFollowupDock(props: {
   items: { id: string; text: string }[]
   sending?: string
+  disabled?: boolean
   onSend: (id: string) => void
   onEdit: (id: string) => void
 }) {
@@ -82,7 +83,7 @@ export function SessionFollowupDock(props: {
                   size="small"
                   variant="secondary"
                   class="shrink-0"
-                  disabled={!!props.sending}
+                  disabled={props.disabled || !!props.sending}
                   onClick={() => props.onSend(item.id)}
                 >
                   {language.t("session.followupDock.sendNow")}
@@ -91,7 +92,7 @@ export function SessionFollowupDock(props: {
                   size="small"
                   variant="ghost"
                   class="shrink-0"
-                  disabled={!!props.sending}
+                  disabled={props.disabled || !!props.sending}
                   onClick={() => props.onEdit(item.id)}
                 >
                   {language.t("session.followupDock.edit")}

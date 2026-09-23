@@ -177,6 +177,9 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                     }),
                   ),
                 ),
+                Effect.catchTag("Session.ContextLockedError", (error) =>
+                  Effect.fail(new ConflictError({ message: error.message, resource: `session:${error.sessionID}:context` })),
+                ),
               ),
           }
         }),
@@ -312,6 +315,16 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           )
           return HttpApiSchema.NoContent.make()
         }),
+      )
+      .handle(
+        "session.health",
+        (ctx) => session.health(ctx.params.sessionID).pipe(Effect.catchTag("Session.NotFoundError", (error) =>
+          Effect.fail(new SessionNotFoundError({ sessionID: error.sessionID, message: `Session not found: ${error.sessionID}` })))),
+      )
+      .handle(
+        "session.handoff",
+        (ctx) => session.handoff(ctx.params.sessionID).pipe(Effect.catchTag("Session.NotFoundError", (error) =>
+          Effect.fail(new SessionNotFoundError({ sessionID: error.sessionID, message: `Session not found: ${error.sessionID}` })))),
       )
       .handle(
         "session.usage",

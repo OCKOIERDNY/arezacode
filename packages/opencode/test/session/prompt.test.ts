@@ -40,6 +40,7 @@ import { SessionRunState } from "../../src/session/run-state"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { SessionV2 } from "@opencode-ai/core/session"
+import { SessionHealth } from "@opencode-ai/core/session/health"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { Skill } from "../../src/skill"
 import { SystemPrompt } from "../../src/session/system"
@@ -2246,6 +2247,25 @@ noLLMServer.instance(
 )
 
 // Regression: empty assistant turn loop
+
+it.instance("context lock blocks new legacy prompts and fresh loop execution", () =>
+  Effect.gen(function* () {
+    const server = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const database = yield* Database.Service
+    const session = yield* sessions.create({ title: "Context lock" })
+    const original = yield* prompt.prompt({
+      sessionID: session.id, agent: "build", parts: [{ type: "text", text: "Unfinished work" }], noReply: true,
+    })
+    yield* SessionHealth.observe(database.db, session.id, { inputTokens: 250_000 })
+    expect((yield* prompt.loop({ sessionID: session.id })).info.id).toBe(original.info.id)
+    const rejected = yield* prompt.prompt({ sessionID: session.id, agent: "build", parts: [{ type: "text", text: "New task" }] }).pipe(Effect.flip)
+    expect(rejected._tag).toBe("Session.ContextLockedError")
+    expect(yield* server.llm.calls).toBe(0)
+    expect(yield* sessions.messages({ sessionID: session.id })).toHaveLength(1)
+  }),
+)
 
 it.instance("does not loop empty assistant turns for a simple reply", () =>
   Effect.gen(function* () {

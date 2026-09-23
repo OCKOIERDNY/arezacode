@@ -9,6 +9,7 @@ import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { Prompt } from "./prompt"
 import { SessionSchema } from "./schema"
+import { SessionHealth } from "./health"
 import { SessionInputTable, SessionMessageTable } from "./sql"
 
 type DatabaseService = Database.Interface["db"]
@@ -48,8 +49,22 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
     readonly delivery: Delivery
   },
 ) {
+  yield* SessionHealth.get(db, input.sessionID)
+  return yield* events.transaction(Effect.gen(function* () {
   const existing = yield* find(db, input.id)
   if (existing !== undefined) return existing
+  const projected = yield* db.select().from(SessionMessageTable).where(eq(SessionMessageTable.id, input.id)).get().pipe(Effect.orDie)
+  if (projected) {
+    const message = Schema.decodeUnknownSync(SessionMessage.Message)({ ...projected.data, id: projected.id, type: projected.type })
+    if (message.type !== "user" || projected.session_id !== input.sessionID || input.delivery !== "steer" ||
+      JSON.stringify(encodePrompt(Prompt.make({ text: message.text, files: message.files, agents: message.agents }))) !== JSON.stringify(encodePrompt(input.prompt)))
+      return yield* Effect.die(new LifecycleConflict({ id: input.id }))
+    yield* projectPrompted(db, { ...input, timeCreated: message.time.created, promotedSeq: projected.seq })
+    const reconciled = yield* find(db, input.id)
+    if (!reconciled) return yield* Effect.die(new LifecycleConflict({ id: input.id }))
+    return reconciled
+  }
+  yield* SessionHealth.assertOpen(db, input.sessionID)
   const timestamp = yield* DateTime.now
   return yield* events
     .publish(SessionEvent.PromptAdmitted, {
@@ -78,6 +93,7 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
         find(db, input.id).pipe(Effect.flatMap((stored) => (stored ? Effect.succeed(stored) : Effect.die(defect)))),
       ),
     )
+  })).pipe(Effect.catchTag("SqlError", Effect.die))
 })
 
 export const projectAdmitted = Effect.fn("SessionInput.projectAdmitted")(function* (
@@ -219,6 +235,8 @@ const publish = Effect.fn("SessionInput.publish")(function* (
   sessionID: SessionSchema.ID,
   rows: ReadonlyArray<typeof SessionInputTable.$inferSelect>,
 ) {
+  return yield* events.transaction(Effect.gen(function* () {
+  if ((yield* SessionHealth.get(db, sessionID)).locked) return 0
   for (const row of rows) {
     const id = SessionMessage.ID.make(row.id)
     yield* events
@@ -240,6 +258,7 @@ const publish = Effect.fn("SessionInput.publish")(function* (
       )
   }
   return rows.length
+  })).pipe(Effect.orDie)
 })
 
 export const promoteSteers = Effect.fn("SessionInput.promoteSteers")(function* (
@@ -248,6 +267,7 @@ export const promoteSteers = Effect.fn("SessionInput.promoteSteers")(function* (
   sessionID: SessionSchema.ID,
   cutoff: number,
 ) {
+  if ((yield* SessionHealth.get(db, sessionID)).locked) return 0
   const rows = yield* db
     .select()
     .from(SessionInputTable)
@@ -270,6 +290,7 @@ export const promoteNextQueued = Effect.fn("SessionInput.promoteNextQueued")(fun
   events: EventV2.Interface,
   sessionID: SessionSchema.ID,
 ) {
+  if ((yield* SessionHealth.get(db, sessionID)).locked) return false
   const row = yield* db
     .select()
     .from(SessionInputTable)
@@ -284,5 +305,5 @@ export const promoteNextQueued = Effect.fn("SessionInput.promoteNextQueued")(fun
     .limit(1)
     .get()
     .pipe(Effect.orDie)
-  return row === undefined ? false : yield* publish(db, events, sessionID, [row]).pipe(Effect.as(true))
+  return row === undefined ? false : (yield* publish(db, events, sessionID, [row])) > 0
 })

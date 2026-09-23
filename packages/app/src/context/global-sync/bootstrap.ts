@@ -203,7 +203,7 @@ function warmSessions(input: {
   ids: string[]
   store: Store<State>
   setStore: SetStoreFunction<State>
-  api: SessionApi
+  api: Pick<SessionApi, "get">
 }) {
   const known = new Set(input.store.session.map((item) => item.id))
   const ids = [...new Set(input.ids)].filter((id) => !!id && !known.has(id))
@@ -233,12 +233,11 @@ export const loadProvidersQuery = (
           return normalizeProviderList(result.data!)
         }
         const location = directory ? { location: { directory } } : undefined
-        const [providers, models, defaultModel] = await Promise.all([
+        const [providers, models] = await Promise.all([
           sdk.provider.list(location),
           sdk.model.list(location),
-          sdk.model.default(location),
         ])
-        return normalizeProviderList(providers.data, models.data, defaultModel.data)
+        return normalizeProviderList(providers.data, models.data)
       }),
   })
 
@@ -339,7 +338,7 @@ export async function bootstrapDirectory(input: {
     readonly project: ProjectApi
     readonly question: QuestionApi
     readonly reference: ReferenceListApi
-    readonly session: SessionApi
+    readonly session: Pick<SessionApi, "get" | "list">
     readonly vcs: VcsApi
   }
   store: Store<State>

@@ -262,7 +262,6 @@ describe("query keys", () => {
     expect(calls).toEqual([
       ["provider", { location: { directory: "/repo" } }],
       ["model", { location: { directory: "/repo" } }],
-      ["default", { location: { directory: "/repo" } }],
     ])
     expect(result.connected).toEqual(["openai"])
   })

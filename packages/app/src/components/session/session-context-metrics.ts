@@ -1,4 +1,4 @@
-import type { AssistantMessage, Message } from "@opencode-ai/sdk/v2/client"
+import type { AssistantMessage, Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { SessionMessage } from "@opencode-ai/schema/session-message"
 import { sessionUsage } from "@/utils/session-message"
 
@@ -63,6 +63,34 @@ export function executionTiming(start: number, end: number, spans: { kind: "wait
   }
   totals[kinds.find((kind) => active[kind] > 0) ?? "other"] += Math.max(0, end - previous)
   return totals
+}
+
+export function responsePerformance(messages: Message[], parts: Record<string, Part[]>) {
+  const completed = messages.flatMap((message) =>
+    message.role === "assistant" && message.time.completed !== undefined && message.time.completed >= message.time.created
+      ? [{ message, duration: message.time.completed - message.time.created, end: message.time.completed }]
+      : [],
+  )
+  const last = completed.at(-1)
+  if (!last) return
+  const average = (items: typeof completed) => items.length
+    ? items.reduce((sum, item) => sum + item.duration, 0) / items.length
+    : undefined
+  const spans = (parts[last.message.id] ?? []).flatMap((part) => {
+    if (part.type !== "tool" || part.state.status === "pending") return []
+    return [{
+      kind: part.tool === "question" || part.tool === "request_user_input" ? "wait" as const
+        : part.tool === "project_check" ? "checks" as const : "tools" as const,
+      start: part.state.time.start,
+      end: part.state.status === "running" ? last.end : part.state.time.end,
+    }]
+  })
+  return {
+    last: last.duration,
+    recent: average(completed.slice(-5)),
+    previous: average(completed.slice(-10, -5)),
+    ...executionTiming(last.message.time.created, last.end, spans),
+  }
 }
 
 type Provider = {

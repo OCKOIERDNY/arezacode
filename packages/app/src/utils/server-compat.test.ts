@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { createApiForServer, createSdkForServer } from "./server"
 import { createCompatibleApi } from "./server-compat"
+import { QueryClient } from "@tanstack/solid-query"
+import { loadProvidersQuery, loadAgentsQuery } from "@/context/global-sync/bootstrap"
+import { ServerScope } from "./server-scope"
 
 function setup(
   protocol: "v1" | "v2" | Promise<"v1" | "v2">,
@@ -53,6 +56,91 @@ function setup(
 }
 
 describe("createCompatibleApi", () => {
+  for (const protocol of ["v1", "v2"] as const) {
+    test(`uses shared health and handoff endpoints for ${protocol} sessions`, async () => {
+      const paths: string[] = []
+      const health = { sessionID: "ses_1", inputTokens: 250_000, limit: 250_000, locked: true }
+      const server = { url: "http://localhost:4096" }
+      const api = createCompatibleApi({
+        protocol: Promise.resolve(protocol),
+        current: createApiForServer({ server, fetch: Object.assign(async (input: string | URL | Request) => {
+          const path = new URL(input instanceof Request ? input.url : input).pathname
+          paths.push(path)
+          return Response.json(path.endsWith("/health") ? health : { text: "# Session handoff" })
+        }, { preconnect: globalThis.fetch.preconnect }) }),
+        legacy: () => createSdkForServer({ server }),
+      })
+      expect(await api.session.health({ sessionID: "ses_1" })).toEqual(health)
+      expect(await api.session.handoff({ sessionID: "ses_1" })).toEqual({ text: "# Session handoff" })
+      expect(paths).toEqual(["/api/session/ses_1/health", "/api/session/ses_1/handoff"])
+    })
+  }
+
+  test("sends current prompt envelopes and preserves admission, mentions, headers and cancellation", async () => {
+    const requests: Request[] = []
+    const admission = {
+      admittedSeq: 1,
+      id: "msg_1",
+      sessionID: "ses_1",
+      timeCreated: 1,
+      prompt: { text: "hello" },
+      delivery: "queue" as const,
+    }
+    const controller = new AbortController()
+    const api = createApiForServer({
+      server: { url: "http://localhost:4096" },
+      fetch: Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+        const request = new Request(input, init)
+        requests.push(request)
+        return Response.json({ data: admission })
+      }, { preconnect: globalThis.fetch.preconnect }),
+    })
+    const mention = { text: "@notes", start: 0, end: 6 }
+    expect(await api.session.prompt({
+      sessionID: "ses_1", id: "msg_1", text: "hello", delivery: "queue", resume: false,
+      files: [{ uri: "file:///repo/notes", name: "notes", mention }],
+      agents: [{ name: "build", mention }],
+    }, { signal: controller.signal, headers: { "x-request-test": "current" } })).toEqual(admission)
+    expect(new URL(requests[0]!.url).pathname).toBe("/api/session/ses_1/prompt")
+    expect(await requests[0]!.json()).toEqual({
+      id: "msg_1", delivery: "queue", resume: false,
+      prompt: { text: "hello", files: [{ uri: "file:///repo/notes", name: "notes", source: mention }], agents: [{ name: "build", source: mention }] },
+    })
+    expect(requests[0]!.headers.get("x-request-test")).toBe("current")
+    controller.abort()
+    expect(requests[0]!.signal.aborted).toBe(true)
+  })
+
+  test("loads the current catalog without the removed default-model route", async () => {
+    const paths: string[] = []
+    const api = createApiForServer({
+      server: { url: "http://localhost:4096" },
+      fetch: Object.assign(async (input: string | URL | Request) => {
+        const url = new URL(input instanceof Request ? input.url : input)
+        paths.push(url.pathname)
+        expect(url.searchParams.get("location[directory]")).toBe("/repo")
+        const location = { directory: "/repo", project: { id: "project", directory: "/repo" } }
+        if (url.pathname === "/api/provider") return Response.json({ location, data: [{
+          id: "openai", name: "OpenAI", api: { type: "native", settings: {} }, request: { headers: {}, body: {} },
+        }] })
+        if (url.pathname === "/api/model") return Response.json({ location, data: [{
+          id: "model", providerID: "openai", name: "Model", api: { type: "native", id: "wire-model", settings: {} },
+          request: { headers: { "x-model": "value" }, body: { temperature: 0.5 } }, variants: [{ id: "low", headers: {}, body: { reasoning: { effort: "low" } } }],
+          capabilities: { tools: true, input: ["text", "image"], output: ["text"] }, time: { released: 0 }, cost: [], status: "active", enabled: true, limit: { context: 100_000, output: 4096 },
+        }] })
+        if (url.pathname === "/api/agent") return Response.json({ location, data: [{ id: "build", mode: "primary", hidden: false, permissions: [], request: { headers: {}, body: { temperature: 0.5 } } }] })
+        throw new Error(`Unexpected route: ${url.pathname}`)
+      }, { preconnect: globalThis.fetch.preconnect }),
+    })
+    const queries = new QueryClient()
+    const providers = await queries.fetchQuery(loadProvidersQuery(ServerScope.local, "/repo", api))
+    const agents = await queries.fetchQuery(loadAgentsQuery(ServerScope.local, "/repo", api.agent))
+    expect(paths.sort()).toEqual(["/api/agent", "/api/model", "/api/provider"])
+    expect(providers.all.get("openai")?.models.model).toMatchObject({ api: { id: "wire-model" }, options: { temperature: 0.5 }, variants: { low: { reasoning: { effort: "low" } } } })
+    expect(agents[0]).toMatchObject({ name: "build", temperature: 0.5 })
+    queries.clear()
+  })
+
   /*
   test("routes V1 archive through the legacy session update", async () => {
     const { api, requests } = setup("v1")
