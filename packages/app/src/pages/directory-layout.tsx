@@ -1,7 +1,7 @@
 import { DataProvider } from "@opencode-ai/session-ui/context"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { useLocation, useNavigate, useParams } from "@solidjs/router"
+import { useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, createResource, onCleanup, type ParentProps, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { LocalProvider } from "@/context/local"
@@ -12,6 +12,7 @@ import { Schema } from "effect"
 import type { ServerConnection } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
 import { useServerSync } from "@/context/server-sync"
+import { useSessionLayout } from "@/pages/session/session-layout"
 
 export function DirectoryDataProvider(
   props: ParentProps<{
@@ -25,6 +26,8 @@ export function DirectoryDataProvider(
   const params = useParams()
   const sync = useSync()
   const serverSync = useServerSync()
+  const panels = useSessionLayout()
+  const [, setSearchParams] = useSearchParams()
   const directory = () => (typeof props.directory === "function" ? props.directory() : props.directory)
   const slug = createMemo(() => base64Encode(directory()))
   const href = (sessionID: string) => {
@@ -65,6 +68,13 @@ export function DirectoryDataProvider(
           directory={directory}
           sessionID={params.id}
           onNavigateToSession={(sessionID: string) => navigate(href(sessionID))}
+          onInspectSession={(sessionID) => {
+            if (!params.id) return navigate(href(sessionID))
+            setSearchParams({ agent: sessionID })
+            panels.tabs().open("agents")
+            panels.view().reviewPanel.open()
+            queueMicrotask(() => panels.tabs().setActive("agents"))
+          }}
           onSessionHref={href}
         >
           <LocalProvider>{props.children}</LocalProvider>

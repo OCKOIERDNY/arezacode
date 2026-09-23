@@ -1669,12 +1669,12 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                   subtitle={taskSubtitle()}
                   href={taskHref()}
                   onSubtitleClick={(event) => {
-                    if (!data.navigateToSession) return
+                    if (!data.inspectSession && !data.navigateToSession) return
                     if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
                     const id = taskId()
                     if (!id) return
                     event.preventDefault()
-                    data.navigateToSession(id)
+                    ;(data.inspectSession ?? data.navigateToSession)?.(id)
                   }}
                 />
               )
@@ -2092,16 +2092,16 @@ ToolRegistry.register({
     const running = createMemo(() => props.status === "pending" || props.status === "running")
 
     const href = createMemo(() => sessionLink(childSessionId(), data.sessionHref))
-    const clickable = createMemo(() => !!(childSessionId() && (data.navigateToSession || href())))
+    const clickable = createMemo(() => !!(childSessionId() && (data.inspectSession || data.navigateToSession || href())))
 
     const open = () => {
       const id = childSessionId()
       if (!id) return
-      data.navigateToSession?.(id)
+      ;(data.inspectSession ?? data.navigateToSession)?.(id)
     }
 
     const navigate = (event: MouseEvent) => {
-      if (!data.navigateToSession) return
+      if (!data.inspectSession && !data.navigateToSession) return
       if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
       event.preventDefault()
       open()
