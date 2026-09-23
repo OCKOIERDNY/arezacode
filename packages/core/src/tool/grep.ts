@@ -109,6 +109,14 @@ const layer = Layer.effectDiscard(
           ],
           execute: (input, context) =>
             Effect.gen(function* () {
+              const resolved = yield* mutation.resolve({ path: input.path ?? ".", kind: "directory" })
+              if (resolved.externalDirectory)
+                yield* permission.assert({
+                  ...LocationMutation.externalDirectoryPermission(resolved.externalDirectory),
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                })
               yield* permission.assert({
                 action: name,
                 resources: [input.pattern],
@@ -123,8 +131,8 @@ const layer = Layer.effectDiscard(
                 agent: context.agent,
                 source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
               })
-              const target = path.resolve(location.directory, input.path ?? ".")
-              const info = yield* fs.stat(target).pipe(Effect.catch(() => Effect.succeed(undefined)))
+              const target = resolved.canonical
+              const info = yield* fs.stat(target)
               return yield* ripgrep
                 .grep({
                   cwd: info?.type === "Directory" ? target : path.dirname(target),
