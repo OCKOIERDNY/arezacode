@@ -1,5 +1,6 @@
 import { createMemo, createEffect, createResource, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
+import { createStore } from "solid-js/store"
 import { useSync } from "@/context/sync"
 import { findLast } from "@opencode-ai/core/util/array"
 import { same } from "@/utils/same"
@@ -14,11 +15,13 @@ import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { getSessionContext } from "./session-context-metrics"
+import { getSessionContext, responsePerformance } from "./session-context-metrics"
 import { loadContextUsage } from "./session-context-data"
 import { SessionContextDashboard } from "./session-context-dashboard"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
+import { SessionContextHelp } from "./session-context-help"
+import { useSessionHealth } from "@/hooks/use-session-health"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -30,9 +33,9 @@ const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
 
 function Stat(props: { label: string; value: JSX.Element }) {
   return (
-    <div class="flex flex-col gap-1">
+    <div class="flex items-baseline justify-between gap-4">
       <div class="text-12-regular text-text-weak">{props.label}</div>
-      <div class="text-12-medium text-text-strong [overflow-wrap:anywhere]">{props.value}</div>
+      <div class="min-w-0 text-end tabular-nums text-12-medium text-text-strong [overflow-wrap:anywhere]">{props.value}</div>
     </div>
   )
 }
@@ -47,6 +50,13 @@ export function SessionContextTab() {
   const serverSDK = useServerSDK()
   const providers = useProviders(() => sdk().directory)
   const { params, view } = useSessionLayout()
+  const health = useSessionHealth(() => params.id)
+  const [inspection, setInspection] = createStore({ system: false, messages: false, message: "" })
+  const workingUsage = createMemo(() => {
+    const data = health.query.data
+    if (data?.inputTokens === undefined || !data.limit) return
+    return Math.round(data.inputTokens / data.limit * 100)
+  })
 
   const info = createMemo(() => (params.id ? sync().session.get(params.id) : undefined))
 
@@ -78,6 +88,7 @@ export function SessionContextTab() {
   )
 
   const ctx = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
+  const performance = createMemo(() => responsePerformance(messages(), sync().data.part))
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
   const usageKey = createMemo(() => {
     if (!params.id) return false
@@ -143,6 +154,9 @@ export function SessionContextTab() {
 
   const stats = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
+    { label: "context.stats.messages", value: () => formatter().number(messages().length) },
+    { label: "context.stats.userMessages", value: () => formatter().number(userMessages().length) },
+    { label: "context.stats.assistantMessages", value: () => formatter().number(messages().length - userMessages().length) },
     { label: "context.stats.provider", value: providerLabel },
     { label: "context.stats.model", value: modelLabel },
     { label: "context.stats.limit", value: () => formatter().number(ctx()?.limit) },
@@ -242,11 +256,27 @@ export function SessionContextTab() {
       }}
       onScroll={handleScroll}
     >
-      <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
-        <SessionContextDashboard entries={activityEntries()} loading={usageResource.loading} error={!!usageResource.error} modelName={modelName} />
+      <div class="px-4 pt-4 pb-8 flex flex-col gap-6">
+        <section class="flex flex-col gap-3">
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="text-14-medium text-text-strong">{language.t("context.dashboard.workingContext")}</h2>
+            <SessionContextHelp label={language.t("context.dashboard.workingContext")} text={language.t("context.dashboard.workingNote")} />
+          </div>
+          <div class="flex items-baseline justify-between gap-3">
+            <span class="text-12-regular text-text-weak">{health.query.isSuccess ? language.t(`context.health.${health.state()}`) : "—"}</span>
+            <span class="text-20-medium tabular-nums text-text-strong">{workingUsage() === undefined ? "—" : `${workingUsage()}%`}</span>
+          </div>
+          <div class="h-1.5 overflow-hidden rounded-full bg-surface-base" role="progressbar" aria-label={language.t("context.dashboard.workingContext")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={workingUsage() === undefined ? undefined : Math.min(100, workingUsage()!)}>
+            <div class="h-full rounded-full" classList={{ "bg-icon-warning-base": health.state() !== "healthy", "bg-icon-base": health.state() === "healthy" }} style={{ width: `${Math.min(100, workingUsage() ?? 0)}%` }} />
+          </div>
+          <Stat label={language.t("context.health.input")} value={formatter().number(health.query.data?.inputTokens)} />
+          <Stat label={language.t("context.health.limit")} value={formatter().number(health.query.data?.limit)} />
+          <Stat label={language.t("context.stats.model")} value={<bdi>{modelLabel()}</bdi>} />
+          <Stat label={language.t("context.stats.provider")} value={<bdi>{providerLabel()}</bdi>} />
+        </section>
         <details>
-          <summary class="cursor-pointer text-12-medium text-text-strong">{language.t("context.dashboard.workingContext")}</summary>
-          <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4 pt-3">
+          <summary class="cursor-pointer text-12-medium text-text-strong">{language.t("context.dashboard.sessionDetails")}</summary>
+          <div class="flex flex-col gap-2 pt-3">
             <For each={stats}>
               {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
             </For>
@@ -255,7 +285,10 @@ export function SessionContextTab() {
 
         <Show when={breakdown().length > 0}>
           <div class="flex flex-col gap-2">
-            <div class="text-12-regular text-text-weak">{language.t("context.breakdown.title")}</div>
+            <div class="flex items-center justify-between gap-2 text-12-regular text-text-weak">
+              {language.t("context.breakdown.title")}
+              <SessionContextHelp label={language.t("context.breakdown.title")} text={language.t("context.breakdown.note")} />
+            </div>
             <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
               <For each={breakdown()}>
                 {(segment) => (
@@ -280,9 +313,54 @@ export function SessionContextTab() {
                 )}
               </For>
             </div>
-            <div class="text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
           </div>
         </Show>
+
+        <SessionContextDashboard entries={activityEntries()} loading={usageResource.loading} error={!!usageResource.error} modelName={modelName} />
+
+        <Show when={performance()}>{(time) => (
+          <details>
+            <summary class="cursor-pointer text-12-medium text-text-strong">{language.t("context.timing.title")}</summary>
+            <div class="flex justify-end">
+              <SessionContextHelp label={language.t("context.timing.title")} text={language.t("context.health.elapsedNote")} />
+            </div>
+            <div class="flex flex-col gap-2">
+              <For each={["last", "recent", "previous", "tools", "checks", "wait", "other"] as const}>{(key) => (
+                <Stat label={language.t(`context.health.timing.${key}`)} value={formatter().duration(time()[key])} />
+              )}</For>
+            </div>
+          </details>
+        )}</Show>
+
+        <Show when={systemPrompt()}>{(prompt) => (
+          <details onToggle={(event) => setInspection("system", event.currentTarget.open)}>
+            <summary class="cursor-pointer text-12-medium text-text-strong">{language.t("context.systemPrompt.title")}</summary>
+            <Show when={inspection.system}>
+              <pre dir="auto" class="pt-3 whitespace-pre-wrap break-words text-12-regular text-text-weak">{prompt()}</pre>
+            </Show>
+          </details>
+        )}</Show>
+
+        <details onToggle={(event) => setInspection("messages", event.currentTarget.open)}>
+          <summary class="cursor-pointer text-12-medium text-text-strong">{language.t("context.rawMessages.title")} · {formatter().number(messages().length)}</summary>
+          <Show when={inspection.messages}>
+            <div class="flex flex-col gap-2 pt-3">
+              <For each={messages()}>{(message) => (
+                <details open={inspection.message === message.id} onToggle={(event) => {
+                  if (event.currentTarget.open) setInspection("message", message.id)
+                  if (!event.currentTarget.open && inspection.message === message.id) setInspection("message", "")
+                }}>
+                  <summary class="cursor-pointer text-12-regular text-text-weak">
+                    {language.t(message.role === "user" ? "context.breakdown.user" : "context.breakdown.assistant")} · {formatter().time(message.time.created)}
+                  </summary>
+                  <Show when={inspection.message === message.id}>
+                    <pre dir="ltr" class="max-h-96 overflow-auto whitespace-pre-wrap break-all py-2 text-12-regular text-text-weak">{JSON.stringify({ message, parts: sync().data.part[message.id] ?? [] }, null, 2)}</pre>
+                  </Show>
+                </details>
+              )}</For>
+            </div>
+          </Show>
+        </details>
 
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between">

@@ -3,6 +3,7 @@ import { useLanguage } from "@/context/language"
 import { modelUsage, usageCacheRate, usageTotal } from "./session-context-metrics"
 import { createSessionContextFormatter } from "./session-context-format"
 import type { ContextUsageEntry } from "./session-context-data"
+import { SessionContextHelp } from "./session-context-help"
 
 export function SessionContextDashboard(props: {
   entries: ContextUsageEntry[]
@@ -23,7 +24,7 @@ export function SessionContextDashboard(props: {
       : new Intl.NumberFormat(language.intl(), { style: "currency", currency: "USD", maximumFractionDigits: 6 }).format(
           value,
         )
-  const total = (key: "input" | "output" | "total" | "cacheRead" | "cacheWrite") => {
+  const total = (key: "input" | "output" | "total" | "cacheRead" | "cacheWrite" | "reasoning" | "uncachedInput") => {
     const result = usageTotal(usage(), key)
     const value = known(result.value)
     return !props.loading && !props.error && result.value !== undefined && result.missing
@@ -66,13 +67,17 @@ export function SessionContextDashboard(props: {
   const cards = () =>
     [
       { label: "context.accounting.total", value: total("total") },
-      { label: "context.accounting.input", value: total("input") },
-      { label: "context.accounting.output", value: total("output") },
+      { label: "context.stats.inputTokens", value: total("input") },
+      { label: "context.stats.outputTokens", value: total("output") },
       {
         label: "context.dashboard.cacheRate",
         value: props.loading || props.error || cache().value === undefined ? "—" : `${known(cache().value)}%`,
       },
       { label: "context.stats.totalCost", value: money(usageTotal(usage(), "cost").value) },
+      { label: "context.stats.reasoningTokens", value: total("reasoning") },
+      { label: "context.dashboard.uncached", value: total("uncachedInput") },
+      { label: "context.dashboard.cacheRead", value: total("cacheRead") },
+      { label: "context.dashboard.cacheWrite", value: total("cacheWrite") },
       { label: "context.accounting.reported", value: money(usageTotal(usage(), "cost", "reported").value) },
       { label: "context.accounting.estimated", value: money(usageTotal(usage(), "cost", "estimated").value) },
       { label: "context.dashboard.missingCost", value: known(usageTotal(usage(), "cost").missing) },
@@ -84,24 +89,34 @@ export function SessionContextDashboard(props: {
 
   return (
     <section class="flex flex-col gap-5" aria-busy={props.loading} data-testid="session-usage-accounting">
-      <div>
-        <h2 class="text-14-medium text-text-strong">{language.t("context.dashboard.title")}</h2>
-        <p class="text-12-regular text-text-weak">{language.t("context.dashboard.scope")}</p>
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="text-14-medium text-text-strong">{language.t("context.dashboard.sessionTotals")}</h2>
+        <SessionContextHelp label={language.t("context.dashboard.sessionTotals")} text={`${language.t("context.dashboard.scope")} ${language.t("context.dashboard.definitions")}`} />
       </div>
       <Show when={props.error}>
         <p role="alert">{language.t("context.accounting.error")}</p>
       </Show>
-      <div class="grid grid-cols-2 @[32rem]:grid-cols-3 gap-3">
-        <For each={cards()}>
+      <dl class="flex flex-col gap-2">
+        <For each={cards().slice(0, 5)}>
           {(card) => (
-            <div class="rounded-md border border-border-base p-3">
-              <div class="text-12-regular text-text-weak">{language.t(card.label)}</div>
-              <div class="text-14-medium text-text-strong">{card.value}</div>
+            <div class="flex items-baseline justify-between gap-4 text-12-regular">
+              <dt class="text-text-weak">{language.t(card.label)}</dt>
+              <dd class="text-end tabular-nums text-text-strong">{card.value}</dd>
             </div>
           )}
         </For>
-      </div>
-      <p class="text-12-regular text-text-weak">{language.t("context.dashboard.definitions")}</p>
+      </dl>
+      <details>
+        <summary class="cursor-pointer text-12-medium text-text-weak">{language.t("context.dashboard.tokenDetails")}</summary>
+        <dl class="flex flex-col gap-2 pt-3">
+          <For each={cards().slice(5)}>{(card) => (
+            <div class="flex items-baseline justify-between gap-4 text-12-regular">
+              <dt class="text-text-weak">{language.t(card.label)}</dt>
+              <dd class="text-end tabular-nums text-text-strong">{card.value}</dd>
+            </div>
+          )}</For>
+        </dl>
+      </details>
       <Show when={!props.loading && !props.error && !usage().length}>
         <p>{language.t("context.activity.noHistory")}</p>
       </Show>
@@ -116,69 +131,47 @@ export function SessionContextDashboard(props: {
             </div>
           )}
         </Show>
-        <div class="overflow-x-auto">
-          <table class="w-full text-12-regular text-start">
-            <caption class="text-start pb-2 text-text-weak">{language.t("context.dashboard.averages")}</caption>
-            <thead>
-              <tr>
-                <For
-                  each={
-                    [
-                      "context.stats.model",
-                      "context.dashboard.calls",
-                      "context.accounting.input",
-                      "context.accounting.output",
-                      "context.accounting.cacheRead",
-                      "context.accounting.cacheWrite",
-                    ] as const
-                  }
-                >
-                  {(key) => (
-                    <th scope="col" class="text-start p-2 font-medium">
-                      {language.t(key)}
-                    </th>
-                  )}
-                </For>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={models()}>
-                {(group) => (
-                  <tr class="border-t border-border-base">
-                    <th scope="row" class="text-start p-2 font-normal">
-                      <bdi>{props.modelName(group.model.providerID, group.model.id)}</bdi>
-                      <div class="text-text-weak">
-                        {language.t(
-                          group.role === "main" ? "context.activity.orchestrator" : "context.activity.subagent",
-                        )}
-                      </div>
-                      <div class="text-text-weak">
-                        <For each={group.efforts}>
-                          {(item) => (
-                            <span class="me-2">
-                              <bdi>{item.effort ?? language.t("context.dashboard.unspecified")}</bdi> · {item.count}
-                            </span>
-                          )}
-                        </For>
-                      </div>
-                    </th>
-                    <td class="p-2 tabular-nums">
-                      {group.entries.length} · {format().number(group.share)}%
-                    </td>
-                    <For each={["input", "output", "cacheRead", "cacheWrite"] as const}>
-                      {(key) => <td class="p-2 tabular-nums">{average(group.entries, key)}</td>}
-                    </For>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-        </div>
-        <details class="rounded-md border border-border-base p-3">
+        <details>
+          <summary class="cursor-pointer text-12-medium text-text-strong">{language.t("context.dashboard.models")}</summary>
+          <div class="flex items-center justify-between gap-2 pt-2 text-12-regular text-text-weak">
+            {language.t("context.dashboard.perCall")}
+            <SessionContextHelp label={language.t("context.dashboard.models")} text={language.t("context.dashboard.averages")} />
+          </div>
+          <div class="flex flex-col gap-3 pt-2">
+            <For each={models()}>{(group) => (
+              <details class="text-12-regular">
+                <summary class="cursor-pointer text-text-strong [overflow-wrap:anywhere]">
+                  <bdi>{props.modelName(group.model.providerID, group.model.id)}</bdi>
+                  <span class="ms-2 text-text-weak">{language.t(group.role === "main" ? "context.activity.orchestrator" : "context.activity.subagent")}</span>
+                </summary>
+                <dl class="flex flex-col gap-2 pt-3">
+                  <div class="flex justify-between gap-4">
+                    <dt class="text-text-weak">{language.t("context.dashboard.calls")}</dt>
+                    <dd class="tabular-nums">{format().number(group.entries.length)} · {format().number(group.share)}%</dd>
+                  </div>
+                  <For each={["input", "output", "cacheRead", "cacheWrite"] as const}>{(key) => (
+                    <div class="flex justify-between gap-4">
+                      <dt class="text-text-weak">{language.t(`context.dashboard.${key}`)}</dt>
+                      <dd class="text-end tabular-nums">{average(group.entries, key)}</dd>
+                    </div>
+                  )}</For>
+                </dl>
+                <div class="flex flex-wrap gap-2 pt-2 text-text-weak">
+                  <For each={group.efforts}>{(item) => (
+                    <span><bdi>{item.effort ?? language.t("context.dashboard.unspecified")}</bdi> · {format().number(item.count)}</span>
+                  )}</For>
+                </div>
+              </details>
+            )}</For>
+          </div>
+        </details>
+        <details>
           <summary class="cursor-pointer text-12-medium">
             {language.t("context.activity.decision")} · {props.entries.filter((entry) => entry.kind === "jev").length}
           </summary>
-          <p class="text-12-regular text-text-weak py-2">{language.t("context.dashboard.routingNote")}</p>
+          <div class="flex justify-end">
+            <SessionContextHelp label={language.t("context.activity.decision")} text={language.t("context.dashboard.routingNote")} />
+          </div>
           <For each={decisions()}>
             {(group) => (
               <div class="text-12-regular py-1">
@@ -193,10 +186,10 @@ export function SessionContextDashboard(props: {
             {props.entries.filter((entry) => entry.kind === "jev" && entry.decision?.outcome === "uncertain").length}
           </div>
         </details>
-        <div class="text-12-regular">
-          <h3 class="text-12-medium">
+        <details class="text-12-regular">
+          <summary class="cursor-pointer text-12-medium">
             {language.t("context.activity.compression")} · {compression().length}
-          </h3>
+          </summary>
           <Show
             when={compression().length}
             fallback={<p class="text-text-weak">{language.t("context.activity.noHistory")}</p>}
@@ -212,12 +205,14 @@ export function SessionContextDashboard(props: {
               {language.t("context.activity.cached")} · {compression().filter((item) => item.cached).length}
             </p>
           </Show>
-        </div>
+        </details>
         <Show when={timing()}>
           {(time) => (
-            <div class="text-12-regular">
-              <h3 class="text-12-medium">{language.t("context.dashboard.transport")}</h3>
-              <p class="text-text-weak">{language.t("context.dashboard.transportNote")}</p>
+            <details class="text-12-regular">
+              <summary class="cursor-pointer text-12-medium">{language.t("context.dashboard.transport")}</summary>
+              <div class="flex justify-end">
+                <SessionContextHelp label={language.t("context.dashboard.transport")} text={language.t("context.dashboard.transportNote")} />
+              </div>
               <div>
                 {language.t("context.dashboard.dispatch")} · {duration(time().startedAt, time().dispatchedAt)}
               </div>
@@ -234,7 +229,7 @@ export function SessionContextDashboard(props: {
                     : time().retries.reduce((sum, retry) => sum + retry.delayMs, 0),
                 )}
               </div>
-            </div>
+            </details>
           )}
         </Show>
       </Show>

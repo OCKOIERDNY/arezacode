@@ -10,6 +10,7 @@ import type { SessionComposerRegionController } from "./session-composer-region-
 
 export function SessionComposerRegion(props: {
   controller: SessionComposerRegionController
+  contextNotice?: JSX.Element
   promptInput: JSX.Element
 }) {
   const language = useLanguage()
@@ -60,6 +61,7 @@ export function SessionComposerRegion(props: {
         </Show>
 
         <Show when={controller.showComposer()}>
+          {props.contextNotice}
           <Show when={controller.dock()}>
             <div
               classList={{

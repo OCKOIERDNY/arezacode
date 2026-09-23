@@ -1,6 +1,8 @@
 import { Show } from "solid-js"
 import { useMutation } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
+import { Icon } from "@opencode-ai/ui/icon"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
@@ -36,18 +38,28 @@ export function SessionContextLock(props: {
     onError: (error: Error) => showToast({ variant: "error", title: language.t("common.requestFailed"), description: error.message }),
   }))
   return (
-    <Show when={props.health.locked()}>
-      <div class="flex flex-col gap-2 rounded-md border border-border-weak-base bg-background-base p-3 mb-2" data-component="session-context-lock">
-        <p role="status" class="text-text-base">
-          {language.t(props.health.readonly() ? "context.health.lockedMessage" : "context.health.finishingMessage")}
-        </p>
-        <p class="text-text-weak text-12-regular">{language.t("context.health.preserved")}</p>
+    <Show when={props.health.state() !== "healthy"}>
+      <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-v2-state-bg-warning px-3 py-1 text-v2-state-fg-warning" data-component="session-context-lock">
+        <Tooltip
+          contentClass="max-w-72 whitespace-normal"
+          value={
+            <div>
+              <p>{language.t(props.health.state() === "near" ? "context.health.nearMessage" : props.health.readonly() ? "context.health.lockedMessage" : "context.health.finishingMessage")}</p>
+              <Show when={props.health.locked()}><p>{language.t("context.health.preserved")}</p></Show>
+            </div>
+          }
+        >
+          <button type="button" class="flex items-center gap-2 py-1 text-12-regular">
+            <Icon name="warning" size="small" />
+            <span role="status" aria-live="polite">{language.t(props.health.locked() ? "context.health.inputLocked" : "context.health.near")}</span>
+          </button>
+        </Tooltip>
         <Show when={props.health.readonly()}>
-          <div class="flex flex-wrap gap-2">
-            <Button variant="secondary" disabled={action.isPending} onClick={() => action.mutate("copy")}>
+          <div class="ms-auto flex items-center gap-1">
+            <Button size="small" variant="ghost" disabled={action.isPending} onClick={() => action.mutate("copy")}>
               {language.t("context.health.copy")}
             </Button>
-            <Button variant="primary" disabled={action.isPending} onClick={() => action.mutate("new")}>
+            <Button size="small" variant="ghost" disabled={action.isPending} onClick={() => action.mutate("new")}>
               {language.t("context.health.newChat")}
             </Button>
           </div>

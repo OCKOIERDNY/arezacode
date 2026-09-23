@@ -2270,8 +2270,7 @@ export default function Page() {
           return (
             <SessionComposerRegion
               controller={controller}
-              promptInput={
-                <>
+              contextNotice={
                 <SessionContextLock
                   sessionID={params.id}
                   health={contextHealth}
@@ -2282,11 +2281,9 @@ export default function Page() {
                     ...queuedFollowups().map((item) => handoffDraft(item.prompt)),
                   ].join("\n\n")}
                 />
-                <Show when={!contextHealth.readonly()} fallback={
-                  <div class="rounded-md border border-border-weak-base p-3 text-text-weak whitespace-pre-wrap" dir="auto">
-                    {handoffDraft(prompt.current())}
-                  </div>
-                }>
+              }
+              promptInput={
+                <div inert={contextHealth.locked()} aria-disabled={contextHealth.locked()} classList={{ "opacity-60": contextHealth.locked() }}>
                 <Show
                   when={newSessionDesign()}
                   fallback={
@@ -2344,8 +2341,7 @@ export default function Page() {
                     return <PromptInputV2Composer controller={controller} borderUnderlay />
                   }}
                 </Show>
-                </Show>
-                </>
+                </div>
               }
             />
           )
