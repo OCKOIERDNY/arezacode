@@ -174,7 +174,7 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
           inert={display.exiting}
           onTransitionEnd={finishExit}
           onTransitionCancel={finishExit}
-          class="h-full min-h-0"
+          class="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           <Show when={activeDiff()} keyed>
             {(file) => (

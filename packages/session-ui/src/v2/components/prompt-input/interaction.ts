@@ -388,10 +388,10 @@ export function createPromptInputV2Controller(input: {
       }
       input.view.onPaste?.(event)
       if (event.defaultPrevented) return
-      const text = clipboard?.getData("text/plain")
+      const text = clipboard?.getData("text/plain").replace(/\r\n?/g, "\n")
       if (!text) return
       event.preventDefault()
-      if (typeof document.execCommand === "function" && document.execCommand("insertText", false, text)) return
+      if (text.length < 8000 && !text.includes("\n") && typeof document.execCommand === "function" && document.execCommand("insertText", false, text)) return
       const target = event.currentTarget
       const selection = window.getSelection()
       if (!(target instanceof HTMLElement) || !selection?.rangeCount || !target.contains(selection.anchorNode)) return
