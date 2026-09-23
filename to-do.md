@@ -11,9 +11,9 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 
 ## Features — Chat UI and File Previews
 
-- [ ] Allow clicking a subagent to view its current activity and progress.
-- [ ] Add an elapsed-time counter for each message.
-- [ ] Open an in-app file preview when clicking blue file references in chat (for example, `to-do.md`).
+- [x] Allow clicking a subagent to view its current activity and progress. Task cards open the existing Agents sidebar with the selected child expanded, live status, recent tool activity, latest text, and available plan progress; full conversation navigation remains available. Focused progress regressions pass; manual UI verification remains pending.
+- [x] Add an elapsed-time counter for each message. Each submitted message shows a live turn timer while working, then a persisted completion-based duration; timers are disposed when inactive or unmounted. Focused timing regressions pass; manual UI verification remains pending.
+- [x] Open an in-app file preview when clicking blue file references in chat (for example, `to-do.md`). Links and inline filename mentions use the sidebar file owner. User confirmed opening `to-do.md` in the updated installed desktop app.
   - For Markdown files, provide two tabs: **Preview** for rendered Markdown and **Code** for the raw Markdown source.
 
 ## Features — Context and Usage Dashboard
@@ -44,7 +44,7 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 - [x] **P1 — Reconcile existing V2 sessions after reconnecting.** Existing reconnect reconciliation refreshes cached history before clearing stale status and preserves newer events; focused regressions pass. Manual reconnect verification remains pending.
   - Evidence: `packages/app/src/context/server-sync.tsx:547`.
   - Expected: reconnect restores history and current status, clears completed runs' busy state, and unblocks queued work.
-- [ ] Ensure native processes terminate after cancellation; investigate processes that continue running after their owning operation is cancelled.
+- [x] Ensure native processes terminate after cancellation. Native commands use the shared process-tree terminator, escalate resistant process groups to SIGKILL, reject pre-cancelled launches, and wait for cleanup before settling. Real macOS process regressions cover cancellation, timeout, and a parent exiting before its resistant child. Windows process-tree behavior and manual Stop verification remain unverified.
 
 ### Composer, Attachments, and Chat Layout
 
@@ -52,9 +52,9 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
   - Evidence: `packages/session-ui/src/v2/components/prompt-input/interaction.ts:88`.
   - Expected: starting an attachment in A and switching to B never attaches it to B.
 - [x] Fix queued images breaking after reload; queued follow-ups now use blob-backed draft persistence. Durable-reference hydration is unit-tested; reload/send verification remains pending.
-- [ ] Preserve resource identity when serializing MCP mentions so mentions continue to refer to the intended resource.
+- [x] Preserve resource identity when serializing MCP mentions so mentions continue to refer to the intended resource. V1/V2 composers share the file-mention DOM serializer; server identity, resource URI, MIME type, URL, and updated text offsets survive edits and request/optimistic-part construction. Focused regressions pass; live MCP verification remains pending.
 - [x] Preserve each project's unsent new-chat draft when navigating away or clicking New Chat for that project again. New Chat reuses the existing draft for the same server and project after tab hydration; explicitly supplied prompt text still creates a new draft. Manual navigation verification remains pending.
-- [ ] Fix the plan panel's scrollbar overflowing over the chat; keep it contained within the plan panel.
+- [x] Fix the plan panel's scrollbar overflowing over the chat. The dock establishes its own clipped stacking context and bounds the scroll viewport. Manual visual verification remains pending.
 - [ ] Make resizing accessible by keyboard, including Home's resize controls.
 
 ## Features — Task Context
@@ -94,7 +94,7 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 - [ ] Reduce administrative model round trips by batching independent lookups and deriving deterministic progress updates from actual tool results.
   - Evidence: 151 assistant steps only executed `todowrite`, carrying 34.5 million cumulative input tokens. Their entire duration is not necessarily removable.
 - [ ] Apply cheap deterministic output checks before auxiliary AI work; avoid model calls when deterministic checks can resolve the operation.
-- [ ] Bound Home's data loading instead of scanning the server's entire session history before displaying a small list.
+- [x] Bound Home's data loading instead of scanning the server's entire session history before displaying a small list. Home requests at most 64 active roots per visible scope using server-side directory filters and updated-time ordering; it no longer drains cursors. Search is debounced and uses at most two bounded requests for title/project-name matches. Collapsed project sections do not fetch sessions. Scoped caches remain bounded and preserve events across overlapping fetches. Index-only database migration and regenerated client are included; focused query/cache tests pass. Production performance and visual verification remain pending.
 
 ### Working Context and Reuse
 
@@ -125,6 +125,31 @@ These tasks support the corresponding fixes above; extend existing implementatio
 
 ## Verification and Audit Follow-Up
 
+### Implementation Checks — September 24, 2026
+
+- [x] Complete native-command cancellation cleanup, shared MCP mention serialization, plan scrollbar containment, subagent inspection, and per-message elapsed-time implementation.
+- [x] Pass 53 focused tests: 48 app regressions and five real native-command process regressions. Pass app, Core, and session-ui package typechecks.
+- [x] Build and package the macOS ARM64 desktop app, including the embedded backend, and verify its code signature. Bundle: `packages/desktop/dist/mac-arm64/ArezaCode.app`.
+- [x] Record the user's confirmation that chat file references open correctly after updating the installed desktop app.
+- New UI behavior, live MCP use, Windows cancellation, and production performance remain unverified. Browser checks were not run under the selected manual-verification preference.
+
+#### Manual Checks — Unverified
+
+1. Stop a native engine operation; expect its process tree to exit and the session to become idle.
+2. Insert an MCP resource mention, edit surrounding text, and send; expect the originally selected server/resource to be used.
+3. Expand and scroll a long plan, then collapse it; expect the scrollbar to remain inside the plan panel throughout.
+4. Click an active subagent card; expect its live activity and progress in the Agents sidebar, with the parent chat retained and an option to open the full child conversation.
+5. Send a message and watch its timer; expect it to tick while working, freeze after completion or Stop, and retain the recorded duration after reopening the chat.
+
+### Home Loading and Lint Checks — September 24, 2026
+
+- [x] Pass 74 focused app/Core/Protocol tests, including activity ordering, root/archive/project filtering, cursor decoding, bounded requests, concurrent cache reconciliation, header handling, and migrations.
+- [x] Pass app, session-ui, Core, Protocol, Server, and Client package typechecks; regenerate the shared client and pass migration consistency checks.
+- [x] Confirm the recent-session query uses its new index without a temporary ordering table. Only indexes are added; this migration does not change session records.
+- [x] Pass repository lint with zero errors and focused lint with zero warnings in 15 affected files.
+- [x] Build/package the desktop app and verify its code signature. Updated bundle: `packages/desktop/dist/mac-arm64/ArezaCode.app`.
+- Manual checks remain unverified: Home ordering and project isolation, searching older chats, reconnect freshness, and caret/typing behavior in the empty composer. Production latency and memory improvements have not been measured.
+
 ### Completed Implementation Checks — September 23, 2026
 
 - [x] Mark implemented attachment ownership, queued-image persistence, project draft preservation, Jev cancellation/status, Context dashboard, and compaction-accounting work above.
@@ -136,7 +161,7 @@ These tasks support the corresponding fixes above; extend existing implementatio
 ### Remaining Audit Follow-Up
 
 - [ ] Investigate the four localization test failures reported by the audit.
-- [ ] Resolve the reported lint error and triage warnings.
+- [x] Resolve the reported lint error and triage warnings in affected files. Replaced the invalid empty-editor CSS escape, bound composer callbacks, removed unsafe fixture assertions/unused imports, and fixed tuple-form request headers being spread into numeric keys. Repository lint now exits successfully with zero errors; 15 affected source/test files report zero warnings. The latest full lint run still reports 5,044 warnings elsewhere.
 - [ ] Assess application reachability of dependency advisory matches rather than treating advisory count as confirmed exploitable issues.
 - [ ] Bring the remaining actionable findings from the full audit into this backlog. The source audit reported 20 actionable findings and five optimization opportunities; its summarized findings are not the complete set of 20.
 

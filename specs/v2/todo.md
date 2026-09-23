@@ -2,6 +2,14 @@
 
 ok we need to work towards a launch of v2 so we can get out of this rebuild phase
 
+## Tentative: cheap-model prompt structuring
+
+- [ ] Evaluate using a cheap model to convert long, messy prompts into structured
+  JSON or a typed format before sending them to the main model. Preserve explicit
+  requirements, exact commands, and identifiers; flag ambiguity without inventing
+  requirements. Compare against direct prompting for output quality, intent
+  preservation, total tokens, cost, and latency, including the preprocessing call.
+
 ## Post-Hono cleanup - Kit
 
 The opencode server has moved to the Effect HttpApi backend. Remaining work is
@@ -147,6 +155,7 @@ Instead of needing to tear down things when something changes every service shou
 
 ## ArezaCode product backlog
 
+- [ ] Persist unsent drafts across app closure and restart for every chat: automatically save message text, attachments, and other composer selections as they change, then restore them in the correct chat when reopened. Preserve attachment content so restored drafts remain sendable; clear saved drafts only after successful sending or explicit discard.
 - [ ] Project-level shared components: let the agent create and maintain reusable components within a project. Discover and reuse existing components before creating new ones.
 - [ ] Project overview dashboard: provide a central overview of each project's work and current status.
 - [ ] Compacting message display: stop rendering the full internal compaction summary as a normal chat reply. Show a compact, collapsed entry with details available on demand while retaining the summary for model context.
