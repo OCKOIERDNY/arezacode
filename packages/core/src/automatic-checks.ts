@@ -236,15 +236,26 @@ export function scan(root: string, changed: Map<string, string>, sessionID?: str
 }
 
 export async function compress(text: string, signal?: AbortSignal, sessionID?: string) {
+  const created = Date.now()
   signal?.throwIfAborted()
   if (text.length < 8000 || text.length > 4 * 1024 * 1024 || process.env.AREZACODE_HEADROOM === "0") return
   if (!(await engineEnabled("headroom"))) return
   const executable = await realpath(await nativeBinary("headroom"))
-  const key = hash(JSON.stringify([engineVersions.headroom, executable, await lstat(executable).then((info) => [info.size, info.mtimeMs]), "gpt-4o:protect_recent=0:kompress=disabled", text]))
+  const key = hash(JSON.stringify([engineVersions.headroom, executable, await lstat(executable).then((info) => [info.size, info.mtimeMs]), "v3:gpt-4o:reversible-folds:protect_recent=0:kompress=disabled:positive-token-savings", text]))
   const cached = await readCache("headroom", key)
+  signal?.throwIfAborted()
+  if (cached === "") {
+    const completed = Date.now()
+    await engineResult("headroom", "Reused unchanged output with identical input, settings, and tool version; no useful compression.")
+    if (sessionID) await Jev.recordCompression(sessionID, text.length, text.length, true, { created, completed })
+    signal?.throwIfAborted()
+    return
+  }
   if (cached && cached.length < text.length * 0.9 && !/<<ccr:|\[.*headroom_retrieve/.test(cached)) {
+    const completed = Date.now()
     await engineResult("headroom", "Reused compressed output with identical input, settings, and tool version.")
-    if (sessionID) await Jev.recordCompression(sessionID, text.length, cached.length, true)
+    if (sessionID) await Jev.recordCompression(sessionID, text.length, cached.length, true, { created, completed })
+    signal?.throwIfAborted()
     return cached
   }
   const first = (await readFile(executable, "utf8")).split("\n")[0]
@@ -255,20 +266,34 @@ export async function compress(text: string, signal?: AbortSignal, sessionID?: s
     "headroom",
     [
       "-c",
-      "import json,sys\nfrom headroom import compress\nvalue=compress([{'role':'tool','tool_call_id':'output','content':sys.stdin.read()}], model='gpt-4o', protect_recent=0, kompress_model='disabled')\nprint(json.dumps(value.messages[0]['content']))",
+      [
+        "import json,sys",
+        "from headroom import compress",
+        "from headroom.tokenizers import get_tokenizer",
+        "from headroom.transforms.lossless_compaction import compact_lossless",
+        "text=sys.stdin.read()",
+        "folded=min([text]+[compact_lossless(text,kind) for kind in ('text','search','paths','config')],key=len)",
+        "result=folded if len(folded)<len(text) else compress([{'role':'tool','tool_call_id':'output','content':text}],model='gpt-4o',protect_recent=0,kompress_model='disabled').messages[0]['content']",
+        "tokenizer=get_tokenizer('gpt-4o')",
+        "print(json.dumps(result if isinstance(result,str) and tokenizer.count_text(result)<tokenizer.count_text(text) else text))",
+      ].join("\n"),
     ],
     { interpreter: python, input: text, timeout: 15_000, signal, env: engineEnvironment({ HF_HUB_OFFLINE: "1", HF_HUB_DISABLE_TELEMETRY: "1" }) },
   )
+  signal?.throwIfAborted()
   const result: unknown = JSON.parse(output)
-  if (sessionID) await Jev.recordCompression(sessionID, text.length, typeof result === "string" && result.trim() && result.length < text.length * 0.9 && !/<<ccr:|\[.*headroom_retrieve/.test(result) ? result.length : text.length, false)
-  if (
-    typeof result !== "string" ||
-    !result.trim() ||
-    result.length >= text.length * 0.9 ||
-    /<<ccr:|\[.*headroom_retrieve/.test(result)
-  )
-    return
-  await writeCache("headroom", key, result)
+  const valid = typeof result === "string" && result.trim() && !/<<ccr:|\[.*headroom_retrieve/.test(result)
+  const useful = valid && result.length < text.length * 0.9
+  await engineResult("headroom", useful
+    ? `Compressed ${text.length} to ${result.length} characters; full originals remain available through tool-output storage.`
+    : valid && result.length < text.length
+      ? "Reduction below the 10% acceptance threshold; original output preserved."
+      : "No supported reduction; original output preserved. ML text compression is disabled.")
+  if (sessionID) await Jev.recordCompression(sessionID, text.length, useful ? result.length : text.length, false, { created, completed: Date.now() })
+  signal?.throwIfAborted()
+  if (!valid) return
+  await writeCache("headroom", key, useful ? result : "", signal)
+  if (!useful) return
   return result
 }
 
@@ -279,12 +304,18 @@ async function readCache(engine: "headroom" | "semgrep", key: string) {
   return readFile(file, "utf8").catch(() => undefined)
 }
 
-async function writeCache(engine: "headroom" | "semgrep", key: string, text: string) {
+async function writeCache(engine: "headroom" | "semgrep", key: string, text: string, signal?: AbortSignal) {
   const directory = path.join(Global.Path.cache, "mechanical", engine)
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const temporary = path.join(directory, `${key}.${randomUUID()}.tmp`)
-  await writeFile(temporary, text, { mode: 0o600 })
-  await rename(temporary, path.join(directory, key))
+  try {
+    signal?.throwIfAborted()
+    await writeFile(temporary, text, { mode: 0o600 })
+    signal?.throwIfAborted()
+    await rename(temporary, path.join(directory, key))
+  } finally {
+    await rm(temporary, { force: true })
+  }
   const files = await readdir(directory)
   if (files.length <= 200) return
   const entries = await Promise.all(files.filter((name) => /^[a-f0-9]{64}$/.test(name)).map(async (name) => ({ name, time: await lstat(path.join(directory, name)).then((info) => info.mtimeMs).catch(() => 0) })))

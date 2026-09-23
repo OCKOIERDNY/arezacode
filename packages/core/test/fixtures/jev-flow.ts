@@ -85,7 +85,7 @@ assert.equal(uncertainRoute.routing, "selected")
 assert.deepEqual(uncertainRoute.model, { providerID: "allowed", modelID: "fast", variant: "low" })
 assert.equal(uncertainRoute.task, undefined)
 assert.ok((await Jev.usage(input.sessionID)).some((entry) => entry.promptID === "msg_uncertain_routing" && entry.decision?.confidence === 0.4 && entry.decision.selected?.variant === "low"))
-await Jev.recordCompression(input.sessionID, 12000, 3000, true)
+await Jev.recordCompression(input.sessionID, 12000, 3000, true, { created: Date.now() - 20, completed: Date.now() })
 assert.ok((await Jev.usage(input.sessionID)).some((entry) => entry.automation?.cached && entry.automation.outputCharacters === 3000))
 const explicit = await Jev.prepare({ ...input, auto: false, text: "Use $requested" }, {
   models: [],
