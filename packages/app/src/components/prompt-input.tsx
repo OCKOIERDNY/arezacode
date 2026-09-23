@@ -1,4 +1,5 @@
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
+import { readFileMention, writeFileMention } from "@opencode-ai/session-ui/prompt-file-mention"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import {
@@ -764,17 +765,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const pill = document.createElement("span")
     pill.textContent = part.content
     pill.setAttribute("data-type", part.type)
-    if (part.type === "file") {
-      pill.setAttribute("data-path", part.path)
-      if (part.mime) pill.setAttribute("data-mime", part.mime)
-      if (part.filename) pill.setAttribute("data-filename", part.filename)
-      if (part.url) pill.setAttribute("data-url", part.url)
-      if (part.source?.type === "resource") {
-        pill.setAttribute("data-source-type", part.source.type)
-        pill.setAttribute("data-source-client-name", part.source.clientName)
-        pill.setAttribute("data-source-uri", part.source.uri)
-      }
-    }
+    if (part.type === "file") writeFileMention(pill, part)
     if (part.type === "agent") pill.setAttribute("data-name", part.name)
     pill.setAttribute("contenteditable", "false")
     pill.style.userSelect = "text"
@@ -888,32 +879,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
 
     const pushFile = (file: HTMLElement) => {
-      const content = file.textContent ?? ""
-      const source =
-        file.dataset.sourceType === "resource" && file.dataset.sourceClientName && file.dataset.sourceUri
-          ? {
-              type: "resource" as const,
-              text: {
-                value: content,
-                start: position,
-                end: position + content.length,
-              },
-              clientName: file.dataset.sourceClientName,
-              uri: file.dataset.sourceUri,
-            }
-          : undefined
-      parts.push({
-        type: "file",
-        path: file.dataset.path!,
-        content,
-        start: position,
-        end: position + content.length,
-        ...(file.dataset.mime ? { mime: file.dataset.mime } : {}),
-        ...(file.dataset.filename ? { filename: file.dataset.filename } : {}),
-        ...(file.dataset.url ? { url: file.dataset.url } : {}),
-        ...(source ? { source } : {}),
-      })
-      position += content.length
+      const part = readFileMention(file, position)
+      parts.push(part)
+      position = part.end
     }
 
     const pushAgent = (agent: HTMLElement) => {

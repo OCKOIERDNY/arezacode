@@ -1,5 +1,5 @@
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
-import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, For, Show, type JSX } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -14,6 +14,7 @@ import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { AttachmentCardV2 } from "../attachment-card-v2"
 import { CommentCardV2 } from "../comment-card-v2"
 import { typeLabel } from "../../../components/message-file"
+import { readFileMention, writeFileMention } from "../../../components/prompt-file-mention"
 import type {
   PromptInputV2Attachment,
   PromptInputV2Comment,
@@ -79,7 +80,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
   return (
     <div class={`relative size-full flex flex-col gap-0 ${props.class ?? ""}`}>
       <input
-        ref={props.controller.setFileInput}
+        ref={(element) => props.controller.setFileInput(element)}
         type="file"
         multiple
         accept={ACCEPTED_FILE_TYPES.join(",")}
@@ -101,7 +102,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
                   value: state.popover.query,
                   label: i18n.t("ui.promptInput.commands"),
                   placeholder: "/",
-                  onValueChange: props.controller.setQuery,
+                  onValueChange: (value) => props.controller.setQuery(value),
                   onKeyDown: props.controller.onKeyDown,
                 }
               : undefined
@@ -122,10 +123,10 @@ export function PromptInputV2(props: PromptInputV2Props) {
           event.preventDefault()
           if (!props.disabled) props.controller.submit()
         }}
-        onDragEnter={props.controller.onDragEnter}
-        onDragOver={props.controller.onDragOver}
-        onDragLeave={props.controller.onDragLeave}
-        onDrop={props.controller.onDrop}
+        onDragEnter={(event) => props.controller.onDragEnter(event)}
+        onDragOver={(event) => props.controller.onDragOver(event)}
+        onDragLeave={() => props.controller.onDragLeave()}
+        onDrop={(event) => props.controller.onDrop(event)}
       >
         <Show when={state.drag === "active"}>
           <div class="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-xl bg-v2-background-bg-base/90 text-v2-text-text-base">
@@ -139,7 +140,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
             comments={props.controller.comments()}
             activeCommentID={state.activeContextID}
             removeLabel={i18n.t("ui.promptInput.removeAttachment")}
-            onAttachmentClick={props.controller.openAttachment}
+            onAttachmentClick={(attachment) => props.controller.openAttachment(attachment)}
             onAttachmentRemove={(attachment) => props.controller.removeAttachment(attachment.id)}
             onCommentClick={(comment) => props.controller.toggleContext(comment.key)}
             onCommentRemove={(comment) => props.controller.removeContext(comment.key)}
@@ -163,7 +164,8 @@ export function PromptInputV2(props: PromptInputV2Props) {
             spellcheck={state.mode === "normal"}
             // @ts-expect-error
             autocomplete="off"
-            class="relative z-10 block min-h-[60px] max-h-[180px] w-full overflow-y-auto no-scrollbar whitespace-pre-wrap bg-transparent px-4 pt-4 pb-2 text-[13px] font-[440] leading-5 text-v2-text-text-base focus:outline-none empty:before:content-['\200B'] [&_[data-mention=file]]:text-syntax-property [&_[data-mention=agent]]:text-syntax-type [&_[data-mention=reference]]:text-syntax-keyword"
+            data-empty={"\u200B"}
+            class="relative z-10 block min-h-[60px] max-h-[180px] w-full overflow-y-auto no-scrollbar whitespace-pre-wrap bg-transparent px-4 pt-4 pb-2 text-[13px] font-[440] leading-5 text-v2-text-text-base focus:outline-none empty:before:content-[attr(data-empty)] [&_[data-mention=file]]:text-syntax-property [&_[data-mention=agent]]:text-syntax-type [&_[data-mention=reference]]:text-syntax-keyword"
             classList={{ "font-mono!": state.mode === "shell", "opacity-50": props.disabled }}
             onInput={(event) => {
               const cursor = promptInputV2Cursor(event.currentTarget)
@@ -182,7 +184,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
             }}
             onKeyUp={updateCursor}
             onPointerUp={updateCursor}
-            onPaste={props.controller.onPaste}
+            onPaste={(event) => props.controller.onPaste(event)}
             onFocus={() => props.controller.dispatch({ type: "focus.editor" })}
           />
           <Show when={!props.controller.value()}>
@@ -215,9 +217,9 @@ export function PromptInputV2(props: PromptInputV2Props) {
               contextLabel={i18n.t("ui.promptInput.context")}
               shellLabel={i18n.t("ui.promptInput.shell")}
               onAttach={props.controller.attach}
-              onCommands={props.controller.openCommands}
-              onContext={props.controller.openContext}
-              onShell={props.controller.openShell}
+              onCommands={() => props.controller.openCommands()}
+              onContext={() => props.controller.openContext()}
+              onShell={() => props.controller.openShell()}
             />
             {props.approvalControl}
             <Show when={view.agent} keyed>
@@ -264,8 +266,8 @@ export function PromptInputV2(props: PromptInputV2Props) {
             disabled={!props.controller.canSubmit()}
             sendLabel={i18n.t("ui.promptInput.send")}
             stopLabel={i18n.t("ui.promptInput.stop")}
-            onSubmit={props.controller.submit}
-            onStop={props.controller.stop}
+            onSubmit={() => props.controller.submit()}
+            onStop={() => props.controller.stop()}
           />
         </div>
       </form>
@@ -285,11 +287,7 @@ function renderPromptInputV2Editor(editor: HTMLDivElement, prompt: PromptInputV2
       mention.dataset.mention =
         part.type === "file" && part.mime === "application/x-directory" ? "reference" : part.type
       if (part.type === "agent") mention.dataset.name = part.name
-      if (part.type === "file") {
-        mention.dataset.path = part.path
-        if (part.mime) mention.dataset.mime = part.mime
-        if (part.filename) mention.dataset.filename = part.filename
-      }
+      if (part.type === "file") writeFileMention(mention, part)
       return [mention]
     }),
   )
@@ -327,15 +325,7 @@ function parsePromptInputV2Editor(editor: HTMLDivElement) {
       position += content.length
       return
     }
-    parts.push({
-      type: "file",
-      path: element.dataset.path ?? content.slice(1),
-      content,
-      start: position,
-      end: position + content.length,
-      ...(element.dataset.mime ? { mime: element.dataset.mime } : {}),
-      ...(element.dataset.filename ? { filename: element.dataset.filename } : {}),
-    })
+    parts.push(readFileMention(element, position))
     position += content.length
   }
   const visit = (node: Node) => {
