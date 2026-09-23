@@ -1,6 +1,6 @@
 import { Binary } from "@opencode-ai/core/util/binary"
 import { retry } from "@opencode-ai/core/util/retry"
-import type { OpenCodeEvent, SessionApi, SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { OpenCodeEvent, SessionActiveOutput, SessionApi, SessionMessageInfo } from "@opencode-ai/client/promise"
 import type {
   Message,
   OpencodeClient,
@@ -189,11 +189,11 @@ type ServerSessionOptions = { retry?: typeof retry; protocol?: Promise<"v1" | "v
 
 export function createServerSession(
   client: OpencodeClient,
-  sessionApiOrOptions?: SessionApi | ServerSessionOptions,
+  sessionApiOrOptions?: Pick<SessionApi, "get" | "message"> | ServerSessionOptions,
   messageApi?: MessageApi,
   currentOptions?: ServerSessionOptions,
 ) {
-  const sessionApi = messageApi ? (sessionApiOrOptions as SessionApi) : undefined
+  const sessionApi = messageApi ? (sessionApiOrOptions as Pick<SessionApi, "get" | "message">) : undefined
   const options = messageApi ? currentOptions : (sessionApiOrOptions as ServerSessionOptions | undefined)
   const [data, setData] = createStore({
     info: {} as Record<string, Session | undefined>,
@@ -212,6 +212,8 @@ export function createServerSession(
   })
   const requests = new Map<string, Promise<Session>>()
   const inflight = new Map<string, Promise<void>>()
+  const messageRequests = new Map<string, Promise<void>>()
+  const statusLoads = new Set<Set<string>>()
   const inflightTodo = new Map<string, Promise<void>>()
   const optimistic = new Map<string, Map<string, OptimisticItem>>()
   const v2 = createV2SessionReducer()
@@ -487,6 +489,7 @@ export function createServerSession(
       clearOptimistic(sessionID)
       requests.delete(sessionID)
       inflight.delete(sessionID)
+      messageRequests.delete(sessionID)
       inflightTodo.delete(sessionID)
       messageLoads.delete(sessionID)
       v2.clear(sessionID)
@@ -732,7 +735,7 @@ export function createServerSession(
     })
   }
 
-  const loadMessages = async (sessionID: string, limit: number, before?: string, mode?: "replace" | "prepend") => {
+  const fetchMessagePage = async (sessionID: string, limit: number, before?: string, mode?: "replace" | "prepend") => {
     if (meta.loading[sessionID]) return
     const active = generation(sessionID)
     const load: MessageLoadState = {
@@ -835,6 +838,9 @@ export function createServerSession(
     }
   }
 
+  const loadMessages = (sessionID: string, limit: number, before?: string, mode?: "replace" | "prepend") =>
+    runInflight(messageRequests, sessionID, () => fetchMessagePage(sessionID, limit, before, mode))
+
   const sync = (sessionID: string, options?: { force?: boolean; messageLimit?: number }) => {
     touch(sessionID)
     return runInflight(inflight, sessionID, async () => {
@@ -847,6 +853,36 @@ export function createServerSession(
           : loadMessages(sessionID, options?.messageLimit ?? meta.limit[sessionID] ?? initialMessagePageSize),
       ])
     })
+  }
+
+  const reconnect = async (active: () => Promise<SessionActiveOutput>) => {
+    const touched = new Set<string>()
+    statusLoads.add(touched)
+    try {
+      const snapshot = await active()
+      const targets = new Set([
+        ...pinned.keys(),
+        ...Object.keys(data.message),
+        ...Object.keys(data.session_message),
+        ...Object.keys(snapshot),
+        ...Object.entries(data.session_status)
+          .filter(([, status]) => status.type !== "idle")
+          .map(([sessionID]) => sessionID),
+      ])
+      const results = await Promise.allSettled(
+        [...targets].map(async (sessionID) => {
+          await Promise.allSettled([inflight.get(sessionID), messageRequests.get(sessionID), requests.get(sessionID)])
+          await sync(sessionID, { force: true })
+          if (!touched.has(sessionID))
+            setData("session_status", sessionID, snapshot[sessionID] ? { type: "busy" } : { type: "idle" })
+        }),
+      )
+      const failed = results.find((result) => result.status === "rejected")
+      if (failed?.status === "rejected") throw failed.reason
+      return snapshot
+    } finally {
+      statusLoads.delete(touched)
+    }
   }
 
   const prefetch = async (sessionID: string, limit: number) => {
@@ -962,20 +998,27 @@ export function createServerSession(
     //   if (info) remember({ ...info, time: { ...info.time, archived: event.created, updated: event.created } })
     //   evict([sessionID])
     // }
-    if (event.type === "session.execution.started") setData("session_status", sessionID, { type: "busy" })
+    if (event.type === "session.execution.started") {
+      statusLoads.forEach((load) => load.add(sessionID))
+      setData("session_status", sessionID, { type: "busy" })
+    }
     if (
       event.type === "session.execution.succeeded" ||
       event.type === "session.execution.failed" ||
       event.type === "session.execution.interrupted"
-    )
+    ) {
+      statusLoads.forEach((load) => load.add(sessionID))
       setData("session_status", sessionID, { type: "idle" })
-    if (event.type === "session.retry.scheduled")
+    }
+    if (event.type === "session.retry.scheduled") {
+      statusLoads.forEach((load) => load.add(sessionID))
       setData("session_status", sessionID, {
         type: "retry",
         attempt: event.data.attempt,
         message: event.data.error.message,
         next: event.data.at,
       })
+    }
     if (event.type === "session.forked") void resolve(sessionID, { force: true }).catch(() => {})
     if (
       event.type === "session.revert.staged" ||
@@ -1026,6 +1069,7 @@ export function createServerSession(
         const properties = event.properties as { sessionID?: string; info?: Session }
         const sessionID = properties.info?.id ?? properties.sessionID
         if (!sessionID) return
+        statusLoads.forEach((load) => load.add(sessionID))
         infoSeen.delete(sessionID)
         setData(
           "info",
@@ -1041,6 +1085,7 @@ export function createServerSession(
       }
       case "session.status": {
         const props = event.properties as { sessionID: string; status: SessionStatus }
+        statusLoads.forEach((load) => load.add(props.sessionID))
         setData("session_status", props.sessionID, reconcile(props.status))
         return
       }
@@ -1318,6 +1363,7 @@ export function createServerSession(
       },
     },
     sync,
+    reconnect,
     prefetch,
     shouldPrefetch(sessionID: string, limit: number) {
       if (data.message[sessionID] === undefined) return true

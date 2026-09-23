@@ -162,6 +162,75 @@ function setup(sessions: Record<string, Session>) {
 }
 
 describe("server session", () => {
+  test("reconnect refreshes cached V2 history before clearing stale busy status", async () => {
+    const user = { id: "msg_user", type: "user" as const, text: "hello", time: { created: 1 } }
+    const page = Promise.withResolvers<Awaited<ReturnType<MessageApi["list"]>>>()
+    const requested = Promise.withResolvers<void>()
+    let calls = 0
+    const store = createServerSession({} as OpencodeClient, {
+      get: async () => ({ id: "child", projectID: "project", title: "child", location: { directory: "/repo" }, time: { created: 1, updated: 1 }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }),
+      message: async () => user,
+    }, {
+      list: async () => {
+        calls++
+        if (calls === 1) return { data: [user], cursor: {} }
+        requested.resolve()
+        return page.promise
+      },
+    }, { protocol: Promise.resolve("v2") })
+    await store.sync("child")
+    store.set("session_status", "child", { type: "busy" })
+    const reconnecting = store.reconnect(async () => ({}))
+    await requested.promise
+    expect(store.data.session_working("child")).toBe(true)
+    page.resolve({ data: [{ id: "msg_assistant", type: "assistant", agent: "build", model: { id: "model", providerID: "provider" }, content: [{ type: "text", text: "Finished while disconnected" }], time: { created: 2, completed: 3 } }, user], cursor: {} })
+    await reconnecting
+    expect(calls).toBe(2)
+    expect(store.data.session_message.child).toHaveLength(2)
+    expect(store.data.part.msg_assistant).toMatchObject([{ text: "Finished while disconnected" }])
+    expect(store.data.session_working("child")).toBe(false)
+  })
+
+  test("reconnect does not overwrite newer status events, including unchanged busy events", async () => {
+    const ctx = setup({ child: session("child"), retry: session("retry"), finished: session("finished") })
+    for (const id of ["child", "retry", "finished"]) ctx.store.set("session_status", id, { type: "busy" })
+    const snapshot = Promise.withResolvers<Awaited<ReturnType<ServerApi["session"]["active"]>>>()
+    const reconnecting = ctx.store.reconnect(() => snapshot.promise)
+    ctx.store.apply({ type: "session.status", properties: { sessionID: "child", status: { type: "busy" } } })
+    ctx.store.apply({ type: "session.status", properties: { sessionID: "retry", status: { type: "retry", attempt: 2, message: "retry", next: 10 } } })
+    ctx.store.apply({ type: "session.status", properties: { sessionID: "finished", status: { type: "idle" } } })
+    snapshot.resolve({ finished: { type: "running" } })
+    await reconnecting
+    expect(ctx.store.data.session_status.child).toEqual({ type: "busy" })
+    expect(ctx.store.data.session_status.retry.type).toBe("retry")
+    expect(ctx.store.data.session_status.finished).toEqual({ type: "idle" })
+  })
+
+  test("reconnect waits for a pre-disconnect load then fetches a fresh page", async () => {
+    const stale = deferredResponse()
+    const client = messageClient(stale.promise, response([{ info: userMessage("fresh"), parts: [] }]))
+    const store = createServerSession(client)
+    store.pin("child")
+    const loading = store.sync("child")
+    await client.requested(1)
+    const reconnecting = store.reconnect(async () => ({}))
+    stale.resolve(response([{ info: userMessage("stale"), parts: [] }]))
+    await Promise.all([loading, reconnecting])
+    expect(client.requests).toHaveLength(2)
+    expect(store.data.message.child.map((message) => message.id)).toEqual(["fresh"])
+    store.unpin("child")
+  })
+
+  test("failed reconnect snapshots do not clear busy status or cached history", async () => {
+    const ctx = setup({ child: session("child") })
+    ctx.store.set("session_status", "child", { type: "busy" })
+    ctx.store.set("message", "child", [userMessage("saved")])
+    await expect(ctx.store.reconnect(async () => { throw new Error("offline") })).rejects.toThrow("offline")
+    expect(ctx.store.data.session_working("child")).toBe(true)
+    expect(ctx.store.data.message.child[0].id).toBe("saved")
+    expect(ctx.messages).toEqual([])
+  })
+
   test("updates cached paths from canonical relocation events without replacing history", () => {
     const id = "ses_relocation"
     const ctx = setup({ [id]: session(id) })

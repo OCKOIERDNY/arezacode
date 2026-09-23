@@ -179,7 +179,7 @@ export function seedActiveSessionStatuses(
 function makeQueryOptionsApi(
   scope: ServerScope,
   serverSDK: () => OpencodeClient,
-  serverAPI: ServerApi,
+  serverAPI: Omit<ServerApi, "session">,
   sdkFor: (dir: PathKey) => OpencodeClient,
   protocol: Promise<"v1" | "v2">,
 ) {
@@ -253,12 +253,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
             ),
           )
         }
-        const active = await serverSDK.api.session.active()
-        seedActiveSessionStatuses(session, active)
-        for (const sessionID of Object.keys(active)) {
-          void session.resolve(sessionID).catch(() => undefined)
-        }
-        return active
+        return session.reconnect(() => serverSDK.api.session.active())
       },
     }),
   )
@@ -544,8 +539,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     if (eventType === "integration.connection.updated") void refreshProviders()
 
     if (directory === "global") {
-      if (eventType === "server.connected" && activeSessionsQuery.data === undefined && !activeSessionsQuery.isFetching)
-        void activeSessionsQuery.refetch()
+      if (eventType === "server.connected") {
+        const pending = activeSessionsQuery.isFetching
+        void activeSessionsQuery.refetch({ cancelRefetch: false }).then(() => {
+          if (pending) return activeSessionsQuery.refetch({ cancelRefetch: false })
+        })
+      }
       applyGlobalEvent({
         event,
         project: globalStore.project,
