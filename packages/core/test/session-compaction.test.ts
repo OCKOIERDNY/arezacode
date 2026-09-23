@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test"
 import { SessionCompaction } from "@opencode-ai/core/session/compaction"
+import { EventV2 } from "@opencode-ai/core/event"
+import { SessionEvent } from "@opencode-ai/core/session/event"
+import { SessionMessage } from "@opencode-ai/core/session/message"
+import { SessionV2 } from "@opencode-ai/core/session"
+import { LLM, LLMEvent } from "@opencode-ai/llm"
+import { configure } from "@opencode-ai/llm/providers/openai"
+import { DateTime, Effect, Stream } from "effect"
+import { it } from "./lib/effect"
 
 test("compaction prompt preserves detailed work state and relevant files", () => {
   const prompt = SessionCompaction.buildPrompt({ context: ["conversation history"] })
@@ -45,3 +53,51 @@ test("compaction describes tool media without embedding base64", () => {
   expect(serialized).toBe("Image read successfully\n[Attached image/png: pixel.png]")
   expect(serialized).not.toContain(base64)
 })
+
+for (const reason of ["stop", "length", "content-filter", "tool-calls", "error", "unknown", "eof", "provider-error", "late-text", "empty"] as const) {
+  it.effect(`compaction only commits a complete summary: ${reason}`, () =>
+    Effect.gen(function* () {
+      const published: string[] = []
+      const events = EventV2.Service.of({
+        transaction: (effect) => effect,
+        publish: (definition, data) => Effect.sync(() => {
+          published.push(definition.type)
+          return { id: EventV2.ID.create(), type: definition.type, data }
+        }),
+        subscribe: () => Stream.empty,
+        all: () => Stream.empty,
+        durable: () => Stream.empty,
+        listen: () => Effect.succeed(Effect.void),
+        project: () => Effect.void,
+        replay: () => Effect.void,
+        replayAll: () => Effect.succeed(undefined),
+        remove: () => Effect.void,
+        claim: () => Effect.void,
+      })
+      const model = configure({ limits: { context: 100_000, output: 4096 } }).chat("test")
+      const text = LLMEvent.textDelta({ id: "summary", text: "Checkpoint" })
+      const stream = [
+        ...(reason === "empty" ? [] : [text]),
+        ...(reason === "eof" ? [] : [LLMEvent.finish({ reason: reason === "provider-error" || reason === "late-text" || reason === "empty" ? "stop" : reason })]),
+        ...(reason === "provider-error" ? [LLMEvent.providerError({ message: "failed" })] : []),
+        ...(reason === "late-text" ? [text] : []),
+      ]
+      const compaction = SessionCompaction.make({ events, config: [], llm: { stream: () => Stream.fromIterable(stream) } })
+      const result = yield* compaction.compactAfterOverflow({
+        sessionID: SessionV2.ID.make("ses_compaction_terminal"),
+        model,
+        request: LLM.request({ model, messages: [] }),
+        entries: [{ seq: 0, message: SessionMessage.User.make({
+          id: SessionMessage.ID.make("msg_compaction_input"),
+          type: "user",
+          text: "Retain this original history. ".repeat(2000),
+          time: { created: DateTime.makeUnsafe(0) },
+        }) }],
+      })
+      expect(result).toBe(reason === "stop")
+      expect(published).toEqual(reason === "stop"
+        ? [SessionEvent.Compaction.Started.type, SessionEvent.Compaction.Ended.type]
+        : [SessionEvent.Compaction.Started.type])
+    }),
+  )
+}

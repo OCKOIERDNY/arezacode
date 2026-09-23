@@ -198,6 +198,7 @@ export const make = (dependencies: Dependencies) => {
 
     const chunks: string[] = []
     let failed = false
+    let finished = false
     const summarized = yield* dependencies.llm
       .stream(
         LLM.request({
@@ -210,7 +211,12 @@ export const make = (dependencies: Dependencies) => {
       )
       .pipe(
         Stream.runForEach((event) => {
+          if (finished) failed = true
           if (LLMEvent.is.providerError(event)) failed = true
+          if (LLMEvent.is.finish(event)) {
+            finished = true
+            if (event.reason !== "stop") failed = true
+          }
           if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
           return Effect.void
         }),
@@ -218,7 +224,7 @@ export const make = (dependencies: Dependencies) => {
         Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
       )
     const summary = chunks.join("")
-    if (!summarized || failed || !summary.trim()) return false
+    if (!summarized || !finished || failed || !summary.trim()) return false
     yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
       sessionID: input.sessionID,
       messageID,
