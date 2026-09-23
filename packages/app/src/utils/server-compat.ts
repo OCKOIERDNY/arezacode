@@ -94,6 +94,31 @@ export function withCurrentContract(legacy: OpenCodeClient, options: Parameters<
     ...legacy,
     session: {
       ...legacy.session,
+      async list(value, requestOptions) {
+        const result = await current.sessions.list({
+          ...value,
+          roots: value?.roots ?? (value?.parentID === null ? true : undefined),
+        }, requestOptions)
+        return {
+          data: result.data.map((session) => ({
+            ...session,
+            revert: session.revert && {
+              messageID: session.revert.messageID,
+              partID: session.revert.partID,
+              snapshot: session.revert.snapshot,
+              diff: session.revert.diff,
+              files: session.revert.files?.map((file) => ({
+                file: file.path,
+                patch: file.patch,
+                additions: file.additions,
+                deletions: file.deletions,
+                status: file.status,
+              })),
+            },
+          })),
+          cursor: { previous: result.cursor.previous ?? undefined, next: result.cursor.next ?? undefined },
+        }
+      },
       active: current.sessions.active,
       health: current.sessions.health,
       handoff: current.sessions.handoff,
@@ -244,6 +269,21 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
         value?: Parameters<ServerApi["session"]["list"]>[0],
         options?: Parameters<ServerApi["session"]["list"]>[1],
       ) {
+        if (value?.directories) {
+          const pages = await Promise.all([...new Set(value.directories)].map((directory) =>
+            legacy().experimental.session.list({
+              directory,
+              roots: value.roots ?? (value.parentID === null ? true : undefined),
+              archived: value.archived,
+              search: value.search,
+              limit: value.limit,
+            }, options),
+          ))
+          const sessions = [...new Map(pages.flatMap((page) => page.data ?? []).map((session) => [session.id, session])).values()]
+          const field = value.sort === "created" ? "created" : "updated"
+          sessions.sort((a, b) => (value.order === "asc" ? 1 : -1) * (a.time[field] - b.time[field]))
+          return { data: sessions.slice(0, value.limit).map(sessionInfo), cursor: {} }
+        }
         if (!value?.directory && value?.search !== undefined) {
           const result = await legacy().experimental.session.list(
             {

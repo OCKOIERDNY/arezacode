@@ -307,6 +307,10 @@ export function make(options: ClientOptions) {
             path: `/api/session`,
             query: {
               workspace: input?.["workspace"],
+              directories: input?.["directories"],
+              roots: input?.["roots"],
+              archived: input?.["archived"],
+              sort: input?.["sort"],
               limit: input?.["limit"],
               order: input?.["order"],
               search: input?.["search"],

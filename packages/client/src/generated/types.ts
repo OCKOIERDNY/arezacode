@@ -151,6 +151,10 @@ export type AgentsListOutput = {
 export type SessionsListInput = {
   readonly workspace?: {
     readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
@@ -159,8 +163,68 @@ export type SessionsListInput = {
     readonly subpath?: string | undefined
     readonly cursor?: string | undefined
   }["workspace"]
+  readonly directories?: {
+    readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
+    readonly limit?: number | undefined
+    readonly order?: "asc" | "desc" | undefined
+    readonly search?: string | undefined
+    readonly directory?: string | undefined
+    readonly project?: string | undefined
+    readonly subpath?: string | undefined
+    readonly cursor?: string | undefined
+  }["directories"]
+  readonly roots?: {
+    readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
+    readonly limit?: number | undefined
+    readonly order?: "asc" | "desc" | undefined
+    readonly search?: string | undefined
+    readonly directory?: string | undefined
+    readonly project?: string | undefined
+    readonly subpath?: string | undefined
+    readonly cursor?: string | undefined
+  }["roots"]
+  readonly archived?: {
+    readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
+    readonly limit?: number | undefined
+    readonly order?: "asc" | "desc" | undefined
+    readonly search?: string | undefined
+    readonly directory?: string | undefined
+    readonly project?: string | undefined
+    readonly subpath?: string | undefined
+    readonly cursor?: string | undefined
+  }["archived"]
+  readonly sort?: {
+    readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
+    readonly limit?: number | undefined
+    readonly order?: "asc" | "desc" | undefined
+    readonly search?: string | undefined
+    readonly directory?: string | undefined
+    readonly project?: string | undefined
+    readonly subpath?: string | undefined
+    readonly cursor?: string | undefined
+  }["sort"]
   readonly limit?: {
     readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
@@ -171,6 +235,10 @@ export type SessionsListInput = {
   }["limit"]
   readonly order?: {
     readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
@@ -181,6 +249,10 @@ export type SessionsListInput = {
   }["order"]
   readonly search?: {
     readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
@@ -191,6 +263,10 @@ export type SessionsListInput = {
   }["search"]
   readonly directory?: {
     readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
@@ -201,6 +277,10 @@ export type SessionsListInput = {
   }["directory"]
   readonly project?: {
     readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
@@ -211,6 +291,10 @@ export type SessionsListInput = {
   }["project"]
   readonly subpath?: {
     readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
@@ -221,6 +305,10 @@ export type SessionsListInput = {
   }["subpath"]
   readonly cursor?: {
     readonly workspace?: string | undefined
+    readonly directories?: ReadonlyArray<string> | ReadonlyArray<string> | undefined
+    readonly roots?: boolean | undefined
+    readonly archived?: boolean | undefined
+    readonly sort?: "created" | "updated" | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined

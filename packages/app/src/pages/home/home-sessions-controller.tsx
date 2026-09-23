@@ -4,11 +4,12 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"
 import { DateTime } from "luxon"
 import { type Accessor, createEffect, createMemo, createRoot, type JSX, startTransition } from "solid-js"
-import { produce } from "solid-js/store"
+import { createStore, produce } from "solid-js/store"
 import { useCommand } from "@/context/command"
 import {
   loadHomeSessionIndex,
-  retainHomeSessions,
+  HOME_SESSION_LIMIT,
+  type HomeSessionQuery,
   type HomeSessionEvents,
 } from "@/context/global-sync/home-session-index"
 import type { LocalProject } from "@/context/layout"
@@ -23,7 +24,6 @@ import { Binary } from "@opencode-ai/core/util/binary"
 import { archiveHomeSession } from "../home-session-archive"
 import type { HomeController } from "./home-controller"
 
-const HOME_SESSION_LIMIT = 64
 export type HomeSessionRecord = {
   session: Session
   project: LocalProject
@@ -62,6 +62,37 @@ export function createHomeSessionsController(
   )
   const homeSessions = () => (context()?.sync ?? home.server.focusedSync()).homeSessions
   const queryClient = () => homeSessions().client
+  const [search, setSearch] = createStore({ value: "" })
+  const query = createMemo<HomeSessionQuery>(() => ({
+    directories: [...new Set(projectDirectories())].sort(),
+    limit: Math.min(HOME_SESSION_LIMIT, limit),
+  }))
+  const searchQuery = createMemo<HomeSessionQuery>(() => ({
+    ...query(),
+    search: search.value,
+    matchingDirectories: projects()
+      .filter((project) => displayName(project).toLowerCase().includes(search.value.toLowerCase()))
+      .flatMap(directories)
+      .filter((directory) => query().directories.some((item) => pathKey(item) === pathKey(directory)))
+      .sort(),
+  }))
+  const enabled = () => !!context() && (!scope || scope.expanded()) && query().directories.length > 0
+  const load = async (query: HomeSessionQuery, signal: AbortSignal) => {
+    const ctx = context()
+    if (!ctx) return { sessions: [], eventSequence: 0, query }
+    const cache = homeSessions()
+    const eventSequence = cache.begin()
+    try {
+      return await loadHomeSessionIndex(
+        (input, options) => ctx.sdk.api.session.list(input, options),
+        query,
+        eventSequence,
+        signal,
+      )
+    } finally {
+      cache.complete(eventSequence)
+    }
+  }
   const sessionEventLoad = useQuery(
     () => ({
       queryKey: homeSessions().eventsKey,
@@ -73,21 +104,9 @@ export function createHomeSessionsController(
   )
   const sessionLoad = useQuery(
     () => ({
-      queryKey: homeSessions().indexKey,
-      enabled: !!context(),
-      queryFn: async ({ signal }) => {
-        const ctx = context()
-        if (!ctx) return { sessions: [], eventSequence: 0 }
-        const cache = homeSessions()
-        const eventSequence = cache.eventSequence()
-        const index = await loadHomeSessionIndex(
-          (input, options) => ctx.sdk.client.v2.session.list(input, options),
-          eventSequence,
-          signal,
-        )
-        cache.complete(eventSequence)
-        return index
-      },
+      queryKey: [...homeSessions().indexKey, query()],
+      enabled: enabled(),
+      queryFn: ({ signal }) => load(query(), signal),
       retry: false,
       staleTime: 30_000,
       refetchOnMount: true,
@@ -95,9 +114,18 @@ export function createHomeSessionsController(
     }),
     queryClient,
   )
-  const indexedSessions = createMemo(() =>
-    retainHomeSessions(homeSessions().sessions(sessionLoad.data, sessionEventLoad.data), limit, Date.now()),
+  const searchLoad = useQuery(
+    () => ({
+      queryKey: [...homeSessions().indexKey, searchQuery()],
+      enabled: enabled() && !!search.value,
+      queryFn: ({ signal }) => load(searchQuery(), signal),
+      retry: false,
+      staleTime: 30_000,
+      gcTime: 60_000,
+    }),
+    queryClient,
   )
+  const indexedSessions = createMemo(() => homeSessions().sessions(sessionLoad.data, sessionEventLoad.data))
   const allRecords = createMemo(() =>
     buildHomeSessionRecords({
       sessions: indexedSessions,
@@ -107,6 +135,12 @@ export function createHomeSessionsController(
     }),
   )
   const records = createMemo(() => allRecords().slice(0, limit))
+  const searchRecords = createMemo(() => !search.value ? allRecords() : buildHomeSessionRecords({
+    sessions: () => homeSessions().sessions(searchLoad.data, sessionEventLoad.data),
+    projectDirectories,
+    projects,
+    projectByID,
+  }))
   const groups = createMemo(() => groupSessions(records(), language))
   const prefetched = new Set<string>()
 
@@ -184,9 +218,12 @@ export function createHomeSessionsController(
       records,
       groups,
       loading: () => sessionLoad.isLoading,
-      searchRecords: allRecords,
+      searchRecords,
+      searchQuery: () => search.value,
+      searchLoading: () => searchLoad.isFetching,
     },
     session: {
+      search: (value: string) => setSearch("value", value),
       showProjectName: () => !selectedProject(),
       server: serverKey,
       canCreate: () => !!home.project.newSession(),

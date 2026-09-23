@@ -3,7 +3,8 @@ import { useLanguage } from "@/context/language"
 import { serverName } from "@/context/server"
 import { displayName } from "@/pages/layout/helpers"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { createMemo, onCleanup } from "solid-js"
+import { createEffect, createMemo, on, onCleanup } from "solid-js"
+import { debounce } from "@solid-primitives/scheduled"
 import { createStore } from "solid-js/store"
 import type { HomeController } from "./home-controller"
 import { homeSessionSearchKey, type HomeSessionRecord, type HomeSessionsController } from "./home-sessions-controller"
@@ -18,6 +19,13 @@ export function createHomeSessionSearchController(home: HomeController, sessions
   let input: HTMLInputElement | undefined
   let list: HTMLDivElement | undefined
   const query = createMemo(() => state.value.trim())
+  const search = debounce((value: string) => sessions.session.search(value), 150)
+  createEffect(on(query, (value) => {
+    if (value) return search(value)
+    search.clear()
+    sessions.session.search("")
+  }))
+  onCleanup(() => search.clear())
   const results = createMemo(() => {
     const value = query().toLowerCase()
     if (!value) return []
@@ -84,7 +92,7 @@ export function createHomeSessionSearchController(home: HomeController, sessions
       close,
     },
     result: {
-      loading: sessions.data.loading,
+      loading: () => query() !== sessions.data.searchQuery() || sessions.data.searchLoading(),
       list: results,
       active,
       noResultsLabel: () => language.t("home.sessions.search.noResults", { query: query() }),

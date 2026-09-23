@@ -268,6 +268,12 @@ export default {
       yield* tx.run(`CREATE INDEX \`session_project_idx\` ON \`session\` (\`project_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_workspace_idx\` ON \`session\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_parent_idx\` ON \`session\` (\`parent_id\`);`)
+      yield* tx.run(
+        `CREATE INDEX \`session_home_recent_idx\` ON \`session\` (\`parent_id\`,\`time_archived\`,\`time_updated\`,\`id\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`session_directory_recent_idx\` ON \`session\` (\`directory\`,\`parent_id\`,\`time_archived\`,\`time_updated\`,\`id\`);`,
+      )
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
     })
   },

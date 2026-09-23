@@ -26,6 +26,12 @@ import { SessionEvent } from "@opencode-ai/schema/session-event"
 
 const SessionsQueryFields = {
   workspace: Workspace.ID.pipe(Schema.optional),
+  directories: Schema.Array(AbsolutePath).pipe(Schema.optional),
+  roots: Schema.Boolean.pipe(Schema.optional),
+  archived: Schema.Boolean.pipe(Schema.optional),
+  sort: Schema.Literals(["created", "updated"]).pipe(Schema.optional).annotate({
+    description: "Timestamp to order sessions by. Defaults to created; use updated for recent activity.",
+  }),
   limit: Schema.NumberFromString.pipe(Schema.decodeTo(PositiveInt), Schema.optional).annotate({
     description: "Maximum number of sessions to return. Defaults to the newest 50 sessions.",
   }),

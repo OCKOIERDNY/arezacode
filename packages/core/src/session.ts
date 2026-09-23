@@ -4,7 +4,7 @@ export * from "./session/schema"
 import { DateTime, Effect, Layer, Schema, Context, Stream } from "effect"
 import { Permission } from "@opencode-ai/schema/permission"
 import { ListAnchor } from "@opencode-ai/schema/session"
-import { and, asc, desc, eq, gt, like, lt, or, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, like, lt, or, sql, type SQL } from "drizzle-orm"
 import { ProjectV2 } from "./project"
 import { WorkspaceV2 } from "./workspace"
 import { ModelV2 } from "./model"
@@ -59,6 +59,10 @@ export { ListAnchor }
 
 const ListInputBase = {
   workspaceID: WorkspaceV2.ID.pipe(Schema.optional),
+  directories: Schema.Array(AbsolutePath).pipe(Schema.optional),
+  roots: Schema.Boolean.pipe(Schema.optional),
+  archived: Schema.Boolean.pipe(Schema.optional),
+  sort: Schema.Literals(["created", "updated"]).pipe(Schema.optional),
   search: Schema.String.pipe(Schema.optional),
   limit: PositiveInt.pipe(Schema.optional),
   order: Schema.Literals(["asc", "desc"]).pipe(Schema.optional),
@@ -288,9 +292,13 @@ const layer = Layer.effect(
         const direction = input.anchor?.direction ?? "next"
         const requestedOrder = input.order ?? "desc"
         const order = direction === "previous" ? (requestedOrder === "asc" ? "desc" : "asc") : requestedOrder
-        const sortColumn = SessionTable.time_created
+        const sortColumn = input.sort === "updated" ? SessionTable.time_updated : SessionTable.time_created
         const conditions: SQL[] = []
         if ("directory" in input) conditions.push(eq(SessionTable.directory, input.directory))
+        if (input.directories) conditions.push(inArray(SessionTable.directory, input.directories))
+        if (input.roots) conditions.push(isNull(SessionTable.parent_id))
+        if (input.archived === false) conditions.push(isNull(SessionTable.time_archived))
+        if (input.archived === true) conditions.push(isNotNull(SessionTable.time_archived))
         if (input.workspaceID) conditions.push(eq(SessionTable.workspace_id, input.workspaceID))
         if ("project" in input) conditions.push(eq(SessionTable.project_id, input.project))
         if (input.search) conditions.push(like(SessionTable.title, `%${input.search}%`))

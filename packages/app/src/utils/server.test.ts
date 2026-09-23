@@ -1,5 +1,20 @@
 import { describe, expect, test } from "bun:test"
-import { authFromToken, authTokenFromCredentials } from "./server"
+import { authFromToken, authTokenFromCredentials, createSdkForServer } from "./server"
+
+test("preserves tuple-form request headers instead of spreading their numeric indices", async () => {
+  const requests: Request[] = []
+  const client = createSdkForServer({
+    server: { url: "http://localhost:4096" },
+    headers: [["x-request-test", "tuple-header"]],
+    fetch: Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push(new Request(input, init))
+      return Response.json([])
+    }, { preconnect: globalThis.fetch.preconnect }),
+  })
+  await client.session.list()
+  expect(requests[0].headers.get("x-request-test")).toBe("tuple-header")
+  expect(requests[0].headers.has("0")).toBe(false)
+})
 
 describe("authFromToken", () => {
   test("decodes basic auth credentials from auth_token", () => {

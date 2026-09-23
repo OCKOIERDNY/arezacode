@@ -2,7 +2,7 @@ import { Permission } from "@opencode-ai/schema/permission"
 import { Schema } from "effect"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { OpenCode, type OpenCodeClient } from "@opencode-ai/client/promise"
-import type { SessionsPromptOutput, SessionsHealthOutput, SessionsHandoffOutput } from "@opencode-ai/client-current"
+import type { SessionsPromptOutput, SessionsHealthOutput, SessionsHandoffOutput, SessionsListInput } from "@opencode-ai/client-current"
 import type { ServerConnection } from "@/context/server"
 import { decode64 } from "@/utils/base64"
 import { withCurrentContract } from "./server-compat"
@@ -13,9 +13,9 @@ export function authTokenFromCredentials(input: { username?: string; password: s
 
 export function authFromToken(token: string | null) {
   const decoded = decode64(token ?? undefined)
-  if (!decoded) return
+  if (!decoded) return undefined
   const separator = decoded.indexOf(":")
-  if (separator === -1) return
+  if (separator === -1) return undefined
   return {
     username: decoded.slice(0, separator) || "opencode",
     password: decoded.slice(separator + 1),
@@ -29,7 +29,7 @@ export function createSdkForServer({
   server: ServerConnection.HttpBase
 }) {
   const auth = (() => {
-    if (!server.password) return
+    if (!server.password) return undefined
     return {
       Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}`,
     }
@@ -38,7 +38,9 @@ export function createSdkForServer({
   return createOpencodeClient({
     ...config,
     headers: {
-      ...(config.headers instanceof Headers ? Object.fromEntries(config.headers.entries()) : config.headers),
+      ...(config.headers instanceof Headers || Array.isArray(config.headers)
+        ? Object.fromEntries(config.headers instanceof Headers ? config.headers.entries() : config.headers)
+        : config.headers),
       ...auth,
     },
     baseUrl: server.url,
@@ -76,7 +78,7 @@ export function createApprovalApiForServer(input: { server: ServerConnection.Htt
       signal: AbortSignal.timeout(5000),
     })
     if (!response.ok) throw new Error(`Approval request failed (${response.status})`)
-    if (mode) return
+    if (mode) return undefined
     const body: unknown = await response.json()
     const data = body && typeof body === "object" && "data" in body ? body.data : body
     if (!data || typeof data !== "object" || !("id" in data)) throw new Error("Invalid session response")
@@ -90,7 +92,11 @@ export function createApprovalApiForServer(input: { server: ServerConnection.Htt
 }
 
 export type ServerApi = Omit<OpenCodeClient, "session"> & {
-  session: Omit<OpenCodeClient["session"], "prompt"> & {
+  session: Omit<OpenCodeClient["session"], "prompt" | "list"> & {
+    list: (
+      input?: Parameters<OpenCodeClient["session"]["list"]>[0] & SessionsListInput,
+      options?: Parameters<OpenCodeClient["session"]["list"]>[1],
+    ) => ReturnType<OpenCodeClient["session"]["list"]>
     prompt: (...input: Parameters<OpenCodeClient["session"]["prompt"]>) => Promise<SessionsPromptOutput>
     health: (input: { sessionID: string }, options?: { signal?: AbortSignal }) => Promise<SessionsHealthOutput>
     handoff: (input: { sessionID: string }, options?: { signal?: AbortSignal }) => Promise<SessionsHandoffOutput>

@@ -1,9 +1,17 @@
-import type { Event, Session, SessionV2Info, V2SessionListResponse } from "@opencode-ai/sdk/v2/client"
+import type { Event, Session, SessionV2Info } from "@opencode-ai/sdk/v2/client"
 import type { QueryClient } from "@tanstack/solid-query"
-import { trimSessions } from "./session-trim"
+import type { ServerApi } from "@/utils/server"
+import { compareSessionRecent } from "./session-trim"
 import { pathKey } from "@/utils/path-key"
 
-export const HOME_V2_SESSION_PAGE_LIMIT = 5_000
+export const HOME_SESSION_LIMIT = 64
+
+export type HomeSessionQuery = {
+  directories: string[]
+  limit: number
+  search?: string
+  matchingDirectories?: string[]
+}
 
 export type HomeSessionEvent = {
   type: "session.created" | "session.updated" | "session.deleted"
@@ -16,38 +24,35 @@ export type HomeSessionEvents = {
 export type HomeSessionIndex = {
   sessions: Session[]
   eventSequence: number
+  query?: HomeSessionQuery
 }
 
 export const homeSessionIndexKey = (server: string) => ["home", "session-index", server] as const
 export const homeSessionEventsKey = (server: string) => ["home", "session-events", server] as const
 
-type HomeSessionPage = { data?: V2SessionListResponse }
-
 export async function loadHomeSessionIndex(
-  list: (
-    input: { limit: number; order: "desc"; cursor?: string },
-    options: { signal?: AbortSignal },
-  ) => Promise<HomeSessionPage>,
+  list: ServerApi["session"]["list"],
+  query: HomeSessionQuery,
   eventSequence = 0,
   signal?: AbortSignal,
 ) {
-  const data: SessionV2Info[] = []
-  let cursor: string | undefined
-
-  for (;;) {
-    const response = await list(
-      {
-        limit: HOME_V2_SESSION_PAGE_LIMIT,
-        order: "desc",
-        ...(cursor ? { cursor } : {}),
-      },
-      { signal },
-    )
-    const page = response.data!
-    data.push(...page.data)
-    if (page.data.length < HOME_V2_SESSION_PAGE_LIMIT || !page.cursor.next)
-      return { sessions: parseHomeSessionIndex(data), eventSequence }
-    cursor = page.cursor.next
+  if (!query.directories.length) return { sessions: [], eventSequence, query }
+  const filters = [
+    { directories: query.directories, search: query.search },
+    ...(query.search && query.matchingDirectories?.length ? [{ directories: query.matchingDirectories }] : []),
+  ]
+  const pages = await Promise.all(filters.map((filter) => list({
+    ...filter,
+    limit: Math.min(HOME_SESSION_LIMIT, query.limit),
+    order: "desc",
+    sort: "updated",
+    roots: true,
+    archived: false,
+  }, { signal })))
+  return {
+    sessions: selectHomeSessions(parseHomeSessionIndex(pages.flatMap((page) => page.data)), query),
+    eventSequence,
+    query,
   }
 }
 
@@ -68,9 +73,9 @@ export function trimHomeSessionEvents(current: HomeSessionEvents | undefined, se
 
 export function homeSessionIndexSessions(index: HomeSessionIndex | undefined, events: HomeSessionEvents | undefined) {
   if (!index) return []
-  return (events?.entries ?? [])
+  return selectHomeSessions((events?.entries ?? [])
     .filter((entry) => entry.sequence > index.eventSequence)
-    .reduce((sessions, entry) => applyHomeSessionEvent(sessions, entry.event), index.sessions)
+    .reduce((sessions, entry) => applyHomeSessionEvent(sessions, entry.event), index.sessions), index.query)
 }
 
 export function homeSessionIndexRefresh(event: Event["type"], connected: boolean) {
@@ -86,73 +91,90 @@ export function createHomeSessionIndexCache(queryClient: QueryClient, server: st
   const eventsKey = homeSessionEventsKey(server)
   let connected = false
   const removed = new Set<string>()
+  const pending = new Map<number, number>()
+
+  const rebase = (events: HomeSessionEvents) => {
+    queryClient.setQueriesData<HomeSessionIndex>({ queryKey: indexKey }, (index) => index && ({
+      ...index,
+      sessions: homeSessionIndexSessions(index, events),
+      eventSequence: events.sequence,
+    }))
+  }
 
   return {
     client: queryClient,
     indexKey,
     eventsKey,
-    eventSequence() {
-      return queryClient.getQueryData<HomeSessionEvents>(eventsKey)?.sequence ?? 0
+    begin() {
+      const sequence = queryClient.getQueryData<HomeSessionEvents>(eventsKey)?.sequence ?? 0
+      pending.set(sequence, (pending.get(sequence) ?? 0) + 1)
+      return sequence
     },
     complete(sequence: number) {
-      // Keep events received after the fetch began so its response cannot overwrite them.
-      queryClient.setQueryData<HomeSessionEvents>(eventsKey, (current) => trimHomeSessionEvents(current, sequence))
+      const count = pending.get(sequence) ?? 0
+      if (count <= 1) pending.delete(sequence)
+      if (count > 1) pending.set(sequence, count - 1)
+      const events = queryClient.getQueryData<HomeSessionEvents>(eventsKey)
+      if (events) rebase(events)
+      queryClient.setQueryData<HomeSessionEvents>(eventsKey, (current) =>
+        trimHomeSessionEvents(current, Math.min(sequence, ...pending.keys())),
+      )
     },
     sessions(index: HomeSessionIndex | undefined, events: HomeSessionEvents | undefined) {
       const sessions = homeSessionIndexSessions(index, events)
       return removed.size === 0 ? sessions : sessions.filter((session) => !removed.has(session.id))
     },
     apply(event: HomeSessionEvent) {
-      if (!queryClient.getQueryState(indexKey)) return
+      if (!queryClient.getQueriesData({ queryKey: indexKey }).length) return
       const next = appendHomeSessionEvent(queryClient.getQueryData<HomeSessionEvents>(eventsKey), event)
-      if (queryClient.isFetching({ queryKey: indexKey, exact: true }) > 0) {
+      if (pending.size || queryClient.isFetching({ queryKey: indexKey }) > 0) {
         queryClient.setQueryData(eventsKey, next)
         return
       }
 
-      const index = queryClient.getQueryData<HomeSessionIndex>(indexKey)
-      if (index) {
-        queryClient.setQueryData<HomeSessionIndex>(indexKey, {
-          sessions: homeSessionIndexSessions(index, next),
-          eventSequence: next.sequence,
-        })
-      }
+      rebase(next)
       queryClient.setQueryData<HomeSessionEvents>(eventsKey, { sequence: next.sequence, entries: [] })
     },
     remove(sessionID: string) {
       removed.add(sessionID)
-      if (!queryClient.getQueryState(indexKey)) return
-      queryClient.setQueryData<HomeSessionIndex>(indexKey, (index) => {
+      queryClient.setQueriesData<HomeSessionIndex>({ queryKey: indexKey }, (index) => {
         if (!index) return index
         const at = index.sessions.findIndex((session) => session.id === sessionID)
         if (at === -1) return index
         return { ...index, sessions: index.sessions.toSpliced(at, 1) }
       })
+      void queryClient.invalidateQueries({ queryKey: indexKey, refetchType: "active" })
     },
     refresh(event: Event["type"]) {
       const result = homeSessionIndexRefresh(event, connected)
       connected = result.connected
       if (!result.refetch) return
-      void queryClient.refetchQueries({ queryKey: indexKey, exact: true, type: "active" })
+      void queryClient.refetchQueries({ queryKey: indexKey, type: "active" })
     },
   }
 }
 
-// TODO(v2): This deliberately dumb full-table scan is necessary because the
-// current V2 API orders by creation time and cannot filter roots, archives, or
-// multiple directories. A bounded page could omit an old session updated today.
-// Once released, use client.v2.project.list() and client.v2.session.list({
-// parentID: null, order: "desc" }), then remove this adapter and its V1 fields.
-export function parseHomeSessionIndex(sessions: SessionV2Info[]): Session[] {
+type HomeSessionSummary = Omit<SessionV2Info, "time" | "revert"> & {
+  time: { created: number; updated: number; archived?: number | null }
+}
+
+export function parseHomeSessionIndex(sessions: readonly HomeSessionSummary[]): Session[] {
   return sessions.flatMap((item) => {
     if (item.parentID || typeof item.time.archived === "number") return []
     return [toLegacySummary(item)]
   })
 }
 
-export function retainHomeSessions(sessions: Session[], limit: number, now: number) {
-  const grouped = Map.groupBy(sessions, (session) => pathKey(session.directory))
-  return [...grouped.values()].flatMap((items) => trimSessions(items, { limit, permission: {}, now }))
+export function selectHomeSessions(sessions: Session[], query?: HomeSessionQuery) {
+  const directories = query && new Set(query.directories.map(pathKey))
+  const matching = new Set(query?.matchingDirectories?.map(pathKey))
+  const search = query?.search?.toLowerCase()
+  return [...new Map(sessions.map((session) => [session.id, session])).values()]
+    .filter((session) => !session.parentID && typeof session.time.archived !== "number")
+    .filter((session) => !directories || directories.has(pathKey(session.directory)))
+    .filter((session) => !search || session.title.toLowerCase().includes(search) || matching.has(pathKey(session.directory)))
+    .sort(compareSessionRecent)
+    .slice(0, Math.min(HOME_SESSION_LIMIT, query?.limit ?? HOME_SESSION_LIMIT))
 }
 
 export function applyHomeSessionEvent(sessions: Session[], event: HomeSessionEvent) {
@@ -167,7 +189,7 @@ export function applyHomeSessionEvent(sessions: Session[], event: HomeSessionEve
   return sessions.with(index, info)
 }
 
-function toLegacySummary(session: SessionV2Info): Session {
+function toLegacySummary(session: HomeSessionSummary): Session {
   return {
     id: session.id,
     slug: session.id,
@@ -182,6 +204,6 @@ function toLegacySummary(session: SessionV2Info): Session {
     agent: session.agent,
     model: session.model,
     version: "",
-    time: session.time,
+    time: { ...session.time, archived: session.time.archived ?? undefined },
   }
 }

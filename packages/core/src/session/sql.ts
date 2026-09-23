@@ -12,7 +12,6 @@ import type { MessageID, PartID, SessionV1 } from "../v1/session"
 import { WorkspaceV2 } from "../workspace"
 import { Timestamps } from "../database/schema.sql"
 import type { SystemContext } from "../system-context/index"
-import { AgentV2 } from "../agent"
 import type { Revert } from "@opencode-ai/schema/revert"
 
 type SessionMessageData = Omit<(typeof SessionMessage.Message)["Encoded"], "type" | "id">
@@ -62,6 +61,8 @@ export const SessionTable = sqliteTable(
     index("session_project_idx").on(table.project_id),
     index("session_workspace_idx").on(table.workspace_id),
     index("session_parent_idx").on(table.parent_id),
+    index("session_home_recent_idx").on(table.parent_id, table.time_archived, table.time_updated, table.id),
+    index("session_directory_recent_idx").on(table.directory, table.parent_id, table.time_archived, table.time_updated, table.id),
   ],
 )
 

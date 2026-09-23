@@ -1,16 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
-import type { Session, SessionV2Info } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@opencode-ai/sdk/v2/client"
 import {
   applyHomeSessionEvent,
   appendHomeSessionEvent,
   createHomeSessionIndexCache,
-  HOME_V2_SESSION_PAGE_LIMIT,
+  HOME_SESSION_LIMIT,
   loadHomeSessionIndex,
   homeSessionIndexSessions,
   homeSessionIndexRefresh,
   parseHomeSessionIndex,
-  retainHomeSessions,
+  selectHomeSessions,
+  type HomeSessionIndex,
 } from "./home-session-index"
 
 const session = (input: {
@@ -31,44 +32,99 @@ const session = (input: {
 })
 
 describe("Home V2 session index", () => {
+  test("does not fetch when there are no visible project directories", async () => {
+    let calls = 0
+    const result = await loadHomeSessionIndex(async () => {
+      calls++
+      return { data: [], cursor: {} }
+    }, { directories: [], limit: HOME_SESSION_LIMIT })
+    expect(calls).toBe(0)
+    expect(result.sessions).toEqual([])
+  })
+
+  test("bounds title and project-name search requests without loading older pages", async () => {
+    const calls: unknown[] = []
+    const result = await loadHomeSessionIndex(async (input) => {
+      calls.push(input)
+      return { data: [session({ id: "older matching chat", directory: "/docs", updated: 50 })], cursor: { next: "more" } }
+    }, { directories: ["/project", "/docs"], matchingDirectories: ["/docs"], search: "docs", limit: 5000 })
+    expect(result.sessions.map((item) => item.id)).toEqual(["older matching chat"])
+    expect(calls).toEqual([
+      { directories: ["/project", "/docs"], search: "docs", limit: 64, order: "desc", sort: "updated", roots: true, archived: false },
+      { directories: ["/docs"], limit: 64, order: "desc", sort: "updated", roots: true, archived: false },
+    ])
+  })
+
+  test("retains events for overlapping project fetches and rebases inactive scopes", () => {
+    const client = new QueryClient()
+    const cache = createHomeSessionIndexCache(client, "server")
+    const query = { directories: ["/project"], limit: 2 }
+    const key = [...cache.indexKey, query]
+    const initial = { sessions: parseHomeSessionIndex([session({ id: "root" })]), eventSequence: 0, query }
+    client.setQueryData(key, initial)
+    const slow = cache.begin()
+    cache.apply({ type: "session.updated", properties: {
+      sessionID: "root", info: { ...initial.sessions[0], title: "updated during fetch" },
+    } })
+    const fast = cache.begin()
+    cache.complete(fast)
+    cache.complete(slow)
+    expect(cache.sessions(initial, client.getQueryData(cache.eventsKey))[0].title).toBe("updated during fetch")
+    const next = cache.begin()
+    cache.complete(next)
+    expect(client.getQueryData<HomeSessionIndex>(key)?.sessions[0].title).toBe("updated during fetch")
+  })
+
+  test("live events stay bounded and cannot leak across project or search scopes", () => {
+    const client = new QueryClient()
+    const cache = createHomeSessionIndexCache(client, "server")
+    const project = { directories: ["/project"], limit: 2 }
+    const search = { directories: ["/other"], limit: 2, search: "needle" }
+    const key = [...cache.indexKey, project]
+    const searchKey = [...cache.indexKey, search]
+    client.setQueryData(key, { sessions: [], eventSequence: 0, query: project })
+    client.setQueryData(searchKey, { sessions: [], eventSequence: 0, query: search })
+    for (let index = 0; index < 80; index++) {
+      const info = parseHomeSessionIndex([session({ id: `chat-${index}`, updated: index })])[0]
+      cache.apply({ type: "session.created", properties: { sessionID: info.id, info } })
+    }
+    expect(client.getQueryData<HomeSessionIndex>(key)?.sessions.map((item) => item.id)).toEqual(["chat-79", "chat-78"])
+    expect(client.getQueryData<HomeSessionIndex>(searchKey)?.sessions).toEqual([])
+  })
+
   test("loads the Home index with one global V2 request", async () => {
     const calls: unknown[] = []
     const result = await loadHomeSessionIndex(async (input) => {
       calls.push(input)
-      return { data: { data: [session({ id: "root" })], cursor: {} } }
-    })
+      return { data: [session({ id: "root" })], cursor: {} }
+    }, { directories: ["/project"], limit: HOME_SESSION_LIMIT })
 
     expect(result.sessions).toHaveLength(1)
-    expect(calls).toEqual([{ limit: HOME_V2_SESSION_PAGE_LIMIT, order: "desc" }])
+    expect(calls).toEqual([{
+      directories: ["/project"], limit: HOME_SESSION_LIMIT, order: "desc", sort: "updated", roots: true, archived: false,
+    }])
   })
 
-  test("loads subsequent pages until the session index is complete", async () => {
+  test("never drains history even when the bounded page has a next cursor", async () => {
     const calls: unknown[] = []
     const controller = new AbortController()
     const result = await loadHomeSessionIndex(
       async (input, options) => {
-        calls.push({ input, signal: options.signal })
-        if (!("cursor" in input)) {
-          return {
-            data: {
-              data: Array.from({ length: HOME_V2_SESSION_PAGE_LIMIT }, (_, index) =>
-                session({ id: `page-1-${index}` }),
-              ),
-              cursor: { next: "next-page" },
-            },
-          }
+        calls.push({ input, signal: options?.signal })
+        return {
+          data: Array.from({ length: HOME_SESSION_LIMIT }, (_, index) => session({ id: `session-${index}` })),
+          cursor: { next: "next-page" },
         }
-        return { data: { data: [session({ id: "page-2" })], cursor: {} } }
       },
+      { directories: ["/project"], limit: HOME_SESSION_LIMIT },
       0,
       controller.signal,
     )
 
-    expect(result.sessions).toHaveLength(HOME_V2_SESSION_PAGE_LIMIT + 1)
+    expect(result.sessions).toHaveLength(HOME_SESSION_LIMIT)
     expect(calls).toEqual([
-      { input: { limit: HOME_V2_SESSION_PAGE_LIMIT, order: "desc" }, signal: controller.signal },
       {
-        input: { limit: HOME_V2_SESSION_PAGE_LIMIT, order: "desc", cursor: "next-page" },
+        input: { directories: ["/project"], limit: HOME_SESSION_LIMIT, order: "desc", sort: "updated", roots: true, archived: false },
         signal: controller.signal,
       },
     ])
@@ -78,7 +134,7 @@ describe("Home V2 session index", () => {
     const activeNull = {
       ...session({ id: "active-null", updated: 20 }),
       time: { created: 1, updated: 20, archived: null },
-    } as unknown as SessionV2Info
+    }
     const result = parseHomeSessionIndex([
       session({ id: "root", updated: 30 }),
       activeNull,
@@ -98,21 +154,21 @@ describe("Home V2 session index", () => {
       }),
       expect.objectContaining({
         id: "active-null",
-        time: { created: 1, updated: 20, archived: null },
+        time: { created: 1, updated: 20, archived: undefined },
       }),
     ])
   })
 
-  test("preserves the per-directory Home retention limit", () => {
-    const now = 10 * 60 * 60 * 1000
+  test("bounds retained rows globally and isolates selected project directories", () => {
     const sessions = Array.from({ length: 80 }, (_, index) => ({
       ...parseHomeSessionIndex([session({ id: `session-${index}`, updated: index + 1 })])[0],
       directory: index % 2 === 0 ? "/one" : "/two",
     }))
 
-    const retained = retainHomeSessions(sessions, 10, now)
-    expect(retained.filter((item) => item.directory === "/one")).toHaveLength(10)
-    expect(retained.filter((item) => item.directory === "/two")).toHaveLength(10)
+    const retained = selectHomeSessions(sessions, { directories: ["/one"], limit: 10 })
+    expect(retained).toHaveLength(10)
+    expect(retained.every((item) => item.directory === "/one")).toBe(true)
+    expect(selectHomeSessions(sessions)).toHaveLength(HOME_SESSION_LIMIT)
   })
 
   test("replays session events over the loaded index", () => {
@@ -126,7 +182,7 @@ describe("Home V2 session index", () => {
     expect(
       applyHomeSessionEvent(afterCreate, {
         type: "session.deleted",
-        properties: { sessionID: initial[0]!.id, info: initial[0]! },
+        properties: { sessionID: initial[0].id, info: initial[0] },
       }),
     ).toEqual([created])
   })
@@ -157,10 +213,7 @@ describe("Home V2 session index", () => {
   test("removes a session from the loaded Home index", () => {
     const queryClient = new QueryClient()
     const cache = createHomeSessionIndexCache(queryClient, "server")
-    const sessions = [
-      { id: "a", time: { created: 1, updated: 1 } },
-      { id: "b", time: { created: 1, updated: 1 } },
-    ] as Session[]
+    const sessions = parseHomeSessionIndex([session({ id: "a" }), session({ id: "b" })])
     queryClient.setQueryData(cache.indexKey, { sessions, eventSequence: 0 })
 
     cache.remove("a")
@@ -172,10 +225,7 @@ describe("Home V2 session index", () => {
   test("keeps the session out of the Home list when the index is not mounted", () => {
     const queryClient = new QueryClient()
     const cache = createHomeSessionIndexCache(queryClient, "server")
-    const sessions = [
-      { id: "a", time: { created: 1, updated: 1 } },
-      { id: "b", time: { created: 1, updated: 1 } },
-    ] as Session[]
+    const sessions = parseHomeSessionIndex([session({ id: "a" }), session({ id: "b" })])
 
     cache.remove("a")
 
