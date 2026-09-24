@@ -2283,7 +2283,7 @@ export default function Page() {
                 />
               }
               promptInput={
-                <div inert={contextHealth.locked()} aria-disabled={contextHealth.locked()} classList={{ "opacity-60": contextHealth.locked() }}>
+                <div inert={contextHealth.locked()} aria-disabled={contextHealth.locked()} classList={{ "[&_form>*]:opacity-60": contextHealth.locked() }}>
                 <Show
                   when={newSessionDesign()}
                   fallback={
