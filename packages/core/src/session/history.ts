@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, ne, or } from "drizzle-orm"
+import { and, asc, desc, eq, gt, gte, ne, or, sql } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import { Database } from "../database/database"
 import { MessageDecodeError } from "./error"
@@ -9,6 +9,12 @@ import { SessionContextEpochTable, SessionMessageTable } from "./sql"
 type DatabaseService = Database.Interface["db"]
 
 const decode = Schema.decodeUnknownEffect(SessionMessage.Message)
+
+export const taskBoundary = Effect.fn("SessionHistory.taskBoundary")(function* (db: DatabaseService, sessionID: SessionSchema.ID) {
+  return yield* db.select({ seq: SessionMessageTable.seq }).from(SessionMessageTable)
+    .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "user"), sql`json_extract(${SessionMessageTable.data}, '$.independent') = 1`))
+    .orderBy(desc(SessionMessageTable.seq)).limit(1).get().pipe(Effect.orDie)
+})
 
 export const latestCompaction = Effect.fnUntraced(function* (db: DatabaseService, sessionID: SessionSchema.ID) {
   return yield* db
@@ -27,12 +33,14 @@ const messageRows = Effect.fnUntraced(function* (
   compaction: { readonly seq: number } | undefined,
   baselineSeq?: number,
 ) {
+  const boundary = yield* taskBoundary(db, sessionID)
   const rows = yield* db
     .select()
     .from(SessionMessageTable)
     .where(
       and(
         eq(SessionMessageTable.session_id, sessionID),
+        boundary ? gte(SessionMessageTable.seq, boundary.seq) : undefined,
         compaction
           ? or(
               gte(SessionMessageTable.seq, compaction.seq),

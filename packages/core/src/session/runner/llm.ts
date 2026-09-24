@@ -210,8 +210,7 @@ const layer = Layer.effect(
         if (promoted === 0 && step === 1 && (yield* SessionHealth.get(db, session.id)).locked)
           return { needsContinuation: false, step: currentStep }
       }
-      const system =
-        initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
+      const system = yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id, initialized)
       const model = yield* models.resolve(session)
       if (model.route.defaults.limits?.context) yield* SessionHealth.recordModel(db, session.id, { id: session.model?.id ?? model.id, providerID: session.model?.providerID ?? model.provider, context: model.route.defaults.limits.context })
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
@@ -464,8 +463,9 @@ const layer = Layer.effect(
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
     }) {
-      if ((yield* SessionHealth.get(db, input.sessionID)).locked) return
-      const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+      const locked = (yield* SessionHealth.get(db, input.sessionID)).locked
+      if (locked && !(yield* SessionInput.canStartIndependent(db, input.sessionID))) return
+      const hasSteer = !locked && (yield* SessionInput.hasPending(db, input.sessionID, "steer"))
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
       if (!input.force && !hasSteer && !hasQueue) return
       automations.set(input.sessionID, yield* Effect.promise(() => AutomaticChecks.session(location.directory, input.sessionID)))
@@ -489,7 +489,7 @@ const layer = Layer.effect(
           promotion = "steer"
           if (!needsContinuation && !(yield* SessionHealth.get(db, input.sessionID)).locked) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
         }
-        shouldRun = !(yield* SessionHealth.get(db, input.sessionID)).locked && (yield* SessionInput.hasPending(db, input.sessionID, "queue"))
+        shouldRun = (yield* SessionInput.hasPending(db, input.sessionID, "queue")) && (!(yield* SessionHealth.get(db, input.sessionID)).locked || (yield* SessionInput.canStartIndependent(db, input.sessionID)))
         promotion = shouldRun ? "queue" : undefined
       }
     }, Effect.scoped)

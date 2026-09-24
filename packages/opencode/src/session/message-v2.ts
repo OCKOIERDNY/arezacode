@@ -525,6 +525,7 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
   let retain: MessageID | undefined
   for (const msg of msgs) {
     result.push(msg)
+    if (msg.info.role === "user" && msg.parts.some((part) => part.type === "text" && part.metadata?.independentTask === true)) break
     if (retain) {
       if (msg.info.id === retain) break
       continue

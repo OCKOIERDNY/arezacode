@@ -1,4 +1,4 @@
-export const DESKTOP_NATIVE_LOCALES = [
+const KNOWN_DESKTOP_LOCALES = [
   "en",
   "zh",
   "zht",
@@ -63,7 +63,8 @@ export const DESKTOP_NATIVE_LOCALES = [
   "uz",
 ] as const
 
-export type DesktopNativeLocale = (typeof DESKTOP_NATIVE_LOCALES)[number]
+export type DesktopNativeLocale = (typeof KNOWN_DESKTOP_LOCALES)[number]
+export const DESKTOP_NATIVE_LOCALES: readonly DesktopNativeLocale[] = ["en"]
 
 export const DESKTOP_NATIVE_LABELS: Record<DesktopNativeLocale, string> = {
   en: "English",
@@ -195,30 +196,12 @@ export const DESKTOP_NATIVE_LOCALE_TAGS: Record<DesktopNativeLocale, string> = {
   uz: "uz-Latn-UZ",
 }
 
-export function detectDesktopNativeLocale(languages: readonly string[]): DesktopNativeLocale {
-  for (const language of languages) {
-    const source = locale(language)
-    if (!source) continue
-    if (["no", "nb", "nn"].includes(source.language)) return "no"
-    const match = DESKTOP_NATIVE_LOCALES.find((candidate) => {
-      const target = locale(DESKTOP_NATIVE_LOCALE_TAGS[candidate])
-      return target?.language === source.language && target.script === source.script
-    })
-    if (match) return match
-  }
+export function detectDesktopNativeLocale(_languages: readonly string[]): DesktopNativeLocale {
   return "en"
 }
 
 export function desktopNativePluralCategories(locale: DesktopNativeLocale) {
   return new Intl.PluralRules(DESKTOP_NATIVE_LOCALE_TAGS[locale]).resolvedOptions().pluralCategories
-}
-
-function locale(value: string) {
-  try {
-    return new Intl.Locale(value).maximize()
-  } catch {
-    return undefined
-  }
 }
 
 export const DESKTOP_NATIVE_ENGLISH = {

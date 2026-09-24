@@ -18,6 +18,7 @@ import { Jev } from "@opencode-ai/core/jev"
 import { Provider } from "@/provider/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { SessionHealth } from "@opencode-ai/core/session/health"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -53,6 +54,9 @@ const BaseParameterFields = {
       "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
   }),
   command: Schema.optional(Schema.String).annotate({ description: "The command that triggered this task" }),
+  model: Schema.optional(Schema.Struct({ providerID: Schema.String, modelID: Schema.String, variant: Schema.optional(Schema.String) })).annotate({
+    description: "Explicit user-requested model override. Omit to let Jev choose an available suitable model and reasoning effort.",
+  }),
 }
 
 const BaseParameters = Schema.Struct(BaseParameterFields)
@@ -107,6 +111,7 @@ export const TaskTool = Tool.define(
       }
 
       const parent = yield* sessions.get(ctx.sessionID)
+      const contextID = yield* SessionHealth.taskID(database.db, ctx.sessionID)
       let current = parent
       let depth = 0
       while (current.parentID) {
@@ -183,11 +188,11 @@ export const TaskTool = Tool.define(
       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
       const variant = msg.info.variant
 
-      const routed = next.model || next.variant ? undefined : yield* Effect.promise(() => Jev.delegate(ctx.sessionID, nextSession.id, params.prompt, next.name))
+      const routed = params.model || next.model || next.variant ? undefined : yield* Effect.promise(() => Jev.delegate(ctx.sessionID, nextSession.id, params.prompt, next.name))
       const selected = routed?.model ? yield* providers.getModel(ProviderV2.ID.make(routed.model.providerID), ModelV2.ID.make(routed.model.modelID)).pipe(Effect.catch(() => Effect.succeed(undefined))) : undefined
       if (routed && routed.status !== "disabled" && routed.routing !== "disabled" && (!selected || (routed.model?.variant && !Object.hasOwn(selected.variants ?? {}, routed.model.variant))))
         return yield* Effect.fail(new Error("Jev could not select an available subagent model and reasoning effort. Retry or explicitly configure the subagent model."))
-      const model = next.model ?? (selected ? { modelID: selected.id, providerID: selected.providerID } : undefined) ?? {
+      const model = params.model ? { providerID: ProviderV2.ID.make(params.model.providerID), modelID: ModelV2.ID.make(params.model.modelID) } : next.model ?? (selected ? { modelID: selected.id, providerID: selected.providerID } : undefined) ?? {
         modelID: msg.info.modelID,
         providerID: msg.info.providerID,
       }
@@ -196,7 +201,7 @@ export const TaskTool = Tool.define(
         sessionId: nextSession.id,
         model,
         models: [] as Array<{ providerID: string; modelID: string; variant?: string }>,
-        variant: selected ? routed?.model?.variant : next.variant ?? (next.model ? undefined : variant),
+        variant: params.model ? params.model.variant : selected ? routed?.model?.variant : next.variant ?? (next.model ? undefined : variant),
         routing: routed?.routing ?? routed?.status,
         ...(runInBackground ? { background: true } : {}),
       }
@@ -210,7 +215,8 @@ export const TaskTool = Tool.define(
       if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
 
       const runTask = Effect.fn("TaskTool.runTask")(function* () {
-        const parts = yield* ops.resolvePromptParts(params.prompt)
+        const parts = [...(yield* ops.resolvePromptParts(params.prompt))]
+        if (routed?.model) parts.push({ type: "text", synthetic: true, text: "Keep this delegated task bounded to its supplied objective and context. Return concise evidence with file/line references, checks actually performed, and uncertainties. Escalate ambiguous or high-risk conclusions to the parent; do not repeat parent work or expand the task without evidence." })
         const result = yield* ops.prompt({
           messageID: MessageID.ascending(),
           sessionID: nextSession.id,
@@ -264,6 +270,7 @@ export const TaskTool = Tool.define(
         yield* ops
           .prompt({
             sessionID: ctx.sessionID,
+            expectedContext: contextID,
             agent: currentParent.agent ?? ctx.agent,
             variant,
             parts: [

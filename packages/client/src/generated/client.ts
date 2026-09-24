@@ -791,6 +791,7 @@ export function make(options: ClientOptions) {
               text: input["text"],
               agent: input["agent"],
               auto: input["auto"],
+              independent: input["independent"],
               images: input["images"],
               models: input["models"],
             },

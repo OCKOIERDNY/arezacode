@@ -33,8 +33,16 @@ export function prepare(
   events: EventV2.Interface,
   context: Effect.Effect<SystemContext.SystemContext>,
   sessionID: SessionSchema.ID,
+  initialized?: Prepared,
 ): Effect.Effect<Prepared, SystemContext.InitializationBlocked | ContextSnapshotDecodeError> {
-  return prepareOnce(db, events, context, sessionID).pipe(Effect.withSpan("SessionContextEpoch.prepare"))
+  return Effect.gen(function* () {
+    if (!initialized) return yield* prepareOnce(db, events, context, sessionID)
+    const boundary = yield* SessionHistory.taskBoundary(db, sessionID)
+    if (!boundary || boundary.seq <= initialized.baselineSeq) return initialized
+    yield* db.update(SessionContextEpochTable).set({ baseline_seq: boundary.seq })
+      .where(eq(SessionContextEpochTable.session_id, sessionID)).run().pipe(Effect.orDie)
+    return { ...initialized, baselineSeq: boundary.seq }
+  }).pipe(Effect.withSpan("SessionContextEpoch.prepare"))
 }
 
 const prepareOnce = Effect.fnUntraced(function* (
@@ -43,14 +51,19 @@ const prepareOnce = Effect.fnUntraced(function* (
   context: Effect.Effect<SystemContext.SystemContext>,
   sessionID: SessionSchema.ID,
 ) {
-  const [value, stored, compaction] = yield* Effect.all(
-    [context, find(db, sessionID), SessionHistory.latestCompaction(db, sessionID)],
+  const [value, stored, compaction, boundary] = yield* Effect.all(
+    [context, find(db, sessionID), SessionHistory.latestCompaction(db, sessionID), SessionHistory.taskBoundary(db, sessionID)],
     { concurrency: "unbounded" },
   )
   if (!stored) {
     const generation = yield* SystemContext.initialize(value)
     const baselineSeq = yield* insert(db, sessionID, generation)
     return { baseline: generation.baseline, baselineSeq }
+  }
+  if (boundary && boundary.seq > stored.baseline_seq) {
+    const generation = yield* SystemContext.initialize(value)
+    yield* replace(db, sessionID, boundary.seq, generation)
+    return { baseline: generation.baseline, baselineSeq: boundary.seq }
   }
 
   const snapshot = yield* Schema.decodeUnknownEffect(SystemContext.Snapshot)(stored.snapshot).pipe(

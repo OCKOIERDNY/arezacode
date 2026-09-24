@@ -170,6 +170,23 @@ function reply(
 }
 
 describe("tool.task", () => {
+  it.instance("honors an explicit delegated model and effort without inheriting parent context", () => Effect.gen(function* () {
+    const { chat, assistant } = yield* seed()
+    const tool = yield* TaskTool
+    const def = yield* tool.init()
+    const seen: SessionPrompt.PromptInput[] = []
+    const model = { providerID: ref.providerID, modelID: ModelV2.ID.make("explicit-model"), variant: "low" }
+    const result = yield* def.execute({ description: "Find route", prompt: "Return the route definition and its file/line", subagent_type: "general", model }, {
+      sessionID: chat.id, messageID: assistant.id, agent: "build", abort: new AbortController().signal,
+      extra: { promptOps: stubOps({ onPrompt: (input) => { seen.push(input) } }) }, messages: [],
+      metadata: () => Effect.void, ask: () => Effect.void,
+    })
+    expect(seen).toHaveLength(1)
+    expect(seen[0].model).toEqual({ providerID: model.providerID, modelID: model.modelID })
+    expect(seen[0].variant).toBe("low")
+    expect(seen[0].parts).toEqual([{ type: "text", text: "Return the route definition and its file/line" }])
+    expect(result.metadata.model).toEqual({ providerID: model.providerID, modelID: model.modelID })
+  }))
   it.instance(
     "description sorts subagents by name and is stable across calls",
     () =>

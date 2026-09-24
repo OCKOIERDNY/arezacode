@@ -15,6 +15,8 @@ export function SessionContextLock(props: {
   sessionID?: string
   health: ReturnType<typeof useSessionHealth>
   localContext: () => string
+  independent?: boolean
+  onIndependent?: () => void
 }) {
   const language = useLanguage()
   const sdk = useSDK()
@@ -38,7 +40,7 @@ export function SessionContextLock(props: {
     onError: (error: Error) => showToast({ variant: "error", title: language.t("common.requestFailed"), description: error.message }),
   }))
   return (
-    <Show when={props.health.state() !== "healthy"}>
+    <Show when={props.health.state() !== "healthy" && !props.independent}>
       <div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-v2-state-bg-warning px-3 py-1 text-v2-state-fg-warning" data-component="session-context-lock">
         <Tooltip
           contentClass="max-w-72 whitespace-normal"
@@ -56,6 +58,11 @@ export function SessionContextLock(props: {
         </Tooltip>
         <Show when={props.health.readonly()}>
           <div class="ms-auto flex items-center gap-1">
+            <Show when={props.onIndependent}>
+              <Button size="small" variant="ghost" onClick={() => props.onIndependent?.()}>
+                {language.t("prompt.independent.label")}
+              </Button>
+            </Show>
             <Button size="small" variant="ghost" disabled={action.isPending} onClick={() => action.mutate("copy")}>
               {language.t("context.health.copy")}
             </Button>

@@ -16,6 +16,7 @@ export type Event =
   | EventMessageRemoved
   | EventMessagePartUpdated
   | EventMessagePartRemoved
+  | EventSessionNextApprovalChanged
   | EventSessionNextAgentSwitched
   | EventSessionNextModelSwitched
   | EventSessionNextMoved
@@ -45,6 +46,7 @@ export type Event =
   | EventSessionNextCompactionStarted
   | EventSessionNextCompactionDelta
   | EventSessionNextCompactionEnded
+  | EventSessionNextCompactionAccounted
   | EventSessionNextRevertStaged
   | EventSessionNextRevertCleared
   | EventSessionNextRevertCommitted
@@ -640,6 +642,7 @@ export type Part =
 
 export type Prompt = {
   text: string
+  independent?: boolean
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
 }
@@ -820,6 +823,15 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.next.approval.changed"
+        properties: {
+          timestamp: number
+          sessionID: string
+          mode: "default" | "ask" | "auto" | "full"
+        }
+      }
+    | {
+        id: string
         type: "session.next.agent.switched"
         properties: {
           timestamp: number
@@ -921,6 +933,7 @@ export type GlobalEvent = {
           agent: string
           model: ModelRef
           snapshot?: string
+          usage?: SessionMessageUsage
         }
       }
     | {
@@ -932,6 +945,7 @@ export type GlobalEvent = {
           assistantMessageID: string
           finish: string
           cost: number
+          usage?: SessionMessageUsage
           tokens: {
             input: number
             output: number
@@ -953,6 +967,7 @@ export type GlobalEvent = {
           sessionID: string
           assistantMessageID: string
           error: SessionErrorUnknown
+          usage?: SessionMessageUsage
         }
       }
     | {
@@ -1162,6 +1177,28 @@ export type GlobalEvent = {
           reason: "auto" | "manual"
           text: string
           recent: string
+        }
+      }
+    | {
+        id: string
+        type: "session.next.compaction.accounted"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          model: ModelRef
+          startedAt: number
+          usage: SessionMessageUsage
+          tokens: {
+            input: number
+            output: number
+            reasoning: number
+            cache: {
+              read: number
+              write: number
+            }
+          }
+          finish: string
         }
       }
     | {
@@ -1612,6 +1649,7 @@ export type GlobalEvent = {
     | SyncEventMessageRemoved
     | SyncEventMessagePartUpdated
     | SyncEventMessagePartRemoved
+    | SyncEventSessionNextApprovalChanged
     | SyncEventSessionNextAgentSwitched
     | SyncEventSessionNextModelSwitched
     | SyncEventSessionNextMoved
@@ -1637,6 +1675,7 @@ export type GlobalEvent = {
     | SyncEventSessionNextRetried
     | SyncEventSessionNextCompactionStarted
     | SyncEventSessionNextCompactionEnded
+    | SyncEventSessionNextCompactionAccounted
     | SyncEventSessionNextRevertStaged
     | SyncEventSessionNextRevertCleared
     | SyncEventSessionNextRevertCommitted
@@ -2720,6 +2759,7 @@ export type SessionNotFoundError = {
 
 export type PromptInput = {
   text: string
+  independent?: boolean
   files?: Array<PromptInputFileAttachment>
   agents?: Array<PromptAgentAttachment>
 }
@@ -2744,6 +2784,7 @@ export type UnknownError1 = {
 }
 
 export type SessionDurableEvent =
+  | SessionNextApprovalChanged
   | SessionNextAgentSwitched
   | SessionNextModelSwitched
   | SessionNextMoved
@@ -2769,6 +2810,7 @@ export type SessionDurableEvent =
   | SessionNextRetried
   | SessionNextCompactionStarted
   | SessionNextCompactionEnded
+  | SessionNextCompactionAccounted
   | SessionNextRevertStaged
   | SessionNextRevertCleared
   | SessionNextRevertCommitted
@@ -2871,6 +2913,7 @@ export type V2Event =
   | MessageRemoved
   | MessagePartUpdated
   | MessagePartRemoved
+  | SessionNextApprovalChanged
   | SessionNextAgentSwitched
   | SessionNextModelSwitched
   | SessionNextMoved
@@ -2900,6 +2943,7 @@ export type V2Event =
   | SessionNextCompactionStarted
   | SessionNextCompactionDelta
   | SessionNextCompactionEnded
+  | SessionNextCompactionAccounted
   | SessionNextRevertStaged
   | SessionNextRevertCleared
   | SessionNextRevertCommitted
@@ -3070,6 +3114,54 @@ export type PromptFileAttachment = {
 export type PromptAgentAttachment = {
   name: string
   source?: PromptSource
+}
+
+export type ModelCost = {
+  tier?: {
+    type: "context"
+    size: number
+  }
+  input: number
+  output: number
+  cache: {
+    read: number
+    write: number
+  }
+}
+
+export type SessionMessageUsage = {
+  version: 1
+  input?: number
+  output?: number
+  reasoning?: number
+  cacheRead?: number
+  cacheWrite?: number
+  total?: number
+  cost?: number
+  upstreamCost?: number
+  responseID?: string
+  responseModel?: string
+  responseProvider?: string
+  costSource: "reported" | "estimated" | "unknown"
+  prices?: ModelCost
+  timing?: {
+    startedAt: number
+    dispatchedAt?: number
+    firstResponseAt?: number
+    firstEventAt?: number
+    retries: Array<{
+      time: number
+      attempt: number
+      reason: string
+      delayMs: number
+    }>
+  }
+  request?: {
+    systemCharacters: number
+    messageCharacters: number
+    toolCharacters: number
+    cacheKey: string
+  }
 }
 
 export type SessionErrorUnknown = {
@@ -3305,6 +3397,22 @@ export type SyncEventMessagePartRemoved = {
   }
 }
 
+export type SyncEventSessionNextApprovalChanged = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.approval.changed.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      mode: "default" | "ask" | "auto" | "full"
+    }
+  }
+}
+
 export type SyncEventSessionNextAgentSwitched = {
   type: "sync"
   id: string
@@ -3476,6 +3584,7 @@ export type SyncEventSessionNextStepStarted = {
       agent: string
       model: ModelRef
       snapshot?: string
+      usage?: SessionMessageUsage
     }
   }
 }
@@ -3494,6 +3603,7 @@ export type SyncEventSessionNextStepEnded = {
       assistantMessageID: string
       finish: string
       cost: number
+      usage?: SessionMessageUsage
       tokens: {
         input: number
         output: number
@@ -3522,6 +3632,7 @@ export type SyncEventSessionNextStepFailed = {
       sessionID: string
       assistantMessageID: string
       error: SessionErrorUnknown
+      usage?: SessionMessageUsage
     }
   }
 }
@@ -3783,6 +3894,35 @@ export type SyncEventSessionNextCompactionEnded = {
   }
 }
 
+export type SyncEventSessionNextCompactionAccounted = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.compaction.accounted.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      model: ModelRef
+      startedAt: number
+      usage: SessionMessageUsage
+      tokens: {
+        input: number
+        output: number
+        reasoning: number
+        cache: {
+          read: number
+          write: number
+        }
+      }
+      finish: string
+    }
+  }
+}
+
 export type SyncEventSessionNextRevertStaged = {
   type: "sync"
   id: string
@@ -3931,6 +4071,7 @@ export type SessionV2Info = {
     archived?: number
   }
   title: string
+  approvalMode?: "default" | "ask" | "auto" | "full"
   location: LocationRef
   subpath?: string
   revert?: RevertState
@@ -3951,6 +4092,51 @@ export type SessionInputAdmitted = {
   delivery: "steer" | "queue"
   timeCreated: number
   promotedSeq?: number
+}
+
+export type SessionHealthInfo = {
+  sessionID: string
+  inputTokens?: number
+  limit: number
+  modelContext?: number
+  locked: boolean
+  lockedAt?: number
+}
+
+export type SessionHealthHandoff = {
+  text: string
+}
+
+export type JevTask = {
+  kind: "cosmetic" | "fix" | "feature" | "review"
+  relation: "standalone" | "followup"
+}
+
+export type SessionMessageUsageEntry = {
+  id: string
+  kind?: "model" | "jev" | "automation" | "compaction"
+  promptID?: string
+  model: ModelRef
+  decision?: {
+    purpose: string
+    outcome: string
+    task?: JevTask
+    selected?: ModelRef
+    confidence?: number
+    skills?: Array<string>
+  }
+  automation?: {
+    name: string
+    inputCharacters: number
+    outputCharacters: number
+    cached: boolean
+  }
+  usage?: SessionMessageUsage
+  finish?: string
+  time: {
+    created: number
+    completed?: number
+  }
 }
 
 export type SessionMessageAgentSwitched = {
@@ -3986,6 +4172,7 @@ export type SessionMessageUser = {
     created: number
   }
   text: string
+  independent?: boolean
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
   type: "user"
@@ -4133,6 +4320,7 @@ export type SessionMessageAssistant = {
   }
   finish?: string
   cost?: number
+  usage?: SessionMessageUsage
   tokens?: {
     input: number
     output: number
@@ -4168,6 +4356,25 @@ export type SessionMessage =
   | SessionMessageShell
   | SessionMessageAssistant
   | SessionMessageCompaction
+
+export type SessionNextApprovalChanged = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.approval.changed"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    mode: "default" | "ask" | "auto" | "full"
+  }
+}
 
 export type SessionNextAgentSwitched = {
   id: string
@@ -4371,6 +4578,7 @@ export type SessionNextStepStarted = {
     agent: string
     model: ModelRef
     snapshot?: string
+    usage?: SessionMessageUsage
   }
 }
 
@@ -4392,6 +4600,7 @@ export type SessionNextStepEnded = {
     assistantMessageID: string
     finish: string
     cost: number
+    usage?: SessionMessageUsage
     tokens: {
       input: number
       output: number
@@ -4423,6 +4632,7 @@ export type SessionNextStepFailed = {
     sessionID: string
     assistantMessageID: string
     error: SessionErrorUnknown
+    usage?: SessionMessageUsage
   }
 }
 
@@ -4722,6 +4932,38 @@ export type SessionNextCompactionEnded = {
   }
 }
 
+export type SessionNextCompactionAccounted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.compaction.accounted"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    model: ModelRef
+    startedAt: number
+    usage: SessionMessageUsage
+    tokens: {
+      input: number
+      output: number
+      reasoning: number
+      cache: {
+        read: number
+        write: number
+      }
+    }
+    finish: string
+  }
+}
+
 export type SessionNextRevertStaged = {
   id: string
   metadata?: {
@@ -4801,19 +5043,6 @@ export type ModelCapabilities = {
   tools: boolean
   input: Array<string>
   output: Array<string>
-}
-
-export type ModelCost = {
-  tier?: {
-    type: "context"
-    size: number
-  }
-  input: number
-  output: number
-  cache: {
-    read: number
-    write: number
-  }
 }
 
 export type ModelV2Info = {
@@ -6259,6 +6488,16 @@ export type EventMessagePartRemoved = {
   }
 }
 
+export type EventSessionNextApprovalChanged = {
+  id: string
+  type: "session.next.approval.changed"
+  properties: {
+    timestamp: number
+    sessionID: string
+    mode: "default" | "ask" | "auto" | "full"
+  }
+}
+
 export type EventSessionNextAgentSwitched = {
   id: string
   type: "session.next.agent.switched"
@@ -6371,6 +6610,7 @@ export type EventSessionNextStepStarted = {
     agent: string
     model: ModelRef
     snapshot?: string
+    usage?: SessionMessageUsage
   }
 }
 
@@ -6383,6 +6623,7 @@ export type EventSessionNextStepEnded = {
     assistantMessageID: string
     finish: string
     cost: number
+    usage?: SessionMessageUsage
     tokens: {
       input: number
       output: number
@@ -6405,6 +6646,7 @@ export type EventSessionNextStepFailed = {
     sessionID: string
     assistantMessageID: string
     error: SessionErrorUnknown
+    usage?: SessionMessageUsage
   }
 }
 
@@ -6631,6 +6873,29 @@ export type EventSessionNextCompactionEnded = {
     reason: "auto" | "manual"
     text: string
     recent: string
+  }
+}
+
+export type EventSessionNextCompactionAccounted = {
+  id: string
+  type: "session.next.compaction.accounted"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    model: ModelRef
+    startedAt: number
+    usage: SessionMessageUsage
+    tokens: {
+      input: number
+      output: number
+      reasoning: number
+      cache: {
+        read: number
+        write: number
+      }
+    }
+    finish: string
   }
 }
 
@@ -10119,6 +10384,7 @@ export type SessionMessagesResponse2 = SessionMessagesResponses[keyof SessionMes
 
 export type SessionPromptData = {
   body?: {
+    independent?: boolean
     messageID?: string
     model?: {
       providerID: string
@@ -10498,6 +10764,7 @@ export type SessionSummarizeResponse = SessionSummarizeResponses[keyof SessionSu
 
 export type SessionPromptAsyncData = {
   body?: {
+    independent?: boolean
     messageID?: string
     model?: {
       providerID: string
@@ -10552,6 +10819,7 @@ export type SessionPromptAsyncResponse = SessionPromptAsyncResponses[keyof Sessi
 export type SessionCommandData = {
   body?: {
     messageID?: string
+    independent?: boolean
     agent?: string
     model?: string
     arguments: string
@@ -11816,6 +12084,10 @@ export type V2SessionListData = {
   path?: never
   query?: {
     workspace?: string
+    directories?: Array<string> | string
+    roots?: boolean | "true" | "false"
+    archived?: "true" | "false"
+    sort?: "created" | "updated"
     limit?: number
     order?: "asc" | "desc"
     search?: string
@@ -11855,6 +12127,7 @@ export type V2SessionListResponse = V2SessionListResponses[keyof V2SessionListRe
 export type V2SessionCreateData = {
   body: {
     id?: string
+    approvalMode?: "default" | "ask" | "auto" | "full"
     agent?: string
     model?: ModelRef
     location?: LocationRef
@@ -11961,6 +12234,49 @@ export type V2SessionGetResponses = {
 }
 
 export type V2SessionGetResponse = V2SessionGetResponses[keyof V2SessionGetResponses]
+
+export type ServerSessionSessionSetApprovalData = {
+  body: {
+    mode: "default" | "ask" | "auto" | "full"
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/approval"
+}
+
+export type ServerSessionSessionSetApprovalErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type ServerSessionSessionSetApprovalError =
+  ServerSessionSessionSetApprovalErrors[keyof ServerSessionSessionSetApprovalErrors]
+
+export type ServerSessionSessionSetApprovalResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type ServerSessionSessionSetApprovalResponse =
+  ServerSessionSessionSetApprovalResponses[keyof ServerSessionSessionSetApprovalResponses]
 
 export type V2SessionSwitchAgentData = {
   body: {
@@ -12305,6 +12621,123 @@ export type V2SessionRevertCommitResponses = {
 }
 
 export type V2SessionRevertCommitResponse = V2SessionRevertCommitResponses[keyof V2SessionRevertCommitResponses]
+
+export type V2SessionHealthData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/health"
+}
+
+export type V2SessionHealthErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type V2SessionHealthError = V2SessionHealthErrors[keyof V2SessionHealthErrors]
+
+export type V2SessionHealthResponses = {
+  /**
+   * SessionHealth.Info
+   */
+  200: SessionHealthInfo
+}
+
+export type V2SessionHealthResponse = V2SessionHealthResponses[keyof V2SessionHealthResponses]
+
+export type V2SessionHandoffData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/handoff"
+}
+
+export type V2SessionHandoffErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type V2SessionHandoffError = V2SessionHandoffErrors[keyof V2SessionHandoffErrors]
+
+export type V2SessionHandoffResponses = {
+  /**
+   * SessionHealth.Handoff
+   */
+  200: SessionHealthHandoff
+}
+
+export type V2SessionHandoffResponse = V2SessionHandoffResponses[keyof V2SessionHandoffResponses]
+
+export type V2SessionUsageData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/usage"
+}
+
+export type V2SessionUsageErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type V2SessionUsageError = V2SessionUsageErrors[keyof V2SessionUsageErrors]
+
+export type V2SessionUsageResponses = {
+  /**
+   * Success
+   */
+  200: Array<SessionMessageUsageEntry>
+}
+
+export type V2SessionUsageResponse = V2SessionUsageResponses[keyof V2SessionUsageResponses]
 
 export type V2SessionContextData = {
   body?: never
@@ -12710,6 +13143,104 @@ export type V2ProviderGetResponses = {
 
 export type V2ProviderGetResponse = V2ProviderGetResponses[keyof V2ProviderGetResponses]
 
+export type ServerIntegrationIntegrationToolsListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/tools"
+}
+
+export type ServerIntegrationIntegrationToolsListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type ServerIntegrationIntegrationToolsListError =
+  ServerIntegrationIntegrationToolsListErrors[keyof ServerIntegrationIntegrationToolsListErrors]
+
+export type ServerIntegrationIntegrationToolsListResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    id: "markitdown" | "headroom" | "semgrep" | "entire" | "context7" | "ponytail"
+    version: string
+    enabled: boolean
+    installed: boolean
+    managed: boolean
+    running: boolean
+    rollback: boolean
+    storageBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    error?: string
+    lastResult?: string
+    updatedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type ServerIntegrationIntegrationToolsListResponse =
+  ServerIntegrationIntegrationToolsListResponses[keyof ServerIntegrationIntegrationToolsListResponses]
+
+export type ServerIntegrationIntegrationToolsActionData = {
+  body: {
+    action: "install" | "enable" | "disable" | "cancel" | "rollback" | "check"
+  }
+  path: {
+    engineID: "markitdown" | "headroom" | "semgrep" | "entire" | "context7" | "ponytail"
+  }
+  query?: never
+  url: "/api/tools/{engineID}"
+}
+
+export type ServerIntegrationIntegrationToolsActionErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type ServerIntegrationIntegrationToolsActionError =
+  ServerIntegrationIntegrationToolsActionErrors[keyof ServerIntegrationIntegrationToolsActionErrors]
+
+export type ServerIntegrationIntegrationToolsActionResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    id: "markitdown" | "headroom" | "semgrep" | "entire" | "context7" | "ponytail"
+    version: string
+    enabled: boolean
+    installed: boolean
+    managed: boolean
+    running: boolean
+    rollback: boolean
+    storageBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    error?: string
+    lastResult?: string
+    updatedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type ServerIntegrationIntegrationToolsActionResponse =
+  ServerIntegrationIntegrationToolsActionResponses[keyof ServerIntegrationIntegrationToolsActionResponses]
+
 export type V2IntegrationListData = {
   body?: never
   path?: never
@@ -13097,6 +13628,166 @@ export type V2CredentialUpdateResponses = {
 }
 
 export type V2CredentialUpdateResponse = V2CredentialUpdateResponses[keyof V2CredentialUpdateResponses]
+
+export type V2JevGetData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/jev"
+}
+
+export type V2JevGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type V2JevGetError = V2JevGetErrors[keyof V2JevGetErrors]
+
+export type V2JevGetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    enabled: boolean
+    skills: boolean
+    context: boolean
+    findings: boolean
+    routing: boolean
+    configured: boolean
+  }
+}
+
+export type V2JevGetResponse = V2JevGetResponses[keyof V2JevGetResponses]
+
+export type V2JevUpdateData = {
+  body: {
+    enabled: boolean
+    skills: boolean
+    context: boolean
+    findings: boolean
+    routing: boolean
+  }
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/jev"
+}
+
+export type V2JevUpdateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type V2JevUpdateError = V2JevUpdateErrors[keyof V2JevUpdateErrors]
+
+export type V2JevUpdateResponses = {
+  /**
+   * Success
+   */
+  200: {
+    enabled: boolean
+    skills: boolean
+    context: boolean
+    findings: boolean
+    routing: boolean
+    configured: boolean
+  }
+}
+
+export type V2JevUpdateResponse = V2JevUpdateResponses[keyof V2JevUpdateResponses]
+
+export type V2JevPrepareData = {
+  body: {
+    sessionID: string
+    promptID?: string
+    text: string
+    agent: string
+    auto: boolean
+    independent?: boolean
+    images?: boolean
+    models: Array<{
+      providerID: string
+      modelID: string
+      variant?: string
+    }>
+  }
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/jev/prepare"
+}
+
+export type V2JevPrepareErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type V2JevPrepareError = V2JevPrepareErrors[keyof V2JevPrepareErrors]
+
+export type V2JevPrepareResponses = {
+  /**
+   * Success
+   */
+  200: {
+    status: "disabled" | "missing-key" | "unavailable" | "ready"
+    task?: JevTask
+    model?: {
+      providerID: string
+      modelID: string
+      variant?: string
+    }
+    routing?: "selected" | "manual" | "disabled" | "unavailable" | "uncertain"
+    skills: Array<{
+      name: string
+      content: string
+    }>
+  }
+}
+
+export type V2JevPrepareResponse = V2JevPrepareResponses[keyof V2JevPrepareResponses]
 
 export type V2PermissionRequestListData = {
   body?: never

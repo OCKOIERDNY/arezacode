@@ -1,7 +1,7 @@
 export * as SessionHealth from "./health"
 export { Info, Handoff } from "@opencode-ai/schema/session-health"
 
-import { and, desc, eq, sql } from "drizzle-orm"
+import { and, desc, eq, gt, or, sql } from "drizzle-orm"
 import { Effect, Option, Schema } from "effect"
 import { SessionHealth } from "@opencode-ai/schema/session-health"
 import { Catalog } from "../catalog"
@@ -30,6 +30,19 @@ export const inclusiveInput = (tokens: { input: number; cache: { read: number; w
 const decodeLock = Schema.decodeUnknownOption(SessionHealth.Info)
 const ModelContext = Schema.Struct({ id: Schema.String, providerID: Schema.String, context: Schema.Number })
 const decodeModel = Schema.decodeUnknownOption(ModelContext)
+const decodeStart = Schema.decodeUnknownOption(Schema.Struct({ messageID: Schema.String, time: Schema.Number }))
+
+export const taskID = Effect.fn("SessionHealth.taskID")(function* (db: DB, sessionID: SessionSchema.ID) {
+  const session = yield* db.select({ metadata: SessionTable.metadata }).from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
+  return Option.getOrUndefined(decodeStart(session?.metadata?.contextStart))?.messageID ?? null
+})
+
+export const startTask = Effect.fn("SessionHealth.startTask")(function* (db: DB, sessionID: SessionSchema.ID, messageID: string, time: number) {
+  yield* db.update(SessionTable).set({
+    metadata: sql`json_set(json_remove(coalesce(${SessionTable.metadata}, '{}'), '$.contextLock'), '$.contextStart', json(${JSON.stringify({ messageID, time })}))`,
+    time_updated: sql`${SessionTable.time_updated}`,
+  }).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+})
 
 export const recordModel = Effect.fn("SessionHealth.recordModel")(function* (
   db: DB,
@@ -66,18 +79,20 @@ export const observe = Effect.fn("SessionHealth.observe")(function* (
 
 export const get = Effect.fn("SessionHealth.get")(function* (db: DB, sessionID: SessionSchema.ID, context?: number) {
   const session = yield* db.select({ model: SessionTable.model, metadata: SessionTable.metadata }).from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
+  const start = Option.getOrUndefined(decodeStart(session?.metadata?.contextStart))
+  const boundary = start ? yield* db.select({ seq: SessionMessageTable.seq }).from(SessionMessageTable).where(and(sql`${SessionMessageTable.id} = ${start.messageID}`, eq(SessionMessageTable.session_id, sessionID))).get().pipe(Effect.orDie) : undefined
   const native = yield* db.select({
     input: sql<number>`coalesce(json_extract(${SessionMessageTable.data}, '$.usage.input'), json_extract(${SessionMessageTable.data}, '$.tokens.input') + json_extract(${SessionMessageTable.data}, '$.tokens.cache.read') + json_extract(${SessionMessageTable.data}, '$.tokens.cache.write'))`,
     model: sql<string>`json_extract(${SessionMessageTable.data}, '$.model.id')`,
     provider: sql<string>`json_extract(${SessionMessageTable.data}, '$.model.providerID')`,
     time: SessionMessageTable.time_created,
-  }).from(SessionMessageTable).where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "assistant"), sql`(json_extract(${SessionMessageTable.data}, '$.usage.input') is not null or json_extract(${SessionMessageTable.data}, '$.tokens.input') is not null)`)).orderBy(desc(SessionMessageTable.seq)).limit(1).get().pipe(Effect.orDie)
+  }).from(SessionMessageTable).where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "assistant"), boundary ? gt(SessionMessageTable.seq, boundary.seq) : start ? sql`0` : undefined, sql`(json_extract(${SessionMessageTable.data}, '$.usage.input') is not null or json_extract(${SessionMessageTable.data}, '$.tokens.input') is not null)`)).orderBy(desc(SessionMessageTable.seq)).limit(1).get().pipe(Effect.orDie)
   const legacy = yield* db.select({
     input: sql<number>`json_extract(${MessageTable.data}, '$.tokens.input') + json_extract(${MessageTable.data}, '$.tokens.cache.read') + json_extract(${MessageTable.data}, '$.tokens.cache.write')`,
     model: sql<string>`json_extract(${MessageTable.data}, '$.modelID')`,
     provider: sql<string>`json_extract(${MessageTable.data}, '$.providerID')`,
     time: MessageTable.time_created,
-  }).from(MessageTable).where(and(eq(MessageTable.session_id, sessionID), sql`json_extract(${MessageTable.data}, '$.role') = 'assistant'`, sql`(json_extract(${MessageTable.data}, '$.tokens.input') + json_extract(${MessageTable.data}, '$.tokens.cache.read') + json_extract(${MessageTable.data}, '$.tokens.cache.write')) > 0`)).orderBy(desc(MessageTable.time_created), desc(MessageTable.id)).limit(1).get().pipe(Effect.orDie)
+  }).from(MessageTable).where(and(eq(MessageTable.session_id, sessionID), boundary ? sql`0` : start ? or(gt(MessageTable.time_created, start.time), and(eq(MessageTable.time_created, start.time), sql`${MessageTable.id} > ${start.messageID}`)) : undefined, sql`json_extract(${MessageTable.data}, '$.role') = 'assistant'`, sql`(json_extract(${MessageTable.data}, '$.tokens.input') + json_extract(${MessageTable.data}, '$.tokens.cache.read') + json_extract(${MessageTable.data}, '$.tokens.cache.write')) > 0`)).orderBy(desc(MessageTable.time_created), desc(MessageTable.id)).limit(1).get().pipe(Effect.orDie)
   const latest = native && (!legacy || native.time >= legacy.time) ? native : legacy
   const selected = session?.model ?? (latest ? { id: latest.model, providerID: latest.provider } : undefined)
   const catalog = yield* Effect.serviceOption(Catalog.Service)

@@ -565,6 +565,74 @@ const verifyPartialFlushOnInterruption = (kind: FragmentKind) =>
   })
 
 describe("SessionRunnerLLM", () => {
+  it.effect("independent tasks refresh mandatory system context instead of reviving an outdated baseline", () => Effect.gen(function* () {
+    yield* setup
+    requests.length = 0
+    const session = yield* SessionV2.Service
+    response = [LLMEvent.stepStart({ index: 0 }), LLMEvent.finish({ reason: "stop" })]
+    yield* session.prompt({ sessionID, prompt: { text: "Earlier task" }, resume: false })
+    yield* session.resume(sessionID)
+    systemBaseline = "Updated mandatory project instructions"
+    yield* session.prompt({ sessionID, prompt: { text: "Earlier followup" }, resume: false })
+    yield* session.resume(sessionID)
+    yield* session.prompt({ sessionID, prompt: { text: "Fresh independent task", independent: true }, resume: false })
+    yield* session.resume(sessionID)
+    expect(requests.at(-1)?.system.map((part) => part.text).join("\n")).toContain("Updated mandatory project instructions")
+    expect(requests.at(-1)?.system.map((part) => part.text).join("\n")).not.toContain("Initial context")
+    expect(JSON.stringify(requests.at(-1)?.messages)).not.toContain("Earlier task")
+    expect(JSON.stringify(requests.at(-1)?.messages)).not.toContain("Earlier followup")
+  }))
+  it.effect("switching isolation off while its boundary is pending follows that task instead of overtaking it", () => Effect.gen(function* () {
+    yield* setup
+    requests.length = 0
+    const session = yield* SessionV2.Service
+    response = [LLMEvent.stepStart({ index: 0 }), LLMEvent.finish({ reason: "stop" })]
+    yield* session.prompt({ sessionID, prompt: { text: "Independent pending task", independent: true }, resume: false })
+    const input = { sessionID, id: SessionMessage.ID.create(), prompt: { text: "Continue pending task" }, resume: false }
+    const admitted = yield* session.prompt(input)
+    expect(admitted.delivery).toBe("queue")
+    yield* session.resume(sessionID)
+    expect(requests).toHaveLength(2)
+    expect(JSON.stringify(requests[0].messages)).not.toContain("Continue pending task")
+    expect(JSON.stringify(requests[1].messages)).toContain("Independent pending task")
+    expect(JSON.stringify(requests[1].messages)).toContain("Continue pending task")
+    expect((yield* session.prompt(input)).delivery).toBe("queue")
+    expect(requests).toHaveLength(2)
+  }))
+  it.effect("queued independent tasks each execute once with separate provider histories", () => Effect.gen(function* () {
+    yield* setup
+    requests.length = 0
+    const session = yield* SessionV2.Service
+    response = [LLMEvent.stepStart({ index: 0 }), LLMEvent.finish({ reason: "stop" })]
+    yield* session.prompt({ sessionID, prompt: { text: "Isolated first", independent: true }, resume: false })
+    yield* session.prompt({ sessionID, prompt: { text: "Isolated second", independent: true }, resume: false })
+    yield* session.resume(sessionID)
+    expect(requests).toHaveLength(2)
+    expect(JSON.stringify(requests[0].messages)).toContain("Isolated first")
+    expect(JSON.stringify(requests[0].messages)).not.toContain("Isolated second")
+    expect(JSON.stringify(requests[1].messages)).toContain("Isolated second")
+    expect(JSON.stringify(requests[1].messages)).not.toContain("Isolated first")
+    expect((yield* session.messages({ sessionID })).filter((message) => message.type === "user")).toHaveLength(2)
+  }))
+  it.effect("independent tasks isolate actual provider requests and switching off continues only the latest task", () => Effect.gen(function* () {
+    yield* setup
+    requests.length = 0
+    const session = yield* SessionV2.Service
+    response = [LLMEvent.stepStart({ index: 0 }), LLMEvent.textStart({ id: "reply" }), LLMEvent.textDelta({ id: "reply", text: "Done" }), LLMEvent.textEnd({ id: "reply" }), LLMEvent.finish({ reason: "stop" })]
+    yield* session.prompt({ sessionID, prompt: { text: "First private task" }, resume: false })
+    yield* session.resume(sessionID)
+    yield* session.prompt({ sessionID, prompt: { text: "Second isolated task", independent: true }, resume: false })
+    yield* session.resume(sessionID)
+    expect(JSON.stringify(requests.at(-1)?.messages)).toContain("Second isolated task")
+    expect(JSON.stringify(requests.at(-1)?.messages)).not.toContain("First private task")
+    yield* replaySessionProjection(sessionID)
+    yield* session.prompt({ sessionID, prompt: { text: "Follow up on second" }, resume: false })
+    yield* session.resume(sessionID)
+    expect(JSON.stringify(requests.at(-1)?.messages)).toContain("Second isolated task")
+    expect(JSON.stringify(requests.at(-1)?.messages)).toContain("Follow up on second")
+    expect(JSON.stringify(requests.at(-1)?.messages)).not.toContain("First private task")
+    expect((yield* session.messages({ sessionID })).filter((message) => message.type === "user")).toHaveLength(3)
+  }))
   it.effect("includes legacy coding requests, cache counts and reasoning variants in usage", () => Effect.gen(function* () {
     yield* setup
     const session = yield* SessionV2.Service

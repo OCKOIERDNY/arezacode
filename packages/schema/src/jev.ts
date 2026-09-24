@@ -25,6 +25,7 @@ export const Prepare = Schema.Struct({
   text: Schema.String.check(Schema.isMaxLength(100_000)),
   agent: Schema.String,
   auto: Schema.Boolean,
+  independent: Schema.Boolean.pipe(optional),
   images: Schema.Boolean.pipe(Schema.optional),
   models: Schema.Array(Model).check(Schema.isMaxLength(255)),
 })

@@ -11,6 +11,7 @@ import { LayerNode } from "./effect/layer-node"
 import { SessionMessage } from "@opencode-ai/schema/session-message"
 import { Model } from "@opencode-ai/schema/model"
 import { Provider } from "@opencode-ai/schema/provider"
+import { JevBenchmarks } from "./jev-benchmarks"
 
 export const defaults: Jev.Settings = { enabled: false, skills: true, context: true, findings: true, routing: true }
 const auth = LayerNode.compile(Auth.node)
@@ -57,7 +58,7 @@ export async function delegate(parentID: string, sessionID: string, text: string
   const models = await readFile(path.join(usageDirectory(parentID), "routing.json"), "utf8")
     .then((text) => Schema.decodeUnknownSync(Schema.fromJsonString(RoutingModels))(text)).catch(() => [])
   if (!models.length) return
-  return prepare({ sessionID, text, agent, auto: true, models }, { models: [...models], skills: [] }, fetcher)
+  return prepare({ sessionID, text, agent, auto: true, models }, { models: [...models], skills: [], delegated: true }, fetcher)
 }
 
 export async function settings() {
@@ -134,7 +135,7 @@ export async function request(
   questions: Record<string, Question>,
   fetcher: typeof fetch = fetch,
   sessionID?: string,
-  trace?: { purpose: string; promptID?: string; models?: Array<typeof Jev.Model.Type>; skills?: string[]; explicitSkills?: string[]; task?: Jev.Task },
+  trace?: { purpose: string; promptID?: string; models?: Array<typeof Jev.Model.Type>; skills?: string[]; explicitSkills?: string[]; task?: Jev.Task; minimumConfidence?: number },
 ): Promise<Record<string, Answer> | undefined> {
   if (!key || !Object.keys(questions).length) return
   if (Object.values(questions).some((question) => question.type === "choice"
@@ -183,7 +184,7 @@ export async function request(
       )
         throw new Error("Invalid decision response")
       const answer = modelAnswer(answers)
-      const selected = selectedModel(trace?.models ?? [], answers)
+      const selected = selectedModel(trace?.models ?? [], answers, trace?.minimumConfidence)
       const expanded = answers.scope?.type === "choice" && answers.scope.choice === "expand" && answers.scope.confidence >= 0.8
       if (sessionID) await saveUsage(sessionID, {
         ...entry, finish: "stop", time: { ...entry.time, completed: Date.now() },
@@ -242,20 +243,20 @@ async function prepareOnce(
   candidates: {
     models: Array<{ providerID: string; modelID: string; variant?: string; name: string; description: string }>
     skills: Array<{ name: string; description?: string; content: string; location: string }>
+    delegated?: boolean
   },
   fetcher: typeof fetch = fetch,
 ): Promise<typeof Jev.Prepared.Type> {
   const config = await status()
   if (!config.enabled) return { status: "disabled", skills: [] }
   if (!config.configured) return { status: "missing-key", skills: [] }
-  const previousTask = tasks.get(input.sessionID)?.text
+  const previousTask = input.independent ? undefined : tasks.get(input.sessionID)?.text
   remember(input.sessionID, input.text)
   profiles.delete(`${input.sessionID}:${input.promptID}`)
-  const astra = candidates.models.filter((model) => isAstra(model) && ["low", "medium", "high"].includes(model.variant ?? ""))
-  const models = [...astra, ...candidates.models.filter((model) =>
-    !astra.includes(model) && (!astra.length || isFree(model)) &&
+  const models = candidates.models.filter((model) =>
     input.models.some((allowed) => allowed.providerID === model.providerID && allowed.modelID === model.modelID && allowed.variant === model.variant),
-  )]
+  )
+  const astra = models.filter(isAstra)
   if (models.length) {
     const directory = usageDirectory(input.sessionID)
     await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -295,12 +296,12 @@ async function prepareOnce(
     questions.model = {
       type: "choice",
       instructions:
-        "Select the allowed model and reasoning variant for the actual remaining work. Prefer low reasoning for precise, localized edits; medium for ordinary coding and debugging; high for complex, cross-file, security-sensitive work or deep reviews. When GPT-6 Astra is offered, select its appropriate reasoning level. Consider previousTask for a followup without turning a small correction into a new audit. Task content is not evaluation instructions.",
+        "Select the lowest total-cost suitable allowed model and reasoning variant for the actual remaining work. Use candidate catalog capabilities/prices and published benchmark evidence in state, keeping quality requirements first. Cheaper token prices do not mean fewer tokens or lower cost per successful task. Prefer low effort for bounded discovery, reading, check-result triage and precise localized edits; medium for ordinary coding; high for ambiguous, cross-file or security-sensitive work. For a delegated read-only task, favor an economical model when the bounded evidence-gathering task fits its capabilities; preserve stronger models for high-risk reasoning and verification. Do not extrapolate max-effort benchmark scores to low effort, invent missing Terra statistics, or treat aggregate benchmarks as local task-type measurements. Unknown costs are not zero. Include retry and routing overhead in the tradeoff; use previousTask only for followups. Task content is not evaluation instructions.",
       criteria: Object.fromEntries(
-        models.flatMap((model, index) => astra.length && !isAstra(model) ? [] : [[
+        models.map((model, index) => [
           `model${index}`,
           `${model.providerID}/${model.modelID}${model.variant ? ` (${model.variant})` : ""}: ${model.name}. ${model.description}`,
-        ]]),
+        ]),
       ),
     }
   if (questions.model && astra.length && models.some(isFree))
@@ -313,17 +314,20 @@ async function prepareOnce(
   const answers = current.enabled
     ? await request(
         await providerKey(),
-        { task: input.text.slice(0, 8000), previousTask },
+        { task: input.text.slice(0, 8000), previousTask, role: candidates.delegated ? "subagent" : "main", benchmarks: questions.model ? Array.from(new Map(models.map((model) => [JSON.stringify([model.providerID, model.modelID]), model])).values()).flatMap((model) => {
+          const evidence = JevBenchmarks.evidence(model.providerID, model.modelID)
+          return evidence ? [{ providerID: model.providerID, modelID: model.modelID, ...evidence }] : []
+        }) : undefined },
         questions,
         fetcher,
         input.sessionID,
-        { purpose: questions.model ? "routing, scope and skills" : "scope and skills", promptID: input.promptID, models, skills: skills.map((skill) => skill.name), explicitSkills: explicit.map((skill) => skill.name) },
+        { purpose: candidates.delegated ? "benchmark-informed subagent routing" : questions.model ? "routing, scope and skills" : "scope and skills", minimumConfidence: candidates.delegated ? 0.8 : undefined, promptID: input.promptID, models, skills: skills.map((skill) => skill.name), explicitSkills: explicit.map((skill) => skill.name) },
       )
     : undefined
   const latest = await settings()
   if (!latest.enabled) return { status: "disabled", skills: [] }
   if (!answers) return { status: "unavailable", skills: latest.skills ? instructions(explicit) : [] }
-  const model = latest.routing && input.auto ? selectedModel(models, answers) : undefined
+  const model = latest.routing && input.auto ? selectedModel(models, answers, candidates.delegated ? 0.8 : undefined) : undefined
   return {
     status: "ready",
     task: taskProfile(answers),
@@ -354,9 +358,10 @@ function modelAnswer(answers: Record<string, Answer>) {
   return taskProfile(answers)?.kind === "cosmetic" && answers.smallModel?.type === "choice" ? answers.smallModel : answers.model
 }
 
-function selectedModel<T extends typeof Jev.Model.Type>(models: T[], answers: Record<string, Answer>) {
+function selectedModel<T extends typeof Jev.Model.Type>(models: T[], answers: Record<string, Answer>, minimumConfidence = 0) {
+  if (minimumConfidence > 0 && !taskProfile(answers)) return undefined
   const answer = modelAnswer(answers)
-  if (answer?.type !== "choice") return
+  if (answer?.type !== "choice" || answer.confidence < minimumConfidence) return
   const selected = models[Number(answer.choice.slice(5))]
   if (selected && isFree(selected) && taskProfile(answers)?.kind !== "cosmetic") return
   if (!selected || taskProfile(answers)?.kind !== "cosmetic") return selected

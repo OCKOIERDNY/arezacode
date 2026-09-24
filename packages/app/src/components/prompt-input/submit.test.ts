@@ -319,6 +319,52 @@ beforeEach(() => {
 })
 
 describe("prompt submit worktree selection", () => {
+  test("switching isolation off cannot overtake an independent submission still being prepared", async () => {
+    const { sendFollowupDraft } = await import("./submit")
+    params = { id: "session-1" }
+    const gate = Promise.withResolvers<boolean>()
+    const first = sendFollowupDraft({
+      scope: "local", before: () => gate.promise,
+      api: { prompt: async () => undefined },
+      serverSync: { session: { set: () => undefined } },
+      sync: { data: { command: [] }, session: { optimistic: { add: () => undefined, remove: () => undefined } } },
+      draft: { sessionID: "session-1", sessionDirectory: "/repo/main", prompt: [], context: [], agent: "build", model: { providerID: "provider", modelID: "model" }, independent: true },
+    } as unknown as Parameters<typeof sendFollowupDraft>[0])
+    const queued: Array<{ independent?: boolean }> = []
+    const submit = createPromptSubmit({
+      prompt, info: () => ({ id: "session-1" }), imageAttachments: () => [], commentCount: () => 0,
+      autoAccept: () => false, independentTasks: () => false, mode: () => "normal", working: () => true,
+      editor: () => undefined, queueScroll: () => undefined, promptLength: () => 2, addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined, setMode: () => undefined, setPopover: () => undefined,
+      shouldQueue: () => false, onQueue: (draft) => queued.push(draft),
+    })
+    await submit.handleSubmit({ preventDefault() {} } as Event)
+    expect(queued).toMatchObject([{ independent: false }])
+    expect(sentPrompts).toEqual([])
+    gate.resolve(false)
+    expect(await first).toBe(false)
+  })
+  test("captures independent mode before awaiting health and preserves it on a queued draft", async () => {
+    params = { id: "session-1" }
+    contextLocked = true
+    const gate = Promise.withResolvers<void>()
+    healthGate = gate.promise
+    let independent = true
+    const queued: Array<{ independent?: boolean }> = []
+    const submit = createPromptSubmit({
+      prompt, info: () => ({ id: "session-1" }), imageAttachments: () => [], commentCount: () => 0,
+      autoAccept: () => false, independentTasks: () => independent, mode: () => "normal", working: () => true,
+      editor: () => undefined, queueScroll: () => undefined, promptLength: () => 2, addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined, setMode: () => undefined, setPopover: () => undefined,
+      shouldQueue: () => true, onQueue: (draft) => queued.push(draft),
+    })
+    const pending = submit.handleSubmit({ preventDefault() {} } as Event)
+    independent = false
+    gate.resolve()
+    await pending
+    expect(queued).toMatchObject([{ independent: true }])
+    expect(sentPrompts).toEqual([])
+  })
   for (const mode of ["normal", "shell"] as const) {
     test(`preserves the draft and queue when context is locked in ${mode} mode`, async () => {
       params = { id: "session-1" }
@@ -363,7 +409,7 @@ describe("prompt submit worktree selection", () => {
 
   test("sends the captured browser preference for each draft", async () => {
     const { sendFollowupDraft } = await import("./submit")
-    const requests: Array<{ text: string; legacyParts: Array<{ metadata?: { browserVerification?: string } }> }> = []
+    const requests: Array<{ text: string; independent?: boolean; legacyParts: Array<{ metadata?: { browserVerification?: string } }> }> = []
     for (const automatic of [false, true, false]) {
       await sendFollowupDraft({
         api: { prompt: async (input: (typeof requests)[number]) => { requests.push(input) } },
@@ -371,11 +417,12 @@ describe("prompt submit worktree selection", () => {
         sync: { data: { command: [] }, session: { optimistic: { add: () => undefined, remove: () => undefined } } },
         draft: {
           sessionID: "session-browser", sessionDirectory: "/repo", prompt: [{ type: "text", content: "Check layout", start: 0, end: 12 }],
-          context: [], agent: "build", model: { providerID: "provider", modelID: "model" }, browserVerification: automatic,
+          context: [], agent: "build", model: { providerID: "provider", modelID: "model" }, browserVerification: automatic, independent: automatic,
         },
       } as unknown as Parameters<typeof sendFollowupDraft>[0])
     }
     expect(requests.map((request) => request.legacyParts.at(-1)?.metadata?.browserVerification)).toEqual(["manual", "automatic", "manual"])
+    expect(requests.map((request) => request.independent)).toEqual([undefined, true, undefined])
     expect(requests[0].text).toContain("Do not run browser checks")
     expect(requests[1].text).toContain("Browser checks are already approved")
     expect(requests[2].text).toContain("marked unverified")

@@ -5,7 +5,7 @@ import { OpenCode, type OpenCodeClient } from "@opencode-ai/client/promise"
 import type { SessionsPromptOutput, SessionsHealthOutput, SessionsHandoffOutput, SessionsListInput } from "@opencode-ai/client-current"
 import type { ServerConnection } from "@/context/server"
 import { decode64 } from "@/utils/base64"
-import { withCurrentContract } from "./server-compat"
+import { withCurrentContract, type LegacyPrompt } from "./server-compat"
 
 export function authTokenFromCredentials(input: { username?: string; password: string }) {
   return btoa(`${input.username ?? "opencode"}:${input.password}`)
@@ -97,7 +97,7 @@ export type ServerApi = Omit<OpenCodeClient, "session"> & {
       input?: Parameters<OpenCodeClient["session"]["list"]>[0] & SessionsListInput,
       options?: Parameters<OpenCodeClient["session"]["list"]>[1],
     ) => ReturnType<OpenCodeClient["session"]["list"]>
-    prompt: (...input: Parameters<OpenCodeClient["session"]["prompt"]>) => Promise<SessionsPromptOutput>
+    prompt: (input: Parameters<OpenCodeClient["session"]["prompt"]>[0] & LegacyPrompt, options?: Parameters<OpenCodeClient["session"]["prompt"]>[1]) => Promise<SessionsPromptOutput>
     health: (input: { sessionID: string }, options?: { signal?: AbortSignal }) => Promise<SessionsHealthOutput>
     handoff: (input: { sessionID: string }, options?: { signal?: AbortSignal }) => Promise<SessionsHandoffOutput>
   }

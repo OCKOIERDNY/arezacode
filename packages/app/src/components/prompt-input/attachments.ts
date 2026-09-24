@@ -1,4 +1,5 @@
 import { onMount } from "solid-js"
+import { captureAttachmentTarget } from "@opencode-ai/session-ui/prompt-attachment-target"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { showToast } from "@/utils/toast"
 import { type ContentPart, type ImageAttachmentPart, type usePrompt } from "@/context/prompt"
@@ -36,12 +37,11 @@ export type PromptAttachmentsInput = {
 }
 
 export function createPromptAttachmentsCore(input: PromptAttachmentsCoreInput) {
-  const capture = (): AttachmentTarget | undefined => {
-    const prompt = input.capture()
-    const editor = input.editor()
-    if (!editor) return
-    return { prompt, cursor: prompt.cursor() ?? getCursorPosition(editor) }
-  }
+  const capture = (): AttachmentTarget | undefined => captureAttachmentTarget({
+    capture: input.capture,
+    editor: input.editor,
+    cursor: getCursorPosition,
+  })
 
   const add = async (file: File, toast = true, target = capture()) => {
     if (!target) return false

@@ -125,6 +125,13 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
               {language.t("session.panel.browser")}
             </ButtonV2>
           </TooltipV2>
+          <TooltipV2 value={language.t(settings.general.independentTasks() ? "prompt.independent.on" : "prompt.independent.off")}>
+            <ButtonV2 type="button" variant={settings.general.independentTasks() ? "neutral" : "ghost-muted"} size="small" data-action="prompt-independent"
+              aria-pressed={settings.general.independentTasks()} disabled={!settings.ready()}
+              onClick={() => settings.general.setIndependentTasks(!settings.general.independentTasks())}>
+              {language.t("prompt.independent.label")}
+            </ButtonV2>
+          </TooltipV2>
           </div>
         }
       />
@@ -279,6 +286,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     autoAccept: accepting,
     approvalMode: () => approval.mode,
     browserVerification: settings.general.browserVerification,
+    independentTasks: settings.general.independentTasks,
     mode,
     working,
     editor: () => editor,

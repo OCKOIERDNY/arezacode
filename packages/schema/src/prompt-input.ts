@@ -21,6 +21,7 @@ export const FileAttachment = Schema.Struct({
 export interface Prompt extends Schema.Schema.Type<typeof Prompt> {}
 export const Prompt = Schema.Struct({
   text: Schema.String,
+  independent: Schema.Boolean.pipe(optional),
   files: Schema.Array(FileAttachment).pipe(optional),
   agents: Schema.Array(AgentAttachment).pipe(optional),
 }).annotate({ identifier: "PromptInput" })

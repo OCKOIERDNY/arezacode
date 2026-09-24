@@ -1,5 +1,7 @@
 import { batch, onCleanup, splitProps, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
+import { useI18n } from "../context/i18n"
+import { resizeKey } from "./resize-key"
 
 export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElement>, "onResize"> {
   direction: "horizontal" | "vertical"
@@ -16,6 +18,7 @@ export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElemen
 }
 
 export function ResizeHandle(props: ResizeHandleProps) {
+  const i18n = useI18n()
   const [state, setState] = createStore({ dragging: false })
   let cleanup: (() => void) | undefined
   onCleanup(() => cleanup?.())
@@ -123,6 +126,13 @@ export function ResizeHandle(props: ResizeHandleProps) {
 
   return (
     <div
+      role="separator"
+      aria-label={i18n.t("ui.resizeHandle.label")}
+      tabIndex={0}
+      aria-orientation={local.direction === "horizontal" ? "vertical" : "horizontal"}
+      aria-valuemin={local.min}
+      aria-valuemax={local.max}
+      aria-valuenow={local.size}
       {...rest}
       data-component="resize-handle"
       data-direction={local.direction}
@@ -133,6 +143,15 @@ export function ResizeHandle(props: ResizeHandleProps) {
         [local.class ?? ""]: !!local.class,
       }}
       onMouseDown={handleMouseDown}
+      onKeyDown={(event) => {
+        const size = resizeKey({ ...local, key: event.key, rtl: getComputedStyle(event.currentTarget).direction === "rtl" })
+        if (size === undefined) return
+        event.preventDefault()
+        const start = local.size
+        local.onResize(size)
+        local.onCollapseChange?.(false)
+        local.onResizeEnd?.(size, start)
+      }}
     />
   )
 }

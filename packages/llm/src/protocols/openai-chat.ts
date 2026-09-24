@@ -296,7 +296,9 @@ const lowerMessage = Effect.fn("OpenAIChat.lowerMessage")(function* (message: Op
   return (yield* lowerToolMessages(message)).messages
 })
 
-const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: LLMRequest) {
+type MessageObserver = (messages: ReadonlyArray<OpenAIChatMessage>, source: LLMRequest["messages"][number]) => void
+
+const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: LLMRequest, onMessage?: MessageObserver) {
   const system: OpenAIChatMessage[] =
     request.system.length === 0 ? [] : [{ role: "system", content: ProviderShared.joinText(request.system) }]
   const messages = [...system]
@@ -308,6 +310,13 @@ const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: 
   for (const message of request.messages) {
     if (message.role === "system") {
       const part = yield* ProviderShared.wrappedSystemUpdate("OpenAI Chat", message)
+      if (onMessage) {
+        flushImages()
+        const lowered = { role: "user" as const, content: part.text }
+        onMessage([lowered], message)
+        messages.push(lowered)
+        continue
+      }
       if (pendingImages.length > 0) {
         messages.push({ role: "user", content: [...pendingImages.splice(0), { type: "text", text: part.text }] })
         continue
@@ -325,12 +334,15 @@ const lowerMessages = Effect.fn("OpenAIChat.lowerMessages")(function* (request: 
     }
     if (message.role === "tool") {
       const lowered = yield* lowerToolMessages(message)
+      onMessage?.(lowered.messages, message)
       messages.push(...lowered.messages)
       pendingImages.push(...lowered.images)
       continue
     }
     flushImages()
-    messages.push(...(yield* lowerMessage(message)))
+    const lowered = yield* lowerMessage(message)
+    onMessage?.(lowered, message)
+    messages.push(...lowered)
   }
   flushImages()
   return messages
@@ -347,14 +359,14 @@ const lowerOptions = Effect.fn("OpenAIChat.lowerOptions")(function* (request: LL
   }
 })
 
-const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (request: LLMRequest) {
+export const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (request: LLMRequest, onMessage?: MessageObserver) {
   // `fromRequest` returns the provider body only. Endpoint, auth, framing,
   // validation, and HTTP execution are composed by `Route.make`.
   const generation = request.generation
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
   return {
     model: request.model.id,
-    messages: yield* lowerMessages(request),
+    messages: yield* lowerMessages(request, onMessage),
     tools:
       request.tools.length === 0
         ? undefined

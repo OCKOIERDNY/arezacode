@@ -58,6 +58,27 @@ function setup(
 }
 
 describe("createCompatibleApi", () => {
+  test("applies the selected model, effort, and agent before current-server prompt admission", async () => {
+    const requests: Array<{ path: string; body: unknown }> = []
+    const api = createApiForServer({ server: { url: "http://localhost:4096" }, fetch: Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init)
+      const path = new URL(request.url).pathname
+      requests.push({ path, body: await request.json() })
+      return path.endsWith("/prompt") ? Response.json({ data: {} }) : new Response(undefined, { status: 204 })
+    }, { preconnect: globalThis.fetch.preconnect }) })
+    await api.session.prompt({ sessionID: "ses_1", text: "Inspect the route", agent: "build", model: { providerID: "openai", modelID: "gpt-6-luna" }, variant: "low", independent: true })
+    expect(requests).toEqual([
+      { path: "/api/session/ses_1/agent", body: { agent: "build" } },
+      { path: "/api/session/ses_1/model", body: { model: { providerID: "openai", id: "gpt-6-luna", variant: "low" } } },
+      { path: "/api/session/ses_1/prompt", body: { prompt: { text: "Inspect the route", independent: true } } },
+    ])
+  })
+  test("forwards independent mode to the legacy prompt endpoint", async () => {
+    const { api, requests } = setup("v1")
+    await api.session.prompt({ sessionID: "ses_1", text: "New task", independent: true })
+    expect(new URL(requests[0].url).pathname).toBe("/session/ses_1/prompt_async")
+    expect(await requests[0].json()).toMatchObject({ independent: true, parts: [{ type: "text", text: "New task" }] })
+  })
   test("uses the current list contract for bounded Home queries", async () => {
     const requests: Request[] = []
     const info = {
@@ -122,14 +143,14 @@ describe("createCompatibleApi", () => {
     })
     const mention = { text: "@notes", start: 0, end: 6 }
     expect(await api.session.prompt({
-      sessionID: "ses_1", id: "msg_1", text: "hello", delivery: "queue", resume: false,
+      sessionID: "ses_1", id: "msg_1", text: "hello", delivery: "queue", resume: false, independent: true,
       files: [{ uri: "file:///repo/notes", name: "notes", mention }],
       agents: [{ name: "build", mention }],
     }, { signal: controller.signal, headers: { "x-request-test": "current" } })).toEqual(admission)
     expect(new URL(requests[0].url).pathname).toBe("/api/session/ses_1/prompt")
     expect(await requests[0].json()).toEqual({
       id: "msg_1", delivery: "queue", resume: false,
-      prompt: { text: "hello", files: [{ uri: "file:///repo/notes", name: "notes", source: mention }], agents: [{ name: "build", source: mention }] },
+      prompt: { text: "hello", independent: true, files: [{ uri: "file:///repo/notes", name: "notes", source: mention }], agents: [{ name: "build", source: mention }] },
     })
     expect(requests[0].headers.get("x-request-test")).toBe("current")
     controller.abort()

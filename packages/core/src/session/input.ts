@@ -1,6 +1,6 @@
 export * as SessionInput from "./input"
 
-import { and, asc, eq, isNull, lte } from "drizzle-orm"
+import { and, asc, eq, isNull, lte, sql } from "drizzle-orm"
 import { DateTime, Effect, Schema } from "effect"
 import { Admitted, Delivery } from "@opencode-ai/schema/session-input"
 import type { Database } from "../database/database"
@@ -56,15 +56,15 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
   const projected = yield* db.select().from(SessionMessageTable).where(eq(SessionMessageTable.id, input.id)).get().pipe(Effect.orDie)
   if (projected) {
     const message = Schema.decodeUnknownSync(SessionMessage.Message)({ ...projected.data, id: projected.id, type: projected.type })
-    if (message.type !== "user" || projected.session_id !== input.sessionID || input.delivery !== "steer" ||
-      JSON.stringify(encodePrompt(Prompt.make({ text: message.text, files: message.files, agents: message.agents }))) !== JSON.stringify(encodePrompt(input.prompt)))
+    if (message.type !== "user" || projected.session_id !== input.sessionID || input.delivery !== (message.independent ? "queue" : "steer") ||
+      JSON.stringify(encodePrompt(Prompt.fromUserMessage(message))) !== JSON.stringify(encodePrompt(input.prompt)))
       return yield* Effect.die(new LifecycleConflict({ id: input.id }))
     yield* projectPrompted(db, { ...input, timeCreated: message.time.created, promotedSeq: projected.seq })
     const reconciled = yield* find(db, input.id)
     if (!reconciled) return yield* Effect.die(new LifecycleConflict({ id: input.id }))
     return reconciled
   }
-  yield* SessionHealth.assertOpen(db, input.sessionID)
+  if (!input.prompt.independent) yield* SessionHealth.assertOpen(db, input.sessionID)
   const timestamp = yield* DateTime.now
   return yield* events
     .publish(SessionEvent.PromptAdmitted, {
@@ -204,6 +204,17 @@ export const hasPending = Effect.fn("SessionInput.hasPending")(function* (
   return row !== undefined
 })
 
+export const defaultDelivery = Effect.fn("SessionInput.defaultDelivery")(function* (db: DatabaseService, sessionID: SessionSchema.ID, id: SessionMessage.ID): Effect.fn.Return<Delivery> {
+  const existing = yield* find(db, id)
+  if (existing) return existing.delivery
+  const projected = yield* db.select({ id: SessionMessageTable.id }).from(SessionMessageTable).where(eq(SessionMessageTable.id, id)).get().pipe(Effect.orDie)
+  if (projected) return "steer"
+  const boundary = yield* db.select({ id: SessionInputTable.id }).from(SessionInputTable)
+    .where(and(eq(SessionInputTable.session_id, sessionID), isNull(SessionInputTable.promoted_seq), sql`json_extract(${SessionInputTable.prompt}, '$.independent') = 1`))
+    .limit(1).get().pipe(Effect.orDie)
+  return boundary ? "queue" : "steer"
+})
+
 export const equivalent = (
   input: Admitted,
   expected: {
@@ -236,7 +247,7 @@ const publish = Effect.fn("SessionInput.publish")(function* (
   rows: ReadonlyArray<typeof SessionInputTable.$inferSelect>,
 ) {
   return yield* events.transaction(Effect.gen(function* () {
-  if ((yield* SessionHealth.get(db, sessionID)).locked) return 0
+  if ((yield* SessionHealth.get(db, sessionID)).locked && (!rows.every((row) => decodePrompt(row.prompt).independent) || !(yield* canStartIndependent(db, sessionID)))) return 0
   for (const row of rows) {
     const id = SessionMessage.ID.make(row.id)
     yield* events
@@ -290,7 +301,6 @@ export const promoteNextQueued = Effect.fn("SessionInput.promoteNextQueued")(fun
   events: EventV2.Interface,
   sessionID: SessionSchema.ID,
 ) {
-  if ((yield* SessionHealth.get(db, sessionID)).locked) return false
   const row = yield* db
     .select()
     .from(SessionInputTable)
@@ -306,4 +316,15 @@ export const promoteNextQueued = Effect.fn("SessionInput.promoteNextQueued")(fun
     .get()
     .pipe(Effect.orDie)
   return row === undefined ? false : (yield* publish(db, events, sessionID, [row])) > 0
+})
+
+export const canStartIndependent = Effect.fn("SessionInput.canStartIndependent")(function* (db: DatabaseService, sessionID: SessionSchema.ID) {
+  const row = yield* db.select().from(SessionInputTable)
+    .where(and(eq(SessionInputTable.session_id, sessionID), isNull(SessionInputTable.promoted_seq), eq(SessionInputTable.delivery, "queue")))
+    .orderBy(asc(SessionInputTable.admitted_seq)).limit(1).get().pipe(Effect.orDie)
+  if (!row || !decodePrompt(row.prompt).independent) return false
+  const earlier = yield* db.select({ id: SessionInputTable.id }).from(SessionInputTable)
+    .where(and(eq(SessionInputTable.session_id, sessionID), isNull(SessionInputTable.promoted_seq), eq(SessionInputTable.delivery, "steer"), lte(SessionInputTable.admitted_seq, row.admitted_seq)))
+    .limit(1).get().pipe(Effect.orDie)
+  return earlier === undefined
 })

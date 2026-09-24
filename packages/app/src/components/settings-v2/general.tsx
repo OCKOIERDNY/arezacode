@@ -243,34 +243,6 @@ const SoundSetting: Component<{
   )
 }
 
-const LanguageSetting = () => {
-  const language = useLanguage()
-  const options = createMemo(() =>
-    language.locales.map((locale) => ({
-      value: locale,
-      label: language.label(locale),
-    })),
-  )
-  return (
-    <SettingsRowV2
-      title={language.t("settings.general.row.language.title")}
-      description={language.t("settings.general.row.language.description")}
-    >
-      <SelectV2
-        appearance="inline"
-        data-action="settings-language"
-        options={options()}
-        placement="bottom-end"
-        gutter={6}
-        current={options().find((option) => option.value === language.locale())}
-        value={(option) => option.value}
-        label={(option) => option.label}
-        onSelect={(option) => option && language.setLocale(option.value)}
-      />
-    </SettingsRowV2>
-  )
-}
-
 export const SettingsGeneralV2: Component<{
   sessionID?: string
 }> = (props) => {
@@ -327,7 +299,6 @@ export const SettingsGeneralV2: Component<{
   const GeneralSection = () => (
     <div class="settings-v2-section">
       <SettingsListV2>
-        <LanguageSetting />
 
         <SettingsRowV2
           title={language.t("settings.general.row.sidebarPosition.title")}

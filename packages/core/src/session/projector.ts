@@ -391,6 +391,7 @@ const layer = Layer.effectDiscard(
           timeCreated: event.data.timestamp,
           promotedSeq: event.durable.seq,
         })
+        if (event.data.prompt.independent) yield* SessionHealth.startTask(db, event.data.sessionID, event.data.messageID, DateTime.toEpochMillis(event.data.timestamp))
         yield* run(db, event)
       }),
     )

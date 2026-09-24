@@ -476,6 +476,7 @@ type Endpoint9_2Input = {
   readonly text: Endpoint9_2Request["payload"]["text"]
   readonly agent: Endpoint9_2Request["payload"]["agent"]
   readonly auto: Endpoint9_2Request["payload"]["auto"]
+  readonly independent?: Endpoint9_2Request["payload"]["independent"]
   readonly images?: Endpoint9_2Request["payload"]["images"]
   readonly models: Endpoint9_2Request["payload"]["models"]
 }
@@ -488,6 +489,7 @@ const Endpoint9_2 = (raw: RawClient["server.jev"]) => (input: Endpoint9_2Input) 
       text: input["text"],
       agent: input["agent"],
       auto: input["auto"],
+      independent: input["independent"],
       images: input["images"],
       models: input["models"],
     },

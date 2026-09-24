@@ -2,6 +2,7 @@ import { DOCUMENT_TYPES, documentType } from "@opencode-ai/schema/document"
 import { onMount } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import type { PromptInputV2Attachment, PromptInputV2Prompt } from "./types"
+import { captureAttachmentTarget } from "../../../components/prompt-attachment-target"
 
 export const ACCEPTED_FILE_TYPES = [
   "image/png",
@@ -92,12 +93,11 @@ export function createPromptInputV2Attachments(
     setDraggingType: (type: "image" | "@mention" | null) => void
   },
 ) {
-  const capture = () => {
-    const prompt = input.capture()
-    const editor = input.editor()
-    if (!editor) return
-    return { prompt, cursor: prompt.cursor() ?? cursorPosition(editor) }
-  }
+  const capture = () => captureAttachmentTarget({
+    capture: input.capture,
+    editor: input.editor,
+    cursor: cursorPosition,
+  })
   let picked: ReturnType<typeof capture>
   const add = async (file: File, toast = true, target = capture(), clipboard = false) => {
     if (!target) return false

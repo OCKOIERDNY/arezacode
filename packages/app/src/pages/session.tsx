@@ -1760,6 +1760,7 @@ export default function Page() {
 
   const busy = (sessionID: string) => sync().data.session_working(sessionID)
   const contextHealth = useSessionHealth(() => params.id)
+  const contextLocked = () => contextHealth.locked() && !settings.general.independentTasks()
   const handoffDraft = (parts: FollowupDraft["prompt"]) => parts.map((part) =>
     part.type === "image" ? `[Attachment: ${part.filename}; retained in original chat]` : part.content,
   ).join("")
@@ -1788,7 +1789,7 @@ export default function Page() {
         fail(error)
       })
       if (!health || sdk() !== origin) return
-      if (health.locked) {
+      if (health.locked && !item.independent) {
         setFollowup("paused", input.sessionID, true)
         return
       }
@@ -1830,7 +1831,7 @@ export default function Page() {
   const queueEnabled = createMemo(() => {
     const id = params.id
     if (!id) return false
-    return settings.general.followup() === "queue" && busy(id) && !composer.blocked() && !isChildSession()
+    return (queuedFollowups().length > 0 || followupBusy(id) || (settings.general.independentTasks() || settings.general.followup() === "queue") && busy(id)) && !composer.blocked() && !isChildSession()
   })
 
   const followupText = (item: FollowupDraft) => {
@@ -1862,17 +1863,17 @@ export default function Page() {
   const followupDock = createMemo(() => queuedFollowups().map((item) => ({ id: item.id, text: followupText(item) })))
 
   const sendFollowup = (sessionID: string, id: string, opts?: { manual?: boolean }) => {
-    if (contextHealth.locked()) return Promise.resolve()
     if (sync().session.get(sessionID)?.parentID) return Promise.resolve()
     const item = (followup.items[sessionID] ?? []).find((entry) => entry.id === id)
     if (!item) return Promise.resolve()
+    if (contextHealth.locked() && !item.independent) return Promise.resolve()
     if (followupBusy(sessionID)) return Promise.resolve()
 
     return followupMutation.mutateAsync({ sessionID, id, manual: opts?.manual })
   }
 
   const editFollowup = (id: string) => {
-    if (contextHealth.locked()) return
+    if (contextLocked()) return
     const sessionID = params.id
     if (!sessionID) return
     if (followupBusy(sessionID)) return
@@ -2012,7 +2013,7 @@ export default function Page() {
     if (followupBusy(sessionID)) return
     if (followup.failed[sessionID] === item.id) return
     if (followup.paused[sessionID]) return
-    if (!contextHealth.query.isSuccess || contextHealth.locked()) return
+    if (!contextHealth.query.isSuccess || (contextHealth.locked() && !queuedFollowups()[0]?.independent)) return
     if (isChildSession()) return
     if (composer.blocked()) return
     if (busy(sessionID)) return
@@ -2236,7 +2237,7 @@ export default function Page() {
                 ? {
                     items: followupDock(),
                     sending: sendingFollowup(),
-                    disabled: !contextHealth.query.isSuccess || contextHealth.locked(),
+                    disabled: !contextHealth.query.isSuccess || contextLocked(),
                     onSend: (id) => void sendFollowup(params.id!, id, { manual: true }),
                     onEdit: editFollowup,
                   }
@@ -2274,6 +2275,8 @@ export default function Page() {
                 <SessionContextLock
                   sessionID={params.id}
                   health={contextHealth}
+                  independent={settings.general.independentTasks()}
+                  onIndependent={() => settings.general.setIndependentTasks(true)}
                   localContext={() => [
                     "## Unsent local draft (not executed)",
                     handoffDraft(prompt.current()) || "None recorded.",
@@ -2283,7 +2286,7 @@ export default function Page() {
                 />
               }
               promptInput={
-                <div inert={contextHealth.locked()} aria-disabled={contextHealth.locked()} classList={{ "[&_form>*]:opacity-60": contextHealth.locked() }}>
+                <div inert={contextLocked()} aria-disabled={contextLocked()} classList={{ "[&_form>*]:opacity-60": contextLocked() }}>
                 <Show
                   when={newSessionDesign()}
                   fallback={

@@ -1,4 +1,5 @@
 export const dict: Record<string, string> = {
+  "ui.resizeHandle.label": "Resize panel",
   "ui.message.orchestrator": "Orchestrator: {{model}}",
   "ui.message.routing": "Jev is choosing a model…",
   "ui.message.subagents": "Subagents: {{models}}",

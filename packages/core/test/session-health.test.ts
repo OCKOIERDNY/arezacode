@@ -5,6 +5,7 @@ import { SessionHealth } from "../src/session/health"
 import { SessionHandoff } from "../src/session/handoff"
 import { SessionV2 } from "../src/session"
 import { SessionInput } from "../src/session/input"
+import { SessionHistory } from "../src/session/history"
 import { SessionMessage } from "../src/session/message"
 import { SessionEvent } from "../src/session/event"
 import { SessionExecution } from "../src/session/execution"
@@ -106,13 +107,42 @@ it.effect("exact durable retries survive the latch, conflicting retries fail, qu
   expect(yield* sessions.messages({ sessionID: input.id })).toEqual([])
 }))
 
-it.effect("reconciles a historical projected exact retry after locking", () => Effect.gen(function* () {
+for (const independent of [undefined, true]) it.effect(`reconciles a historical projected exact retry after locking (independent: ${independent ?? false})`, () => Effect.gen(function* () {
   const input = yield* setup
   const sessions = yield* SessionV2.Service
   const id = SessionMessage.ID.create()
-  yield* input.db.insert(SessionMessageTable).values({ id, session_id: input.id, seq: 0, type: "user", data: Schema.encodeSync(SessionMessage.User)(SessionMessage.User.make({ id, type: "user", text: "Historical objective", time: { created: DateTime.makeUnsafe(1) } })) }).run().pipe(Effect.orDie)
+  yield* input.db.insert(SessionMessageTable).values({ id, session_id: input.id, seq: 0, type: "user", data: Schema.encodeSync(SessionMessage.User)(SessionMessage.User.make({ id, type: "user", text: "Historical objective", independent, time: { created: DateTime.makeUnsafe(1) } })) }).run().pipe(Effect.orDie)
   yield* SessionHealth.observe(input.db, input.id, { inputTokens: 250_000 })
-  expect(yield* sessions.prompt({ sessionID: input.id, id, prompt: { text: "Historical objective" }, resume: false })).toMatchObject({ promotedSeq: 0 })
+  expect(yield* sessions.prompt({ sessionID: input.id, id, prompt: { text: "Historical objective", independent }, resume: false })).toMatchObject({ promotedSeq: 0 })
+}))
+
+it.effect("independent tasks reset model history and health while preserving the transcript and exact retries", () => Effect.gen(function* () {
+  const input = yield* setup
+  const sessions = yield* SessionV2.Service
+  const events = yield* EventV2.Service
+  const first = yield* sessions.prompt({ sessionID: input.id, prompt: { text: "Earlier task secret" }, resume: false })
+  yield* SessionInput.promoteSteers(input.db, events, input.id, first.admittedSeq)
+  const compactionID = SessionMessage.ID.create()
+  yield* events.publish(SessionEvent.Compaction.Started, { sessionID: input.id, messageID: compactionID, timestamp: DateTime.nowUnsafe(), reason: "manual" })
+  yield* events.publish(SessionEvent.Compaction.Ended, { sessionID: input.id, messageID: compactionID, timestamp: DateTime.nowUnsafe(), reason: "manual", text: "Earlier task secret summary", recent: "" })
+  yield* legacy(input)
+  expect((yield* SessionHealth.get(input.db, input.id)).locked).toBe(true)
+  const next = { id: SessionMessage.ID.create(), sessionID: input.id, prompt: { text: "Fresh task", independent: true }, resume: false }
+  const admitted = yield* sessions.prompt(next)
+  expect(admitted.delivery).toBe("queue")
+  expect(admitted.promotedSeq).toBeUndefined()
+  expect((yield* SessionHealth.get(input.db, input.id)).locked).toBe(true)
+  expect(yield* SessionInput.promoteNextQueued(input.db, events, input.id)).toBe(true)
+  expect((yield* SessionHealth.get(input.db, input.id)).locked).toBe(false)
+  expect(yield* SessionHistory.load(input.db, input.id)).toMatchObject([{ type: "user", text: "Fresh task", independent: true }])
+  const followup = yield* sessions.prompt({ sessionID: input.id, prompt: { text: "Continue latest task" }, resume: false })
+  yield* SessionInput.promoteSteers(input.db, events, input.id, followup.admittedSeq)
+  expect((yield* SessionHistory.load(input.db, input.id)).map((message) => message.type === "user" ? message.text : message.type)).toEqual(["Fresh task", "Continue latest task"])
+  expect((yield* sessions.messages({ sessionID: input.id })).filter((message) => message.type === "user")).toHaveLength(3)
+  yield* SessionHealth.observe(input.db, input.id, { inputTokens: 250_000 })
+  expect((yield* sessions.prompt(next)).id).toBe(admitted.id)
+  expect((yield* SessionHealth.get(input.db, input.id)).locked).toBe(true)
+  expect((yield* sessions.prompt({ ...next, prompt: { ...next.prompt, independent: false } }).pipe(Effect.flip))._tag).toBe("Session.PromptConflictError")
 }))
 
 it.effect("legacy settlement persists the latch before a later small request", () => Effect.gen(function* () {

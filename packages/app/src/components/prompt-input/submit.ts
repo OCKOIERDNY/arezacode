@@ -32,6 +32,7 @@ type PendingPrompt = {
 }
 
 const pending = new Map<string, PendingPrompt>()
+const independentSubmissions = new Set<string>()
 
 export type FollowupDraft = {
   sessionID: string
@@ -42,6 +43,7 @@ export type FollowupDraft = {
   model: { providerID: string; modelID: string }
   variant?: string
   browserVerification?: boolean
+  independent?: boolean
   jev?: { auto: boolean; models: { providerID: string; modelID: string; variant?: string }[] }
 }
 
@@ -63,7 +65,13 @@ const draftText = (prompt: Prompt) => prompt.map((part) => ("content" in part ? 
 
 const draftImages = (prompt: Prompt) => prompt.filter((part): part is ImageAttachmentPart => part.type === "image")
 
-export async function sendFollowupDraft(input: FollowupSendInput) {
+export function sendFollowupDraft(input: FollowupSendInput) {
+  const key = input.draft.independent && input.scope ? ScopedKey.from(input.scope, input.draft.sessionID) : undefined
+  if (key) independentSubmissions.add(key)
+  return sendDraft(input).finally(() => { if (key) independentSubmissions.delete(key) })
+}
+
+async function sendDraft(input: FollowupSendInput) {
   const browserVerification = input.draft.browserVerification
     ? "Browser verification preference selected by the user: AUTOMATIC. Browser checks are already approved for this request; perform relevant checks without asking the user to choose manual or automatic. Keep checks focused. Apply this preference to subagents. Other tool permissions still apply."
     : "Browser verification preference selected by the user: MANUAL. Do not run browser checks, shell-driven browser automation, or delegated browser checks. Do not ask the user to choose manual or automatic. Provide a brief manual test checklist with expected results, marked unverified. Apply this preference to subagents."
@@ -97,6 +105,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         text,
         agent: input.draft.agent,
         auto: input.draft.jev?.auto ?? false,
+        independent: input.draft.independent,
         images: images.length > 0,
         models: input.draft.jev?.models ?? [],
       }, input.draft.sessionDirectory, abort.signal), cancelled.promise])
@@ -125,6 +134,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         sessionID: input.draft.sessionID,
         id: messageID,
         command: cmd,
+        ...(input.draft.independent ? { independent: true } : {}),
         arguments: tail.join(" "),
         agent: input.draft.agent,
         model: {
@@ -224,6 +234,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     await input.api.prompt({
       sessionID: input.draft.sessionID,
       id: messageID,
+      ...(input.draft.independent ? { independent: true } : {}),
       agent: input.draft.agent,
       model: input.jev?.state.enabled ? selected : input.draft.model,
       variant: prepared?.model ? prepared.model.variant : input.draft.variant,
@@ -271,6 +282,7 @@ type PromptSubmitInput = {
   autoAccept: Accessor<boolean>
   approvalMode?: Accessor<"default" | "ask" | "auto" | "full">
   browserVerification?: Accessor<boolean>
+  independentTasks?: Accessor<boolean>
   mode: Accessor<"normal" | "shell">
   working: Accessor<boolean>
   editor: () => HTMLDivElement | undefined
@@ -389,6 +401,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
     const images = input.imageAttachments().slice()
     const mode = input.mode()
+    const independent = mode === "normal" && (input.independentTasks?.() ?? false)
 
     if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
       if (input.working()) void abort()
@@ -402,7 +415,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         showToast({ variant: "error", title: language.t("common.requestFailed"), description: errorMessage(error) })
       })
       if (!health) return
-      if (health.locked) {
+      if (health.locked && !independent) {
         showToast({ title: language.t("context.health.lockedMessage") })
         return
       }
@@ -534,6 +547,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       model,
       variant,
       browserVerification: input.browserVerification?.() ?? false,
+      independent,
       jev: {
         auto: modelSelection.auto?.() ?? false,
         models: sdk().jev?.state.enabled ? modelSelection.list().filter((item) => modelSelection.visible({ providerID: item.provider.id, modelID: item.id }))
@@ -564,7 +578,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return true
     }
 
-    if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
+    if (!isNewSession && mode === "normal" && (input.shouldQueue?.() || independentSubmissions.has(pendingKey(session.id)))) {
+      if (!input.onQueue) return
       input.onQueue?.(draft)
       clearContext(submission.target())
       clearInput()

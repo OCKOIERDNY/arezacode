@@ -496,6 +496,7 @@ export type SessionsPromptInput = {
     readonly id?: string | null
     readonly prompt: {
       readonly text: string
+      readonly independent?: boolean
       readonly files?: ReadonlyArray<{
         readonly uri: string
         readonly name?: string
@@ -514,6 +515,7 @@ export type SessionsPromptInput = {
     readonly id?: string | null
     readonly prompt: {
       readonly text: string
+      readonly independent?: boolean
       readonly files?: ReadonlyArray<{
         readonly uri: string
         readonly name?: string
@@ -532,6 +534,7 @@ export type SessionsPromptInput = {
     readonly id?: string | null
     readonly prompt: {
       readonly text: string
+      readonly independent?: boolean
       readonly files?: ReadonlyArray<{
         readonly uri: string
         readonly name?: string
@@ -550,6 +553,7 @@ export type SessionsPromptInput = {
     readonly id?: string | null
     readonly prompt: {
       readonly text: string
+      readonly independent?: boolean
       readonly files?: ReadonlyArray<{
         readonly uri: string
         readonly name?: string
@@ -573,6 +577,7 @@ export type SessionsPromptOutput = {
     readonly sessionID: string
     readonly prompt: {
       readonly text: string
+      readonly independent?: boolean
       readonly files?: ReadonlyArray<{
         readonly uri: string
         readonly mime: string
@@ -734,6 +739,7 @@ export type SessionsContextOutput = {
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly text: string
+        readonly independent?: boolean
         readonly files?: ReadonlyArray<{
           readonly uri: string
           readonly mime: string
@@ -977,6 +983,7 @@ export type SessionsHistoryOutput = {
           readonly messageID: string
           readonly prompt: {
             readonly text: string
+            readonly independent?: boolean
             readonly files?: ReadonlyArray<{
               readonly uri: string
               readonly mime: string
@@ -1004,6 +1011,7 @@ export type SessionsHistoryOutput = {
           readonly messageID: string
           readonly prompt: {
             readonly text: string
+            readonly independent?: boolean
             readonly files?: ReadonlyArray<{
               readonly uri: string
               readonly mime: string
@@ -1624,6 +1632,7 @@ export type SessionsEventsOutput =
         readonly messageID: string
         readonly prompt: {
           readonly text: string
+          readonly independent?: boolean
           readonly files?: ReadonlyArray<{
             readonly uri: string
             readonly mime: string
@@ -1651,6 +1660,7 @@ export type SessionsEventsOutput =
         readonly messageID: string
         readonly prompt: {
           readonly text: string
+          readonly independent?: boolean
           readonly files?: ReadonlyArray<{
             readonly uri: string
             readonly mime: string
@@ -2229,6 +2239,7 @@ export type SessionsMessageOutput = {
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly text: string
+        readonly independent?: boolean
         readonly files?: ReadonlyArray<{
           readonly uri: string
           readonly mime: string
@@ -2440,6 +2451,7 @@ export type MessagesListOutput = {
         readonly metadata?: { readonly [x: string]: JsonValue }
         readonly time: { readonly created: number }
         readonly text: string
+        readonly independent?: boolean
         readonly files?: ReadonlyArray<{
           readonly uri: string
           readonly mime: string
@@ -3084,6 +3096,7 @@ export type JevPrepareInput = {
     readonly text: string
     readonly agent: string
     readonly auto: boolean
+    readonly independent?: boolean
     readonly images?: boolean | null
     readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["sessionID"]
@@ -3093,6 +3106,7 @@ export type JevPrepareInput = {
     readonly text: string
     readonly agent: string
     readonly auto: boolean
+    readonly independent?: boolean
     readonly images?: boolean | null
     readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["promptID"]
@@ -3102,6 +3116,7 @@ export type JevPrepareInput = {
     readonly text: string
     readonly agent: string
     readonly auto: boolean
+    readonly independent?: boolean
     readonly images?: boolean | null
     readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["text"]
@@ -3111,6 +3126,7 @@ export type JevPrepareInput = {
     readonly text: string
     readonly agent: string
     readonly auto: boolean
+    readonly independent?: boolean
     readonly images?: boolean | null
     readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["agent"]
@@ -3120,15 +3136,27 @@ export type JevPrepareInput = {
     readonly text: string
     readonly agent: string
     readonly auto: boolean
+    readonly independent?: boolean
     readonly images?: boolean | null
     readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["auto"]
+  readonly independent?: {
+    readonly sessionID: string
+    readonly promptID?: string
+    readonly text: string
+    readonly agent: string
+    readonly auto: boolean
+    readonly independent?: boolean
+    readonly images?: boolean | null
+    readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
+  }["independent"]
   readonly images?: {
     readonly sessionID: string
     readonly promptID?: string
     readonly text: string
     readonly agent: string
     readonly auto: boolean
+    readonly independent?: boolean
     readonly images?: boolean | null
     readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["images"]
@@ -3138,6 +3166,7 @@ export type JevPrepareInput = {
     readonly text: string
     readonly agent: string
     readonly auto: boolean
+    readonly independent?: boolean
     readonly images?: boolean | null
     readonly models: ReadonlyArray<{ readonly providerID: string; readonly modelID: string; readonly variant?: string }>
   }["models"]

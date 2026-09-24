@@ -452,7 +452,7 @@ const layer = Layer.effect(
             yield* result.get(input.sessionID)
             const prompt = resolvePrompt(input.prompt)
             const messageID = input.id ?? SessionMessage.ID.create()
-            const delivery = input.delivery ?? "steer"
+            const delivery = prompt.independent ? "queue" : input.delivery ?? (yield* SessionInput.defaultDelivery(db, input.sessionID, messageID))
             const expected = { sessionID: input.sessionID, messageID, prompt, delivery }
             const admitted = yield* SessionInput.admit(db, events, {
               id: messageID,
@@ -480,7 +480,8 @@ const layer = Layer.effect(
         return yield* new OperationUnavailableError({ operation: "skill" })
       }),
       switchAgent: Effect.fn("V2Session.switchAgent")(function* (input) {
-        yield* result.get(input.sessionID)
+        const session = yield* result.get(input.sessionID)
+        if (session.agent === input.agent) return
         yield* events.publish(SessionEvent.AgentSwitched, {
           sessionID: input.sessionID,
           messageID: SessionMessage.ID.create(),
@@ -549,6 +550,7 @@ const layer = Layer.effect(
 const resolvePrompt = (input: PromptInput.Prompt) =>
   Prompt.make({
     text: input.text,
+    independent: input.independent,
     agents: input.agents,
     files: input.files?.map((file) => {
       const dataMime = file.uri.match(/^data:([^;,]+)[;,]/i)?.[1]

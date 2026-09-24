@@ -51,6 +51,7 @@ import { DialogSelectModelUnpaidV2 } from "@/components/dialog-select-model-unpa
 import { useCommand } from "@/context/command"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
+import { useSettings } from "@/context/settings"
 import { usePlatform } from "@/context/platform"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
@@ -128,6 +129,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const command = useCommand()
   const permission = usePermission()
   const language = useLanguage()
+  const settings = useSettings()
   const platform = usePlatform()
   const tabs = () => props.controls.session.tabs
   let editorRef!: HTMLDivElement
@@ -1175,6 +1177,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       imageAttachments,
       commentCount,
       autoAccept: () => accepting(),
+      independentTasks: settings.general.independentTasks,
       mode: () => store.mode,
       working,
       editor: () => editorRef,
@@ -1614,6 +1617,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 </Button>
               </div>
               <div class="flex items-center gap-1.5 min-w-0 flex-1 h-7">
+                <Button type="button" variant={settings.general.independentTasks() ? "secondary" : "ghost"} size="small"
+                  data-action="prompt-independent" aria-pressed={settings.general.independentTasks()} disabled={!settings.ready()}
+                  onClick={() => settings.general.setIndependentTasks(!settings.general.independentTasks())}>
+                  {language.t("prompt.independent.label")}
+                </Button>
                 <Show when={!agentsLoading()}>
                   <div
                     data-component="prompt-agent-control"

@@ -55,6 +55,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { eq } from "drizzle-orm"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionHealth } from "@opencode-ai/core/session/health"
+import { KeyedMutex } from "@opencode-ai/core/effect/keyed-mutex"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
@@ -103,10 +104,10 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
 
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
-  readonly prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionHealth.LockedError>
+  readonly prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionHealth.LockedError | Session.BusyError>
   readonly loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts>
   readonly shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError | SessionHealth.LockedError>
-  readonly command: (input: CommandInput) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionHealth.LockedError>
+  readonly command: (input: CommandInput) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionHealth.LockedError | Session.BusyError>
   readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
 }
 
@@ -143,6 +144,7 @@ const layer = Layer.effect(
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
     const { db } = database
+    const admissions = yield* KeyedMutex.make<SessionID>()
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
@@ -1045,8 +1047,17 @@ const layer = Layer.effect(
         })
       }
 
-      yield* sessions.updateMessage(info)
-      for (const part of parts) yield* sessions.updatePart(part)
+      const persist = Effect.gen(function* () {
+        yield* sessions.updateMessage(info)
+        for (const part of parts) yield* sessions.updatePart(part)
+        if (input.independent) {
+          const boundary: SessionV1.TextPart = { id: PartID.ascending(), sessionID: input.sessionID, messageID: info.id, type: "text", text: "", synthetic: true, metadata: { independentTask: true } }
+          yield* sessions.updatePart(boundary)
+          parts.push(boundary)
+          yield* SessionHealth.startTask(db, input.sessionID, info.id, info.time.created)
+        }
+      })
+      yield* (input.independent ? events.transaction(persist).pipe(Effect.orDie) : persist)
 
       return { info, parts }
     }, Effect.scoped)
@@ -1057,23 +1068,36 @@ const layer = Layer.effect(
       yield* SessionHealth.assertOpen(db, sessionID, model?.limit.context)
     })
 
-    const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionHealth.LockedError> = Effect.fn(
+    const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error | SessionHealth.LockedError | Session.BusyError> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
-      yield* assertOpen(input.sessionID, input.model)
-      const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
-      yield* revert.cleanup(session)
-      const message = yield* createUserMessage(input)
-      yield* sessions.touch(input.sessionID)
+      const message = yield* admissions.withLock(input.sessionID)(Effect.gen(function* () {
+        if (input.expectedContext !== undefined && input.expectedContext !== (yield* SessionHealth.taskID(db, input.sessionID)))
+          return yield* new Session.BusyError({ sessionID: input.sessionID })
+        if (input.independent) {
+          yield* state.assertNotBusy(input.sessionID)
+          const previous = yield* sessions.findMessage(input.sessionID, (message) => message.info.role === "user").pipe(Effect.orDie)
+          if (Option.isSome(previous) && !(yield* SessionHealth.get(db, input.sessionID)).locked) {
+            const settled = yield* sessions.findMessage(input.sessionID, (message) => message.info.role === "assistant" && message.info.parentID === previous.value.info.id && !!message.info.time.completed && !!message.info.finish && !["tool-calls", "unknown"].includes(message.info.finish)).pipe(Effect.orDie)
+            if (Option.isNone(settled)) return yield* new Session.BusyError({ sessionID: input.sessionID })
+          }
+        }
+        if (!input.independent) yield* assertOpen(input.sessionID, input.model)
+        const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+        yield* revert.cleanup(session)
+        const message = yield* createUserMessage(input)
+        yield* sessions.touch(input.sessionID)
 
-      const permissions: PermissionV1.Rule[] = []
-      for (const [t, enabled] of Object.entries(input.tools ?? {})) {
-        permissions.push({ permission: t, action: enabled ? "allow" : "deny", pattern: "*" })
-      }
-      if (permissions.length > 0) {
-        session.permission = permissions
-        yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
-      }
+        const permissions: PermissionV1.Rule[] = []
+        for (const [t, enabled] of Object.entries(input.tools ?? {})) {
+          permissions.push({ permission: t, action: enabled ? "allow" : "deny", pattern: "*" })
+        }
+        if (permissions.length > 0) {
+          session.permission = permissions
+          yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
+        }
+        return message
+      }))
 
       if (input.noReply === true) return message
       return yield* loop({ sessionID: input.sessionID })
@@ -1367,7 +1391,8 @@ const layer = Layer.effect(
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
-      yield* assertOpen(input.sessionID, input.model ? Provider.parseModel(input.model) : undefined)
+      if (input.independent) yield* state.assertNotBusy(input.sessionID)
+      if (!input.independent) yield* assertOpen(input.sessionID, input.model ? Provider.parseModel(input.model) : undefined)
       yield* Effect.logInfo("command", {
         "session.id": input.sessionID,
         command: input.command,
@@ -1479,6 +1504,7 @@ const layer = Layer.effect(
 
       const result = yield* prompt({
         sessionID: input.sessionID,
+        independent: input.independent,
         messageID: input.messageID,
         model: userModel,
         agent: userAgent,
@@ -1512,6 +1538,7 @@ const ModelRef = Schema.Struct({
 
 export const PromptInput = Schema.Struct({
   sessionID: SessionID,
+  independent: Schema.optional(Schema.Boolean),
   messageID: Schema.optional(MessageID),
   model: Schema.optional(ModelRef),
   agent: Schema.optional(Schema.String),
@@ -1532,7 +1559,7 @@ export const PromptInput = Schema.Struct({
     ]).annotate({ discriminator: "type" }),
   ),
 })
-export type PromptInput = Schema.Schema.Type<typeof PromptInput>
+export type PromptInput = Schema.Schema.Type<typeof PromptInput> & { readonly expectedContext?: string | null }
 
 export class LoopInput extends Schema.Class<LoopInput>("SessionPrompt.LoopInput")({
   sessionID: SessionID,
@@ -1549,6 +1576,7 @@ export type ShellInput = Schema.Schema.Type<typeof ShellInput>
 
 export const CommandInput = Schema.Struct({
   messageID: Schema.optional(MessageID),
+  independent: Schema.optional(Schema.Boolean),
   sessionID: SessionID,
   agent: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),

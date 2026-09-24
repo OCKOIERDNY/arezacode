@@ -2267,6 +2267,58 @@ it.instance("context lock blocks new legacy prompts and fresh loop execution", (
   }),
 )
 
+it.instance("independent legacy prompts reset context while retaining visible messages and allowing followups", () => Effect.gen(function* () {
+  yield* useServerConfig(providerCfg)
+  const prompt = yield* SessionPrompt.Service
+  const sessions = yield* Session.Service
+  const database = yield* Database.Service
+  const session = yield* sessions.create({ title: "Independent tasks" })
+  yield* prompt.prompt({ sessionID: session.id, agent: "build", noReply: true, parts: [{ type: "text", text: "Earlier private task" }] })
+  yield* SessionHealth.observe(database.db, session.id, { inputTokens: 250_000 })
+  const independent = yield* prompt.prompt({ sessionID: session.id, agent: "build", independent: true, noReply: true, parts: [{ type: "text", text: "New isolated task" }] })
+  expect((yield* SessionHealth.get(database.db, session.id)).locked).toBe(false)
+  const stale = yield* prompt.prompt({ sessionID: session.id, agent: "build", expectedContext: null, noReply: true, parts: [{ type: "text", synthetic: true, text: "Earlier background result" }] }).pipe(Effect.flip)
+  expect(stale._tag).toBe("SessionBusyError")
+  yield* prompt.prompt({ sessionID: session.id, agent: "build", noReply: true, parts: [{ type: "text", text: "Continue latest" }] })
+  const visible = yield* sessions.messages({ sessionID: session.id })
+  expect(visible).toHaveLength(3)
+  const context = yield* MessageV2.filterCompactedEffect(session.id).pipe(Effect.provideService(Database.Service, database))
+  expect(context[0]?.info.id).toBe(independent.info.id)
+  expect(context).toHaveLength(2)
+  expect(JSON.stringify(context)).not.toContain("Earlier private task")
+  expect(JSON.stringify(context)).not.toContain("Earlier background result")
+}))
+
+it.instance("independent legacy admission rolls back the message when its boundary fails to persist", () => Effect.gen(function* () {
+  yield* useServerConfig(providerCfg)
+  const prompt = yield* SessionPrompt.Service
+  const sessions = yield* Session.Service
+  const database = yield* Database.Service
+  const events = yield* EventV2Bridge.Service
+  const session = yield* sessions.create({ title: "Atomic independent admission" })
+  yield* SessionHealth.observe(database.db, session.id, { inputTokens: 250_000 })
+  const fault = { enabled: true }
+  yield* events.project(MessageV2.Event.PartUpdated, (event) => fault.enabled && event.data.sessionID === session.id && event.data.part.type === "text" && event.data.part.metadata?.independentTask === true ? Effect.die("Boundary write failed") : Effect.void)
+  const input = { sessionID: session.id, agent: "build", independent: true, noReply: true, parts: [{ type: "text" as const, text: "Fresh task" }] }
+  expect((yield* prompt.prompt(input).pipe(Effect.exit))._tag).toBe("Failure")
+  expect(yield* sessions.messages({ sessionID: session.id })).toHaveLength(0)
+  expect((yield* SessionHealth.get(database.db, session.id)).locked).toBe(true)
+  fault.enabled = false
+  yield* prompt.prompt(input)
+  expect(yield* sessions.messages({ sessionID: session.id })).toHaveLength(1)
+  expect((yield* SessionHealth.get(database.db, session.id)).locked).toBe(false)
+}))
+
+it.instance("concurrent independent legacy admissions cannot replace an unexecuted task", () => Effect.gen(function* () {
+  yield* useServerConfig(providerCfg)
+  const prompt = yield* SessionPrompt.Service
+  const sessions = yield* Session.Service
+  const session = yield* sessions.create({ title: "Concurrent independent tasks" })
+  const results = yield* Effect.all(["First", "Second"].map((text) => prompt.prompt({ sessionID: session.id, agent: "build", independent: true, noReply: true, parts: [{ type: "text", text }] }).pipe(Effect.exit)), { concurrency: "unbounded" })
+  expect(results.map((result) => result._tag).sort()).toEqual(["Failure", "Success"])
+  expect(yield* sessions.messages({ sessionID: session.id })).toHaveLength(1)
+}))
+
 it.instance("does not loop empty assistant turns for a simple reply", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

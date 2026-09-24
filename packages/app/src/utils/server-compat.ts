@@ -28,7 +28,7 @@ type CompatibleSessionApi = Omit<
   prompt: (
     input: SessionPromptInput & LegacyPrompt,
   ) => Promise<SessionPromptOutput | Awaited<ReturnType<ServerApi["session"]["prompt"]>>>
-  command: (input: SessionCommandInput) => Promise<SessionCommandOutput>
+  command: (input: SessionCommandInput & { independent?: boolean }) => Promise<SessionCommandOutput>
   shell: (input: SessionShellInput & LegacyPrompt) => Promise<SessionShellOutput>
   compact: (input: SessionCompactInput & { model?: LegacyPrompt["model"] }) => Promise<SessionCompactOutput>
   rename: (input: Parameters<SessionApi["rename"]>[0] & LegacyLocation) => ReturnType<SessionApi["rename"]>
@@ -44,7 +44,8 @@ export type CompatibleApi = Omit<ServerApi, "session" | "permission"> & {
   readonly session: CompatibleSessionApi
   readonly permission: CompatiblePermissionApi
 }
-type LegacyPrompt = {
+export type LegacyPrompt = {
+  independent?: boolean
   agent?: string
   model?: { providerID: string; modelID: string }
   variant?: string
@@ -123,6 +124,8 @@ export function withCurrentContract(legacy: OpenCodeClient, options: Parameters<
       health: current.sessions.health,
       handoff: current.sessions.handoff,
       async prompt(value, requestOptions) {
+        if (value.agent) await current.sessions.switchAgent({ sessionID: value.sessionID, agent: value.agent }, requestOptions)
+        if (value.model) await current.sessions.switchModel({ sessionID: value.sessionID, model: { providerID: value.model.providerID, id: value.model.modelID, variant: value.variant } }, requestOptions)
         return current.sessions.prompt(
           {
             sessionID: value.sessionID,
@@ -131,6 +134,7 @@ export function withCurrentContract(legacy: OpenCodeClient, options: Parameters<
             resume: value.resume,
             prompt: {
               text: value.text,
+              independent: value.independent,
               files: value.files?.map(({ mention, ...file }) => ({ ...file, source: mention })),
               agents: value.agents?.map(({ mention, ...agent }) => ({ ...agent, source: mention })),
             },
@@ -344,6 +348,7 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
         await legacy().session.promptAsync({
           sessionID: value.sessionID,
           messageID: value.id ?? undefined,
+          independent: value.independent,
           agent: value.agent,
           model: value.model,
           variant: value.variant,
@@ -381,11 +386,12 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
           delivery: value.delivery ?? "steer",
         }
       },
-      async command(value: SessionCommandInput) {
+      async command(value: SessionCommandInput & { independent?: boolean }) {
         await legacy().session.command({
           sessionID: value.sessionID,
           messageID: value.id ?? undefined,
           command: value.command,
+          independent: value.independent,
           arguments: value.arguments ?? "",
           agent: value.agent ?? undefined,
           model: value.model ? `${value.model.providerID}/${value.model.id}` : undefined,

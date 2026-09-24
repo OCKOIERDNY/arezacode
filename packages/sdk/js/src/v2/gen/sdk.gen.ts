@@ -177,6 +177,12 @@ import type {
   QuestionReplyErrors,
   QuestionReplyResponses,
   QuestionV2Reply,
+  ServerIntegrationIntegrationToolsActionErrors,
+  ServerIntegrationIntegrationToolsActionResponses,
+  ServerIntegrationIntegrationToolsListErrors,
+  ServerIntegrationIntegrationToolsListResponses,
+  ServerSessionSessionSetApprovalErrors,
+  ServerSessionSessionSetApprovalResponses,
   SessionAbortErrors,
   SessionAbortResponses,
   SessionChildrenErrors,
@@ -297,6 +303,12 @@ import type {
   V2IntegrationGetResponses,
   V2IntegrationListErrors,
   V2IntegrationListResponses,
+  V2JevGetErrors,
+  V2JevGetResponses,
+  V2JevPrepareErrors,
+  V2JevPrepareResponses,
+  V2JevUpdateErrors,
+  V2JevUpdateResponses,
   V2LocationGetErrors,
   V2LocationGetResponses,
   V2ModelListErrors,
@@ -347,6 +359,10 @@ import type {
   V2SessionEventsResponses,
   V2SessionGetErrors,
   V2SessionGetResponses,
+  V2SessionHandoffErrors,
+  V2SessionHandoffResponses,
+  V2SessionHealthErrors,
+  V2SessionHealthResponses,
   V2SessionHistoryErrors,
   V2SessionHistoryResponses,
   V2SessionInterruptErrors,
@@ -383,6 +399,8 @@ import type {
   V2SessionSwitchAgentResponses,
   V2SessionSwitchModelErrors,
   V2SessionSwitchModelResponses,
+  V2SessionUsageErrors,
+  V2SessionUsageResponses,
   V2SessionWaitErrors,
   V2SessionWaitResponses,
   V2SkillListErrors,
@@ -3750,6 +3768,7 @@ export class Session2 extends HeyApiClient {
       sessionID: string
       directory?: string
       workspace?: string
+      independent?: boolean
       messageID?: string
       model?: {
         providerID: string
@@ -3775,6 +3794,7 @@ export class Session2 extends HeyApiClient {
             { in: "path", key: "sessionID" },
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "body", key: "independent" },
             { in: "body", key: "messageID" },
             { in: "body", key: "model" },
             { in: "body", key: "agent" },
@@ -4103,6 +4123,7 @@ export class Session2 extends HeyApiClient {
       sessionID: string
       directory?: string
       workspace?: string
+      independent?: boolean
       messageID?: string
       model?: {
         providerID: string
@@ -4128,6 +4149,7 @@ export class Session2 extends HeyApiClient {
             { in: "path", key: "sessionID" },
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "body", key: "independent" },
             { in: "body", key: "messageID" },
             { in: "body", key: "model" },
             { in: "body", key: "agent" },
@@ -4164,6 +4186,7 @@ export class Session2 extends HeyApiClient {
       directory?: string
       workspace?: string
       messageID?: string
+      independent?: boolean
       agent?: string
       model?: string
       arguments?: string
@@ -4189,6 +4212,7 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "messageID" },
+            { in: "body", key: "independent" },
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
             { in: "body", key: "arguments" },
@@ -5438,6 +5462,10 @@ export class Session3 extends HeyApiClient {
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
       workspace?: string
+      directories?: Array<string> | string
+      roots?: boolean | "true" | "false"
+      archived?: "true" | "false"
+      sort?: "created" | "updated"
       limit?: number
       order?: "asc" | "desc"
       search?: string
@@ -5454,6 +5482,10 @@ export class Session3 extends HeyApiClient {
         {
           args: [
             { in: "query", key: "workspace" },
+            { in: "query", key: "directories" },
+            { in: "query", key: "roots" },
+            { in: "query", key: "archived" },
+            { in: "query", key: "sort" },
             { in: "query", key: "limit" },
             { in: "query", key: "order" },
             { in: "query", key: "search" },
@@ -5480,6 +5512,7 @@ export class Session3 extends HeyApiClient {
   public create<ThrowOnError extends boolean = false>(
     parameters?: {
       id?: string
+      approvalMode?: "default" | "ask" | "auto" | "full"
       agent?: string
       model?: ModelRef
       location?: LocationRef
@@ -5492,6 +5525,7 @@ export class Session3 extends HeyApiClient {
         {
           args: [
             { in: "body", key: "id" },
+            { in: "body", key: "approvalMode" },
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
             { in: "body", key: "location" },
@@ -5694,6 +5728,57 @@ export class Session3 extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
     return (options?.client ?? this.client).post<V2SessionWaitResponses, V2SessionWaitErrors, ThrowOnError>({
       url: "/api/session/{sessionID}/wait",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get session context health
+   */
+  public health<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SessionHealthResponses, V2SessionHealthErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/health",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Build a local session handoff without a model request
+   */
+  public handoff<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SessionHandoffResponses, V2SessionHandoffErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/handoff",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get usage for every provider attempt, including compacted history
+   */
+  public usage<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SessionUsageResponses, V2SessionUsageErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/usage",
       ...options,
       ...params,
     })
@@ -6311,6 +6396,126 @@ export class Credential extends HeyApiClient {
     )
     return (options?.client ?? this.client).patch<V2CredentialUpdateResponses, V2CredentialUpdateErrors, ThrowOnError>({
       url: "/api/credential/{credentialID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Jev extends HeyApiClient {
+  /**
+   * Get Jev settings
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2JevGetResponses, V2JevGetErrors, ThrowOnError>({
+      url: "/api/jev",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update Jev settings
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      enabled?: boolean
+      skills?: boolean
+      context?: boolean
+      findings?: boolean
+      routing?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "location" },
+            { in: "body", key: "enabled" },
+            { in: "body", key: "skills" },
+            { in: "body", key: "context" },
+            { in: "body", key: "findings" },
+            { in: "body", key: "routing" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<V2JevUpdateResponses, V2JevUpdateErrors, ThrowOnError>({
+      url: "/api/jev",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Prepare a prompt with Jev
+   */
+  public prepare<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      sessionID?: string
+      promptID?: string
+      text?: string
+      agent?: string
+      auto?: boolean
+      independent?: boolean
+      images?: boolean
+      models?: Array<{
+        providerID: string
+        modelID: string
+        variant?: string
+      }>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "location" },
+            { in: "body", key: "sessionID" },
+            { in: "body", key: "promptID" },
+            { in: "body", key: "text" },
+            { in: "body", key: "agent" },
+            { in: "body", key: "auto" },
+            { in: "body", key: "independent" },
+            { in: "body", key: "images" },
+            { in: "body", key: "models" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2JevPrepareResponses, V2JevPrepareErrors, ThrowOnError>({
+      url: "/api/jev/prepare",
       ...options,
       ...params,
       headers: {
@@ -7034,6 +7239,11 @@ export class V2 extends HeyApiClient {
     return (this._credential ??= new Credential({ client: this.client }))
   }
 
+  private _jev?: Jev
+  get jev(): Jev {
+    return (this._jev ??= new Jev({ client: this.client }))
+  }
+
   private _permission?: Permission3
   get permission(): Permission3 {
     return (this._permission ??= new Permission3({ client: this.client }))
@@ -7077,6 +7287,112 @@ export class V2 extends HeyApiClient {
   private _projectCopy?: ProjectCopy2
   get projectCopy(): ProjectCopy2 {
     return (this._projectCopy ??= new ProjectCopy2({ client: this.client }))
+  }
+}
+
+export class Session4 extends HeyApiClient {
+  public setApproval<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      mode?: "default" | "ask" | "auto" | "full"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "mode" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ServerSessionSessionSetApprovalResponses,
+      ServerSessionSessionSetApprovalErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/approval",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Session5 extends HeyApiClient {
+  private _session?: Session4
+  get session(): Session4 {
+    return (this._session ??= new Session4({ client: this.client }))
+  }
+}
+
+export class Integration2 extends HeyApiClient {
+  public toolsList<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      ServerIntegrationIntegrationToolsListResponses,
+      ServerIntegrationIntegrationToolsListErrors,
+      ThrowOnError
+    >({ url: "/api/tools", ...options })
+  }
+
+  public toolsAction<ThrowOnError extends boolean = false>(
+    parameters: {
+      engineID: "markitdown" | "headroom" | "semgrep" | "entire" | "context7" | "ponytail"
+      action?: "install" | "enable" | "disable" | "cancel" | "rollback" | "check"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "engineID" },
+            { in: "body", key: "action" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ServerIntegrationIntegrationToolsActionResponses,
+      ServerIntegrationIntegrationToolsActionErrors,
+      ThrowOnError
+    >({
+      url: "/api/tools/{engineID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Integration3 extends HeyApiClient {
+  private _integration?: Integration2
+  get integration(): Integration2 {
+    return (this._integration ??= new Integration2({ client: this.client }))
+  }
+}
+
+export class Server extends HeyApiClient {
+  private _session?: Session5
+  get session(): Session5 {
+    return (this._session ??= new Session5({ client: this.client }))
+  }
+
+  private _integration?: Integration3
+  get integration(): Integration3 {
+    return (this._integration ??= new Integration3({ client: this.client }))
   }
 }
 
@@ -7221,5 +7537,10 @@ export class OpencodeClient extends HeyApiClient {
   private _v2?: V2
   get v2(): V2 {
     return (this._v2 ??= new V2({ client: this.client }))
+  }
+
+  private _server?: Server
+  get server(): Server {
+    return (this._server ??= new Server({ client: this.client }))
   }
 }

@@ -4,7 +4,7 @@ import { Endpoint } from "../route/endpoint"
 import { Framing } from "../route/framing"
 import { Protocol } from "../route/protocol"
 import { AuthOptions, type ProviderAuthOption } from "../route/auth-options"
-import { ProviderID, type ModelID, type ProviderOptions } from "../schema"
+import { ProviderID, type ModelID, type ProviderOptions, type CacheHint } from "../schema"
 import * as OpenAICompatibleProfiles from "./openai-compatible-profile"
 import * as OpenAIChat from "../protocols/openai-chat"
 import { isRecord } from "../protocols/shared"
@@ -43,28 +43,44 @@ export const protocol = Protocol.make({
   id: "openrouter-chat",
   body: {
     schema: OpenRouterBody,
-    from: (request) =>
-      OpenAIChat.protocol.body.from(request).pipe(
+    from: (request) => {
+      const content = new Map<object, Array<Record<string, unknown>>>()
+      const marker = (hint?: CacheHint) => hint ? { cache_control: { type: "ephemeral", ...(hint.ttlSeconds === 3600 ? { ttl: "1h" } : {}) } } : {}
+      return OpenAIChat.fromRequest(request, request.model.id.startsWith("anthropic/") ? (messages, source) => {
+        for (const message of messages) {
+          const parts = source.content.filter((part) => source.role !== "tool" || part.type === "tool-result" && message.role === "tool" && part.id === message.tool_call_id)
+          if (!parts.some((part) => "cache" in part && part.cache)) continue
+          if (Array.isArray(message.content)) {
+            content.set(message, message.content.map((part, index) => {
+              const source = parts[index]
+              return { ...part, ...marker(source && "cache" in source ? source.cache : undefined) }
+            }))
+            continue
+          }
+          const text = source.role === "system" ? [] : parts.filter((part) => part.type === "text")
+          content.set(message, text.length > 0
+            ? text.map((part, index) => ({ type: "text", text: `${source.role === "assistant" && index > 0 ? "\n" : ""}${part.text}`, ...marker(part.cache) }))
+            : [{ type: "text", text: message.content ?? "", ...marker(parts.flatMap((part) => "cache" in part && part.cache ? [part.cache] : []).at(-1)) }])
+        }
+      } : undefined).pipe(
         Effect.map(
           (body) =>
             ({
               ...body,
               ...(request.model.id.startsWith("anthropic/") ? {
                 messages: body.messages.map((message, index) => {
-                  const hint = message.role === "system" && index === body.messages.findLastIndex((item) => item.role === "system")
-                    ? request.system.at(-1)?.cache
-                    : message.role === "user" && index === body.messages.findLastIndex((item) => item.role === "user")
-                      ? request.messages.findLast((item) => item.role === "user")?.content.flatMap((part) => "cache" in part && part.cache ? [part.cache] : []).at(-1)
-                      : undefined
-                  if (!hint || typeof message.content !== "string") return message
-                  return { ...message, content: [{ type: "text", text: message.content, cache_control: { type: "ephemeral", ...(hint.ttlSeconds === 3600 ? { ttl: "1h" } : {}) } }] }
+                  if (message.role === "system" && index === 0 && request.system.some((part) => part.cache))
+                    return { ...message, content: request.system.map((part, index) => ({ type: "text", text: `${index > 0 ? "\n" : ""}${part.text}`, ...marker(part.cache) })) }
+                  const marked = content.get(message)
+                  return marked ? { ...message, content: marked } : message
                 }),
                 tools: body.tools?.map((tool, index) => request.tools[index]?.cache ? { ...tool, cache_control: { type: "ephemeral", ...(request.tools[index]?.cache?.ttlSeconds === 3600 ? { ttl: "1h" } : {}) } } : tool),
               } : {}),
               ...bodyOptions(request.providerOptions?.openrouter),
             }) as OpenRouterBody,
         ),
-      ),
+      )
+    },
   },
   stream: OpenAIChat.protocol.stream,
 })

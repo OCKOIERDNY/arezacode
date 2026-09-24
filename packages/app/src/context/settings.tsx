@@ -25,6 +25,7 @@ export interface Settings {
     releaseNotes: boolean
     followup: "queue" | "steer"
     browserVerification: boolean
+    independentTasks: boolean
     showFileTree: boolean
     showNavigation: boolean
     showSearch: boolean
@@ -188,6 +189,7 @@ const defaultSettings: Settings = {
     releaseNotes: true,
     followup: "steer",
     browserVerification: false,
+    independentTasks: false,
     showFileTree: false,
     showNavigation: false,
     showSearch: false,
@@ -366,6 +368,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       },
       general: {
         browserVerification: withFallback(() => store.general?.browserVerification, false),
+        independentTasks: withFallback(() => store.general?.independentTasks, false),
+        setIndependentTasks(value: boolean) {
+          setStore("general", "independentTasks", value)
+        },
         setBrowserVerification(value: boolean) {
           setStore("general", "browserVerification", value)
         },

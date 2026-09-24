@@ -162,20 +162,7 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
         onCollapse={props.onCollapse}
         onCollapseChange={layout.projectSidebar.previewCollapse}
         collapseThreshold={160}
-        role="separator"
         aria-label={projects.copy.language.t("sidebar.nav.projectsAndSessions")}
-        aria-orientation="vertical"
-        aria-valuenow={layout.sidebar.width()}
-        aria-valuemin={220}
-        aria-valuemax={480}
-        tabIndex={0}
-        onKeyDown={(event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
-          event.preventDefault()
-          layout.sidebar.resize(
-            Math.min(480, Math.max(220, layout.sidebar.width() + (event.key === "ArrowLeft" ? -16 : 16) * (settings.general.sidebarPosition() === "right" ? -1 : 1))),
-          )
-        }}
       />
     </div>
   )
