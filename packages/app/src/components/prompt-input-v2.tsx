@@ -392,17 +392,6 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
       source: item.source ?? "command",
       template: item.template,
     })),
-    ...(skills.loading ? [] : skills.latest)
-      .filter((item) => !sync().data.command.some((command) => command.name === item.name))
-      .map((item) => ({
-        id: `skill.${item.name}`,
-        trigger: item.name,
-        title: item.name,
-        description: item.description,
-        type: "custom" as const,
-        source: "skill" as const,
-        template: item.content,
-      })),
     ...command.options
       .filter(
         (item) => (!item.disabled || item.id === "session.compact") && !item.id.startsWith("suggested.") && item.slash,

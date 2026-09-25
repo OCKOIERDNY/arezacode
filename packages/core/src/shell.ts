@@ -173,11 +173,12 @@ export function args(file: string, command: string, cwd: string) {
       `
         [[ -f ~/.zshenv ]] && source ~/.zshenv >/dev/null 2>&1 || true
         [[ -f "\${ZDOTDIR:-$HOME}/.zshrc" ]] && source "\${ZDOTDIR:-$HOME}/.zshrc" >/dev/null 2>&1 || true
-        cd -- "$1"
-        eval ${JSON.stringify(command)}
+        cd -- "$1" || exit
+        eval "$2"
       `,
       "opencode",
       cwd,
+      command,
     ]
   }
   if (n === "bash") {
@@ -187,11 +188,12 @@ export function args(file: string, command: string, cwd: string) {
       `
         shopt -s expand_aliases
         [[ -f ~/.bashrc ]] && source ~/.bashrc >/dev/null 2>&1 || true
-        cd -- "$1"
-        eval ${JSON.stringify(command)}
+        cd -- "$1" || exit
+        eval "$2"
       `,
       "opencode",
       cwd,
+      command,
     ]
   }
   if (n === "cmd") return ["/c", command]

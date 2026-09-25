@@ -32,6 +32,10 @@ import { SessionInput } from "@opencode-ai/core/session/input"
 import { SessionMessage } from "@opencode-ai/core/session/message"
 import { Prompt } from "@opencode-ai/core/session/prompt"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { tmpdir } from "./fixture/tmpdir"
+import { CommandV2 } from "@opencode-ai/core/command"
+import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
+import { SessionExecutionLocal } from "@opencode-ai/core/session/execution/local"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { SessionRunCoordinator } from "@opencode-ai/core/session/run-coordinator"
 import { SessionRunner } from "@opencode-ai/core/session/runner"
@@ -41,12 +45,14 @@ import { ToolRegistry } from "@opencode-ai/core/tool/registry"
 import { ApplicationTools } from "@opencode-ai/core/tool/application-tools"
 import { AgentV2 } from "@opencode-ai/core/agent"
 import { Config } from "@opencode-ai/core/config"
+import { Global } from "@opencode-ai/core/global"
 import { ConfigCompaction } from "@opencode-ai/core/config/compaction"
 import { Tool } from "@opencode-ai/core/tool/tool"
 import {
   MessageTable,
   SessionContextEpochTable,
   SessionInputTable,
+  SessionTaskTable,
   SessionMessageTable,
   SessionTable,
 } from "@opencode-ai/core/session/sql"
@@ -61,6 +67,8 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Cause, DateTime, Deferred, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
 import { asc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
+import { recoverStalls, StallPolicy } from "@opencode-ai/llm/route"
+import { TestClock } from "effect/testing"
 
 const requests: LLMRequest[] = []
 const waitForRequests = (count: number) => Effect.promise(async () => {
@@ -320,6 +328,7 @@ const insertSession = (id: SessionV2.ID) =>
 
 const setup = Effect.gen(function* () {
   const { db } = yield* Database.Service
+  requests.length = 0
   response = []
   systemBaseline = "Initial context"
   systemRemoved = false
@@ -565,6 +574,62 @@ const verifyPartialFlushOnInterruption = (kind: FragmentKind) =>
   })
 
 describe("SessionRunnerLLM", () => {
+  it.effect("retains custom instructions and emits only changed instruction updates", () => Effect.gen(function* () {
+    yield* setup
+    requests.length = 0
+    const session = yield* SessionV2.Service
+    response = [LLMEvent.stepStart({ index: 0 }), LLMEvent.finish({ reason: "stop" })]
+    yield* session.setInstructions({ sessionID, instructions: "Use Bun. Answer in English." })
+    yield* session.prompt({ sessionID, prompt: { text: "First task" }, resume: false })
+    yield* session.resume(sessionID)
+    expect(requests[0].system.map((part) => part.text).join("\n")).toContain("Use Bun. Answer in English.")
+    yield* session.setInstructions({ sessionID, instructions: "Use Bun. Answer in English." })
+    yield* session.prompt({ sessionID, prompt: { text: "Continue" }, resume: false })
+    yield* session.resume(sessionID)
+    expect(JSON.stringify(requests.at(-1)?.messages)).not.toContain("Use Bun. Answer in English.")
+    yield* session.setInstructions({ sessionID, instructions: "Use Bun. Answer in Russian." })
+    yield* session.prompt({ sessionID, prompt: { text: "Continue again" }, resume: false })
+    yield* session.resume(sessionID)
+    expect(JSON.stringify(requests.at(-1)?.messages)).toContain("Use Bun. Answer in Russian.")
+    yield* session.setInstructions({ sessionID, instructions: "" })
+    yield* session.prompt({ sessionID, prompt: { text: "Without custom instructions" }, resume: false })
+    yield* session.resume(sessionID)
+    expect(JSON.stringify(requests.at(-1)?.messages)).toContain("previous custom instructions for this session no longer apply")
+    yield* replaySessionProjection(sessionID)
+    expect((yield* session.get(sessionID)).instructions).toBe("")
+    yield* session.prompt({ sessionID, prompt: { text: "Fresh task", independent: true }, resume: false })
+    yield* session.resume(sessionID)
+    expect(JSON.stringify(requests.at(-1))).not.toContain("Use Bun.")
+  }))
+
+  it.effect("retains partial text durably when a stalled provider is stopped", () => Effect.gen(function* () {
+    yield* setup
+    const session = yield* SessionV2.Service
+    const streamed = yield* Deferred.make<void>()
+    const fixture = fragmentFixture("text", fragmentID("text", "stalled"), ["Partial"])
+    yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Handle a stall" }), resume: false })
+    responseStream = recoverStalls(Stream.concat(
+      Stream.fromIterable(fixture.partialEvents),
+      Stream.fromEffect(Deferred.succeed(streamed, undefined)).pipe(Stream.flatMap(() => Stream.never)),
+    ), { retrySafe: true }).pipe(Stream.provideService(StallPolicy, { timeoutMs: 1_000, retries: 1, backoffMs: 100 }))
+    const runner = yield* SessionRunner.Service
+    const fiber = yield* runner.run({ sessionID, force: true }).pipe(
+      Effect.flip, Effect.forkChild,
+    )
+    yield* Deferred.await(streamed)
+    yield* TestClock.adjust(1_000)
+    const error = yield* Fiber.join(fiber)
+    expect(error).toMatchObject({ reason: { kind: "StallTimeout" } })
+    expect(requests).toHaveLength(1)
+    const expected = [
+      { type: "user", text: "Handle a stall" },
+      { type: "assistant", finish: "error", content: [fixture.expectedContent] },
+    ]
+    expect(yield* session.context(sessionID)).toMatchObject(expected)
+    yield* replaySessionProjection(sessionID)
+    expect(yield* session.context(sessionID)).toMatchObject(expected)
+  }))
+
   it.effect("independent tasks refresh mandatory system context instead of reviving an outdated baseline", () => Effect.gen(function* () {
     yield* setup
     requests.length = 0
@@ -3632,4 +3697,151 @@ describe("SessionRunnerLLM", () => {
       )
     }),
   )
+})
+
+const durable = testEffect(AppNodeBuilder.build(LayerNode.group([Global.node, SessionV2.node, Database.node, EventV2.node, LocationServiceMap.node, ApplicationTools.node, SessionStore.node, SessionExecution.node]), [
+  [Global.node, Layer.effect(Global.Service, Effect.acquireRelease(Effect.promise(() => tmpdir()), (dir) => Effect.promise(() => dir[Symbol.asyncDispose]())).pipe(Effect.map((dir) => Global.make({ home: dir.path, config: `${dir.path}/config` }))))],
+  [SessionExecution.node, SessionExecutionLocal.node],
+  [LayerNodePlatform.llmClient, client],
+  [SessionRunnerModel.node, models],
+  [SystemContextRegistry.node, systemContext],
+  [SkillGuidance.node, skillGuidance],
+  [ReferenceGuidance.node, referenceGuidance],
+  [Snapshot.node, Snapshot.noopLayer],
+  [Config.node, config],
+]))
+
+describe("durable commands", () => {
+  durable.live("feeds global custom instructions to parent and subagent model requests", () => Effect.gen(function* () {
+    yield* setup
+    const sessions = yield* SessionV2.Service
+    const locations = yield* LocationServiceMap.Service
+    const dir = yield* Effect.acquireRelease(Effect.promise(() => tmpdir()), (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()))
+    const session = yield* sessions.create({ location: { directory: AbsolutePath.make(dir.path) }, approvalMode: "full" })
+    const global = yield* Global.Service
+    yield* Effect.promise(() => Bun.write(`${global.home}/.codex/AGENTS.md`, "Use the shared global fixture instructions"))
+    yield* CommandV2.Service.use((commands) => commands.transform((draft) => draft.update("delegate", (command) => { command.template = "Inspect the fixture"; command.subtask = true }))).pipe(Effect.provide(locations.get(session.location)))
+    yield* sessions.command({ sessionID: session.id, command: "delegate", resume: false })
+    const child = (yield* sessions.tasks(session.id))[0]!.sessionID
+    yield* sessions.resume(child)
+    yield* sessions.resume(session.id)
+    expect(requests.length).toBeGreaterThanOrEqual(2)
+    expect(requests.every((request) => JSON.stringify(request.system).includes("Use the shared global fixture instructions"))).toBe(true)
+    yield* Effect.promise(() => Bun.write(`${global.home}/.codex/AGENTS.md`, "The changed shared global fixture instructions"))
+    yield* sessions.prompt({ sessionID: child, prompt: { text: "Continue" }, resume: false })
+    yield* sessions.resume(child)
+    expect(JSON.stringify(requests.at(-1))).toContain("The changed shared global fixture instructions")
+  }), 15000)
+
+  durable.live("interrupts shell preparation and requires explicit retry", () => Effect.gen(function* () {
+    yield* setup
+    const dir = yield* Effect.acquireRelease(Effect.promise(() => tmpdir()), (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()))
+    const sessions = yield* SessionV2.Service
+    const execution = yield* SessionExecution.Service
+    const locations = yield* LocationServiceMap.Service
+    const db = (yield* Database.Service).db
+    const session = yield* sessions.create({ location: { directory: AbsolutePath.make(dir.path) }, approvalMode: "full" })
+    yield* CommandV2.Service.use((commands) => commands.transform((draft) => draft.update("slow", (command) => { command.template = "!`printf x >> count; if [ $(wc -c < count) -eq 1 ]; then sleep 30; fi; cat count`" }))).pipe(Effect.provide(locations.get(session.location)))
+    const input = { sessionID: session.id, id: SessionMessage.ID.create(), command: "slow", resume: false }
+    yield* sessions.command(input)
+    const running = yield* sessions.resume(session.id).pipe(Effect.forkChild)
+    yield* Effect.promise(async () => {
+      const end = Date.now() + 3000
+      while (!(await Bun.file(`${dir.path}/count`).exists()) && Date.now() < end) await Bun.sleep(5)
+      expect(await Bun.file(`${dir.path}/count`).exists()).toBe(true)
+    })
+    yield* sessions.interrupt(session.id)
+    expect(Exit.isFailure(yield* Fiber.await(running))).toBe(true)
+    expect((yield* SessionInput.find(db, input.id))?.preparation?.status).toBe("interrupted")
+    yield* execution.wake(session.id)
+    while ((yield* execution.active).has(session.id)) yield* Effect.promise(() => Bun.sleep(5))
+    expect(yield* Effect.promise(() => Bun.file(`${dir.path}/count`).text())).toBe("x")
+    yield* sessions.resume(session.id)
+    expect(yield* Effect.promise(() => Bun.file(`${dir.path}/count`).text())).toBe("xx")
+    expect((yield* SessionInput.find(db, input.id))?.preparation?.status).toBe("completed")
+  }), 15000)
+
+  durable.live("marks a lost task owner interrupted and does not replay on wake", () => Effect.gen(function* () {
+    yield* setup
+    const dir = yield* Effect.acquireRelease(Effect.promise(() => tmpdir()), (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()))
+    const sessions = yield* SessionV2.Service
+    const locations = yield* LocationServiceMap.Service
+    const db = (yield* Database.Service).db
+    const session = yield* sessions.create({ location: { directory: AbsolutePath.make(dir.path) }, approvalMode: "full" })
+    yield* CommandV2.Service.use((commands) => commands.transform((draft) => draft.update("delegate", (command) => { command.template = "Inspect"; command.subtask = true }))).pipe(Effect.provide(locations.get(session.location)))
+    yield* sessions.command({ sessionID: session.id, command: "delegate", resume: false })
+    const task = (yield* sessions.tasks(session.id))[0]!
+    const child = Bun.spawn(["/bin/sh", "-c", "exit 0"], { stdout: "ignore", stderr: "ignore" })
+    yield* Effect.promise(() => child.exited)
+    yield* db.update(SessionTaskTable).set({ status: "running", owner: String(child.pid), attempt: 1 }).where(eq(SessionTaskTable.session_id, task.sessionID)).run().pipe(Effect.orDie)
+    expect((yield* sessions.tasks(session.id))[0]!.status).toBe("interrupted")
+    const execution = yield* SessionExecution.Service
+    yield* execution.wake(task.sessionID)
+    yield* Effect.promise(() => Bun.sleep(30))
+    expect(requests).toHaveLength(0)
+    expect((yield* sessions.tasks(session.id))[0]!.attempt).toBe(1)
+    yield* sessions.resume(task.sessionID)
+    expect((yield* sessions.tasks(session.id))[0]).toMatchObject({ status: "completed", attempt: 2 })
+  }), 15000)
+
+  durable.live("rejects denied shell commands before side effects", () => Effect.gen(function* () {
+    yield* setup
+    const dir = yield* Effect.acquireRelease(Effect.promise(() => tmpdir()), (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()))
+    const sessions = yield* SessionV2.Service
+    const locations = yield* LocationServiceMap.Service
+    const session = yield* sessions.create({ location: { directory: AbsolutePath.make(dir.path) } })
+    yield* Effect.gen(function* () {
+      const agents = yield* AgentV2.Service
+      const commands = yield* CommandV2.Service
+      yield* agents.transform((draft) => draft.update(AgentV2.defaultID, (agent) => { agent.permissions = [{ action: "bash", resource: "*", effect: "deny" }] }))
+      yield* commands.transform((draft) => draft.update("denied", (command) => { command.template = "!`touch forbidden`" }))
+    }).pipe(Effect.provide(locations.get(session.location)))
+    yield* sessions.command({ sessionID: session.id, command: "denied", resume: false })
+    expect(Exit.isFailure(yield* sessions.resume(session.id).pipe(Effect.exit))).toBe(true)
+    expect(yield* Effect.promise(() => Bun.file(`${dir.path}/forbidden`).exists())).toBe(false)
+    expect(requests).toHaveLength(0)
+  }), 15000)
+
+  durable.live("expands shell output once and retains the original retry identity", () => Effect.gen(function* () {
+    yield* setup
+    const dir = yield* Effect.acquireRelease(Effect.promise(() => tmpdir()), (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()))
+    const sessions = yield* SessionV2.Service
+    const locations = yield* LocationServiceMap.Service
+    const session = yield* sessions.create({ location: { directory: AbsolutePath.make(dir.path) }, approvalMode: "full" })
+    yield* CommandV2.Service.use((commands) => commands.transform((draft) => draft.update("check", (command) => { command.template = "Result: !`printf x >> count; cat count`" }))).pipe(Effect.provide(locations.get(session.location)))
+    const input = { sessionID: session.id, id: SessionMessage.ID.create(), command: "check", resume: false }
+    const first = yield* sessions.command(input)
+    expect(first.preparation?.status).toBe("pending")
+    yield* sessions.resume(session.id)
+    expect(yield* Effect.promise(() => Bun.file(`${dir.path}/count`).text())).toBe("x")
+    const history = yield* sessions.context(session.id)
+    expect(history.find((message) => message.type === "user")).toMatchObject({ text: "Result: x" })
+    expect((yield* sessions.command(input)).prompt.text).toBe(first.prompt.text)
+    yield* sessions.resume(session.id)
+    expect(yield* Effect.promise(() => Bun.file(`${dir.path}/count`).text())).toBe("x")
+  }), 15000)
+
+  durable.live("persists a subtask and delivers its result once", () => Effect.gen(function* () {
+    yield* setup
+    response = [LLMEvent.stepStart({ index: 0 }), LLMEvent.textStart({ id: "answer" }), LLMEvent.textDelta({ id: "answer", text: "Task evidence" }), LLMEvent.textEnd({ id: "answer" })]
+    const dir = yield* Effect.acquireRelease(Effect.promise(() => tmpdir()), (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()))
+    const sessions = yield* SessionV2.Service
+    const locations = yield* LocationServiceMap.Service
+    const session = yield* sessions.create({ location: { directory: AbsolutePath.make(dir.path) }, approvalMode: "full" })
+    yield* sessions.setInstructions({ sessionID: session.id, instructions: "Be concise" })
+    yield* CommandV2.Service.use((commands) => commands.transform((draft) => draft.update("delegate", (command) => { command.template = "Inspect the fixture"; command.subtask = true }))).pipe(Effect.provide(locations.get(session.location)))
+    const input = { sessionID: session.id, id: SessionMessage.ID.create(), command: "delegate", resume: false }
+    yield* sessions.command(input)
+    yield* sessions.command(input)
+    const tasks = yield* sessions.tasks(session.id)
+    expect(tasks).toHaveLength(1)
+    expect((yield* sessions.get(tasks[0]!.sessionID)).instructions).toBe("Be concise")
+    yield* sessions.resume(tasks[0]!.sessionID)
+    yield* sessions.resume(session.id)
+    expect((yield* sessions.tasks(session.id))[0]).toMatchObject({ status: "completed", attempt: 1, output: "Task evidence", resultInputID: expect.any(String) })
+    yield* sessions.command(input)
+    yield* sessions.resume(tasks[0]!.sessionID)
+    expect((yield* sessions.tasks(session.id))[0]!.attempt).toBe(1)
+    expect((yield* sessions.context(session.id)).filter((message) => message.type === "user" && message.text.includes("Subtask "))).toHaveLength(1)
+  }), 15000)
 })

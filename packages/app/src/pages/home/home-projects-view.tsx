@@ -1,4 +1,4 @@
-import { type Accessor, createMemo, For, type JSX, onCleanup, Show, splitProps } from "solid-js"
+import { type Accessor, createMemo, For, type JSX, onCleanup, Show, splitProps, Suspense } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DragDropProvider, PointerSensor } from "@dnd-kit/solid"
 import { isSortable, useSortable } from "@dnd-kit/solid/sortable"
@@ -46,7 +46,7 @@ export type HomeProjectsViewProps = {
   defaultServerKey: Accessor<ServerConnection.Key | null | undefined>
   canRevealProject: (server: ServerConnection.Any) => boolean
   unseenCount: (server: ServerConnection.Any, project: LocalProject) => number
-  onWheel: (event: WheelEvent) => void
+  onWheel?: (event: WheelEvent) => void
   onChooseProject: (server: ServerConnection.Any) => void
   onFocusServer: (server: ServerConnection.Any) => void
   onToggleCollapsed: (server: ServerConnection.Any) => void
@@ -81,7 +81,7 @@ export function HomeProjectsView(props: HomeProjectsViewProps) {
       aria-label={props.language.t("home.projects")}
       onWheel={(event) => {
         if (props.renderSessions || event.target === event.currentTarget) return
-        props.onWheel(event)
+        props.onWheel?.(event)
       }}
     >
       <div class="flex h-7 min-w-0 shrink-0 items-center justify-between pl-1.5 pr-3">
@@ -403,7 +403,13 @@ function HomeProjectSlot(
           inert={!expanded()}
         >
           <div class="min-h-0 overflow-hidden">
-            {props.renderSessions?.(expanded, props.server, project)}
+            <Suspense
+              fallback={
+                <span class="px-2 py-2 text-v2-text-text-muted">{props.language.t("common.loading")}</span>
+              }
+            >
+              {props.renderSessions?.(expanded, props.server, project)}
+            </Suspense>
           </div>
         </div>
       </Show>

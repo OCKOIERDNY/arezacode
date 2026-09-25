@@ -17,13 +17,42 @@ function persisted(value = ""): PromptInputV2PersistedState {
 }
 
 describe("prompt input v2 interaction machine", () => {
-  test("opens inline commands only when slash is the entire prompt", () => {
+  test("filters inline commands at the start and after existing text", () => {
     const state = createPromptInputV2InteractionState()
     const open = transitionPromptInputV2(state, { type: "input.changed", value: "/re" }, persisted())
-    const closed = transitionPromptInputV2(state, { type: "input.changed", value: "explain /re" }, persisted())
+    const inline = transitionPromptInputV2(state, { type: "input.changed", value: "explain /re" }, persisted())
 
     expect(open.state.popover).toEqual({ type: "command-inline", query: "re" })
-    expect(closed.state.popover).toEqual({ type: "closed" })
+    expect(inline.state.popover).toEqual({ type: "command-inline", query: "re" })
+    expect(inline.commands).toContainEqual({ type: "popover.filter", popover: "command", query: "re" })
+  })
+
+  test("keeps unmatched skill queries open with no active selection", () => {
+    const open = transitionPromptInputV2(
+      createPromptInputV2InteractionState(),
+      { type: "input.changed", value: "/asdnads" },
+      persisted(),
+    )
+    const empty = transitionPromptInputV2(open.state, { type: "popover.results", ids: [] }, persisted("/asdnads"))
+    expect(empty.state.popover).toEqual({ type: "command-inline", query: "asdnads" })
+  })
+
+  test("completes only the slash trigger before the caret", () => {
+    const value = "explain /re afterwards"
+    const input = { ...persisted(value), cursor: 11 }
+    const open = transitionPromptInputV2(
+      createPromptInputV2InteractionState(),
+      { type: "input.changed", value, persist: false },
+      input,
+    )
+    const selected = transitionPromptInputV2(open.state, { type: "popover.select", item: command }, input)
+    expect(open.state.popover).toEqual({ type: "command-inline", query: "re" })
+    expect(selected.commands).toContainEqual({ type: "draft.replaceText", value: "/review ", start: 8, end: 11 })
+  })
+
+  test.each(["https://example.com/re", "src/re", "explain /re "])("does not open for %s", (value) => {
+    const result = transitionPromptInputV2(createPromptInputV2InteractionState(), { type: "input.changed", value }, persisted())
+    expect(result.state.popover).toEqual({ type: "closed" })
   })
 
   test("completes nested slash command names", () => {
@@ -36,7 +65,7 @@ describe("prompt input v2 interaction machine", () => {
     const selected = transitionPromptInputV2(open.state, { type: "popover.select", item }, persisted("/review/"))
 
     expect(open.state.popover).toEqual({ type: "command-inline", query: "review/" })
-    expect(selected.commands).toContainEqual({ type: "draft.setText", value: "/review/nested " })
+    expect(selected.commands).toContainEqual({ type: "draft.replaceText", value: "/review/nested ", start: 0, end: 8 })
   })
 
   test("opens context completion at the cursor", () => {

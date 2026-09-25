@@ -16,6 +16,26 @@ export const excerpt = (text: string, maximum = 4000) => {
   return safe.length <= maximum ? safe : `${safe.slice(0, maximum)}\n[${safe.length - maximum} characters omitted; see original session]`
 }
 
+export const validate = (text: string, sessionID: SessionSchema.ID) => {
+  const required = [
+    "## Recent instructions / constraints (quoted)",
+    "## Pending todos",
+    "## Incomplete / uncertain work",
+    "## Verification receipts",
+  ]
+  const missing = required.filter((heading) => {
+    const start = text.indexOf(heading)
+    if (start < 0) return true
+    const bodyStart = start + heading.length
+    const nextHeading = text.indexOf("\n## ", bodyStart)
+    return !text.slice(bodyStart, nextHeading < 0 ? undefined : nextHeading).trim()
+  })
+  return {
+    valid: text.includes(`Original session: ${sessionID}`) && missing.length === 0,
+    missing,
+  }
+}
+
 export const get = Effect.fn("SessionHandoff.get")(function* (db: Database.Interface["db"], sessionID: SessionSchema.ID) {
   const session = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
   const user = (order: "asc" | "desc") => db.select({
@@ -89,7 +109,7 @@ export const get = Effect.fn("SessionHandoff.get")(function* (db: Database.Inter
       return [`- ${part.tool} (${part.id}): ${result}.`]
     }),
   ]
-  return { text: [
+  const sections = [
     "# Session handoff",
     `Original session: ${sessionID}\nProject: ${session?.project_id ?? "unknown"}\nDirectory: ${excerpt(session?.directory ?? "unknown", 500)}\nTitle: ${excerpt(session?.title ?? "unknown", 500)}`,
     "## Objective / first instruction\n" + excerpt(first?.text ?? "No user instruction recorded."),
@@ -103,5 +123,12 @@ export const get = Effect.fn("SessionHandoff.get")(function* (db: Database.Inter
     "## Incomplete / uncertain work\n" + excerpt(outcomes.join("\n") || "No incomplete outcomes found in the bounded history window. This is not proof all work completed.", 5000),
     "## Verification receipts\n" + excerpt(checks.join("\n") || "No command/check receipts found in the bounded history window. Verification is unknown.", 6000),
     "## Scope and omissions\nGenerated locally from stored records; no model request. Inspect the original session before continuing uncertain work. Raw tool outputs, tool arguments, environment data, credentials, reasoning, and attachment contents are omitted. User instructions and summaries are excerpts, not verified facts. Earlier work outside the latest 30 native assistant messages and 100 legacy tool/patch parts is omitted." + (recent.length > 30 || parts.length > 100 ? " Additional history exists outside this window." : ""),
-  ].join("\n\n") }
+  ]
+  const text = sections.join("\n\n")
+  const validation = validate(text, sessionID)
+  return {
+    text: validation.valid
+      ? text
+      : `${text}\n\n## Checkpoint validation\nIncomplete: ${validation.missing.join(", ") || "original session reference missing"}. Consult the original session before relying on this handoff.`,
+  }
 })

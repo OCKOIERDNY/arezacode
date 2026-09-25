@@ -147,6 +147,7 @@ export const SessionInputTable = sqliteTable(
       .notNull()
       .references(() => SessionTable.id, { onDelete: "cascade" }),
     prompt: text({ mode: "json" }).notNull().$type<Prompt>(),
+    preparation: text({ mode: "json" }).$type<SessionInput.Preparation>(),
     delivery: text().$type<SessionInput.Delivery>().notNull(),
     admitted_seq: integer().notNull(),
     promoted_seq: integer(),
@@ -165,6 +166,25 @@ export const SessionInputTable = sqliteTable(
     uniqueIndex("session_input_session_promoted_seq_idx").on(table.session_id, table.promoted_seq),
   ],
 )
+
+export const SessionTaskTable = sqliteTable("session_task", {
+  session_id: text().$type<SessionSchema.ID>().primaryKey().references(() => SessionTable.id, { onDelete: "cascade" }),
+  parent_id: text().$type<SessionSchema.ID>().notNull().references(() => SessionTable.id, { onDelete: "cascade" }),
+  context_id: text(),
+  input_id: text().$type<SessionMessage.ID>().notNull(),
+  status: text().$type<"pending" | "running" | "completed" | "interrupted" | "failed">().notNull(),
+  attempt: integer().default(0).notNull(),
+  owner: text(),
+  output: text(),
+  error: text(),
+  result_input_id: text().$type<SessionMessage.ID>().unique(),
+  time_created: integer().notNull(),
+  time_updated: integer().notNull(),
+  time_completed: integer(),
+}, (table) => [
+  index("session_task_parent_status_idx").on(table.parent_id, table.status),
+  index("session_task_owner_status_idx").on(table.owner, table.status),
+])
 
 export const SessionContextEpochTable = sqliteTable("session_context_epoch", {
   session_id: text()

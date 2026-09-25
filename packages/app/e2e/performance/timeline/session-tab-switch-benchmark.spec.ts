@@ -13,7 +13,7 @@ import { measureSessionSwitch, waitForStableTimeline } from "./session-tab-switc
 
 type Result = Awaited<ReturnType<typeof measureSessionSwitch>>
 
-benchmark("benchmarks cold and hot session tab switching", async ({ browser, report }, testInfo) => {
+benchmark("benchmarks cold and hot session navigation", async ({ browser, report }, testInfo) => {
   benchmark.setTimeout(180_000)
   const results = { cold: [] as Result[], hot: [] as Result[] }
   for (const mode of ["cold", "hot"] as const) {
@@ -27,7 +27,7 @@ benchmark("benchmarks cold and hot session tab switching", async ({ browser, rep
 })
 
 benchmark(
-  "benchmarks v2 session tab switching with and without the review pane",
+  "benchmarks v2 session navigation with and without the review pane",
   async ({ browser, report }, testInfo) => {
     benchmark.setTimeout(360_000)
     const runs = Number(process.env.SESSION_TAB_SWITCH_RUNS ?? 5)
@@ -86,6 +86,7 @@ async function trial(
     sourceIDs,
     lastID,
     href,
+    triggerSelector: '[data-component="project-sidebar"] [data-component="home-session-row"]',
     switch: () => switchSession(page, fixture.targetID, fixture.expected.targetTitle),
   })
   return result
@@ -124,7 +125,7 @@ function summarizeReviewPane(results: Record<"closed" | "open", Record<"cold" | 
 
 async function switchSession(page: Page, sessionID: string, title: string) {
   const href = stressSessionHref(sessionID)
-  const tab = page.locator(`[data-slot="titlebar-tabs"] a[href="${href}"]`).first()
+  const tab = page.locator('[data-component="project-sidebar"] [data-component="home-session-row"]').filter({ hasText: title }).first()
   await expect(tab).toBeVisible()
   await tab.click()
   await expectSessionTitle(page, title)

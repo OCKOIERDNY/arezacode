@@ -1,6 +1,7 @@
 import { SessionID, MessageID } from "./schema"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ConfigToolOutput } from "@opencode-ai/core/config/tool-output"
 import {
   APIError,
   AbortedError,
@@ -404,7 +405,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
 
   const tools = Object.fromEntries(Array.from(toolNames).map((toolName) => [toolName, { toModelOutput }]))
 
-  return yield* Effect.promise(() =>
+  const messages = yield* Effect.promise(() =>
     convertToModelMessages(
       result.filter((msg) => msg.parts.some((part) => part.type !== "step-start")),
       {
@@ -412,6 +413,35 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
         tools,
       },
     ),
+  )
+  if (options?.toolOutputMaxChars !== undefined) return messages
+  const reuse = ConfigToolOutput.reuse()
+  const calls = new Map(
+    messages.flatMap((message) =>
+      message.role === "assistant" && Array.isArray(message.content)
+        ? message.content.flatMap((part) => (part.type === "tool-call" ? [[part.toolCallId, part] as const] : []))
+        : [],
+    ),
+  )
+  return messages.map((message) =>
+    message.role !== "tool"
+      ? message
+      : {
+          ...message,
+          content: message.content.map((part) => {
+            if (part.type !== "tool-result" || (part.output.type !== "text" && part.output.type !== "error-text")) return part
+            const call = calls.get(part.toolCallId)
+            if (!call || call.providerExecuted) return part
+            const output = reuse({
+              name: part.toolName,
+              id: part.toolCallId,
+              arguments: call.input,
+              output: part.output.value,
+              error: part.output.type === "error-text",
+            })
+            return output === undefined ? part : { ...part, output: { ...part.output, value: output } }
+          }),
+        },
   )
 })
 
@@ -519,13 +549,27 @@ export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: Ses
   }
 })
 
+export function isCompletedSummary(message: WithParts) {
+  return (
+    message.info.role === "assistant" &&
+    message.info.summary === true &&
+    ["stop", "end_turn"].includes(message.info.finish ?? "") &&
+    !message.info.error &&
+    message.parts.some((part) => part.type === "text" && part.text.trim().length > 0)
+  )
+}
+
 export function filterCompacted(msgs: Iterable<WithParts>) {
   const result = [] as WithParts[]
   const completed = new Set<string>()
   let retain: MessageID | undefined
   for (const msg of msgs) {
     result.push(msg)
-    if (msg.info.role === "user" && msg.parts.some((part) => part.type === "text" && part.metadata?.independentTask === true)) break
+    if (
+      msg.info.role === "user" &&
+      msg.parts.some((part) => part.type === "text" && part.metadata?.independentTask === true)
+    )
+      break
     if (retain) {
       if (msg.info.id === retain) break
       continue
@@ -540,8 +584,7 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
     }
     if (msg.info.role === "user" && completed.has(msg.info.id) && msg.parts.some((part) => part.type === "compaction"))
       break
-    if (msg.info.role === "assistant" && msg.info.summary && msg.info.finish && !msg.info.error)
-      completed.add(msg.info.parentID)
+    if (msg.info.role === "assistant" && isCompletedSummary(msg)) completed.add(msg.info.parentID)
   }
   result.reverse()
   const compactionIndex = result.findLastIndex(
@@ -558,7 +601,7 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
         (msg, index) =>
           index > compactionIndex &&
           msg.info.role === "assistant" &&
-          msg.info.summary &&
+          isCompletedSummary(msg) &&
           msg.info.parentID === compaction.info.id,
       )
     : -1

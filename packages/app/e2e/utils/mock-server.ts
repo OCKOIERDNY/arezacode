@@ -182,6 +182,11 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       return json(route, { location: location(config), data: { ticket: "e2e-ticket", expires_in: 60 } })
     if (emptyObject.has(path)) return json(route, {})
     if (emptyList.has(path)) return json(route, [])
+    if (path === "/experimental/session") {
+      const directory = url.searchParams.get("directory")
+      const search = url.searchParams.get("search")?.toLowerCase()
+      return json(route, config.sessions.filter((session) => (!directory || session.directory === directory) && (url.searchParams.get("roots") !== "true" || !session.parentID) && (!search || String(session.title ?? "").toLowerCase().includes(search))).slice(0, Number(url.searchParams.get("limit") ?? 100)))
+    }
     if (path === "/api/session") {
       const directory = url.searchParams.get("directory")
       const parentID = url.searchParams.get("parentID")

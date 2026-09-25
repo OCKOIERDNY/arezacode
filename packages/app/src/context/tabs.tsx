@@ -10,7 +10,14 @@ import { uuid } from "@/utils/uuid"
 import { SessionTabsRemovedDetail } from "@/components/titlebar-session-events"
 import { sessionHref } from "@/utils/session-route"
 import { createTabMemory } from "./tab-memory"
-import { nextTabAfterClose, pushClosedTab, removeClosedTabs, takeClosedTab, type ClosedTab } from "./closed-tabs"
+import {
+  nextTabAfterClose,
+  pushClosedTab,
+  removeClosedTabs,
+  removeSessionTabs,
+  takeClosedTab,
+  type ClosedTab,
+} from "./closed-tabs"
 import { createDraftPromptSession, type PromptModel } from "./prompt-state"
 import { migrateTabs } from "./tab-migration"
 
@@ -306,54 +313,22 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
       removeSessions: (input: SessionTabsRemovedDetail) => {
         const targetServer = input.server ?? server.key
         updateClosed((stack) => removeClosedTabs(stack, targetServer, input.sessionIDs))
-        const removed = store
-          .filter(
-            (tab) => tab.type === "session" && tab.server === targetServer && input.sessionIDs.includes(tab.sessionId),
-          )
-          .map(tabKey)
         void startTransition(() => {
-          setStore(
-            produce((tabs) => {
-              const sessionIDs = new Set(input.sessionIDs)
-              const currentHref =
-                targetServer === server.key && params.dir && params.id
-                  ? tabHref({
-                      type: "session",
-                      server: targetServer,
-                      sessionId: params.id,
-                    })
-                  : undefined
-              const currentIndex = currentHref
-                ? tabs.findIndex(
-                    (tab) => tab.type === "session" && tab.server === targetServer && tabHref(tab) === currentHref,
-                  )
-                : -1
-              const currentTab = tabs[currentIndex]
-              const removedCurrent =
-                currentTab?.type === "session" &&
-                currentTab.server === targetServer &&
-                sessionIDs.has(currentTab.sessionId)
-
-              for (let i = tabs.length - 1; i >= 0; i--) {
-                const tab = tabs[i]
-                if (!tab || tab.type !== "session") continue
-                if (tab.server !== targetServer) continue
-                if (!sessionIDs.has(tab.sessionId)) continue
-                tabs.splice(i, 1)
-              }
-
-              if (!removedCurrent) return
-              const nextTab =
-                tabs.slice(currentIndex).find((tab) => tab.type === "session") ??
-                tabs.slice(0, currentIndex).findLast((tab) => tab.type === "session")
-              if (nextTab) navigateTab(nextTab)
-              else navigate("/")
-            }),
+          const current = store.find(
+            (tab): tab is SessionTab =>
+              tab.type === "session" &&
+              (tabHref(tab) === location.pathname ||
+                (!!params.dir && tab.server === server.key && tab.sessionId === params.id)),
           )
+          const result = removeSessionTabs(store, targetServer, input.sessionIDs, current)
+          const removed = result.removed.map(tabKey)
+          setStore(() => result.tabs)
+          if (result.next) navigateTab(result.next)
+          if (result.next === null) navigate("/")
           if (recent.key && removed.includes(recent.key)) setRecentKey(undefined)
+          for (const key of removed) memory.remove(key)
+          for (const key of removed) removeInfo(key)
         })
-        for (const key of removed) memory.remove(key)
-        for (const key of removed) removeInfo(key)
       },
       rememberSessionInfo(tab: SessionTab, session: Session) {
         const key = tabKey(tab)

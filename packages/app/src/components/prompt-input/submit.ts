@@ -119,9 +119,10 @@ async function sendDraft(input: FollowupSendInput) {
     }
   }
 
-  const [head, ...tail] = text.split(" ")
-  const cmd = head?.startsWith("/") ? head.slice(1) : undefined
-  if (cmd && input.sync.data.command.find((item) => item.name === cmd)) {
+  const command = Array.from(text.matchAll(/(?:^|\s)\/(\S+)/g)).find((match) =>
+    input.sync.data.command.some((item) => item.name === match[1]),
+  )
+  if (command) {
     setBusy()
     try {
       const messageID = Identifier.ascending("message")
@@ -133,9 +134,11 @@ async function sendDraft(input: FollowupSendInput) {
       await input.api.command({
         sessionID: input.draft.sessionID,
         id: messageID,
-        command: cmd,
+        command: command[1]!,
         ...(input.draft.independent ? { independent: true } : {}),
-        arguments: tail.join(" "),
+        arguments: [text.slice(0, command.index).trim(), text.slice(command.index + command[0].length).trim()]
+          .filter(Boolean)
+          .join(" "),
         agent: input.draft.agent,
         model: {
           id: decision.result?.model?.modelID ?? input.draft.model.modelID,

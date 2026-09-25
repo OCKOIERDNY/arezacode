@@ -79,6 +79,14 @@ test("Semgrep detects terminal edits and rescans a corrected file", async () => 
     )
     const before = await AutomaticChecks.files(directory)
     expect(before.files.size).toBe(0)
+    await nativeCommand(
+      "git",
+      ["-c", "user.name=Automation Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "next revision"],
+      { cwd: directory },
+    )
+    const nextRevision = await AutomaticChecks.files(directory)
+    expect(nextRevision.files.size).toBe(0)
+    expect(nextRevision.revision).not.toBe(before.revision)
     await writeFile(
       path.join(directory, "unsafe.py"),
       "import subprocess\nfrom flask import request\ndef run():\n    subprocess.call(request.args.get('command'), shell=True)\n",

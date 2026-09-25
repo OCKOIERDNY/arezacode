@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { optional } from "./schema"
 import { Event } from "./event"
 import { ProviderMetadata, ToolContent } from "./llm"
+import { Preparation } from "./session-input"
 import { Delivery } from "./session-delivery"
 import { Model } from "./model"
 import { DateTimeUtcFromMillis, NonNegativeInt, RelativePath } from "./schema"
@@ -58,6 +59,12 @@ export const ApprovalChanged = Event.define({
   schema: { ...Base, mode: Permission.ApprovalMode },
 })
 
+export const InstructionsChanged = Event.define({
+  type: "session.next.instructions.changed",
+  ...options,
+  schema: { ...Base, instructions: Schema.String },
+})
+
 export const AgentSwitched = Event.define({
   type: "session.next.agent.switched",
   ...options,
@@ -101,9 +108,15 @@ export type Prompted = typeof Prompted.Type
 export const PromptAdmitted = Event.define({
   type: "session.next.prompt.admitted",
   ...options,
-  schema: PromptFields,
+  schema: { ...PromptFields, preparation: Preparation.pipe(optional) },
 })
 export type PromptAdmitted = typeof PromptAdmitted.Type
+
+export const CommandPrepared = Event.define({
+  type: "session.next.command.prepared",
+  ...options,
+  schema: { ...Base, messageID: SessionMessage.ID, preparation: Preparation },
+})
 
 export const ContextUpdated = Event.define({
   type: "session.next.context.updated",
@@ -471,11 +484,13 @@ export namespace RevertEvent {
 
 export const DurableDefinitions = Event.inventory(
   ApprovalChanged,
+  InstructionsChanged,
   AgentSwitched,
   ModelSwitched,
   Moved,
   Prompted,
   PromptAdmitted,
+  CommandPrepared,
   ContextUpdated,
   Synthetic,
   Shell.Started,
@@ -504,11 +519,13 @@ export const DurableDefinitions = Event.inventory(
 
 export const Definitions = Event.inventory(
   ApprovalChanged,
+  InstructionsChanged,
   AgentSwitched,
   ModelSwitched,
   Moved,
   Prompted,
   PromptAdmitted,
+  CommandPrepared,
   ContextUpdated,
   Synthetic,
   Shell.Started,

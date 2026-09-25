@@ -70,6 +70,30 @@ const modelOutput = (output: Output) => {
   return `${warnings.trimStart()}${warnings ? "\n\n" : ""}Command exited with code ${output.exit}.`
 }
 
+export function checkFingerprint(input: {
+  sessionID: string
+  directory: string
+  commands: string[]
+  timeout: number
+  revision?: string
+  discoveryInputs: [string, string][]
+  files: [string, string][]
+}) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        input.sessionID,
+        input.directory,
+        input.commands,
+        input.timeout,
+        input.revision,
+        input.discoveryInputs,
+        input.files,
+      ]),
+    )
+    .digest("hex")
+}
+
 const isTimeout = (error: AppProcess.AppProcessError) =>
   error.cause instanceof Error && error.cause.message === "Timed out"
 
@@ -155,7 +179,17 @@ const layer = Layer.effectDiscard(
               if ((yield* fs.readFileString(file)) !== content) return yield* new ToolFailure({ message: "Project configuration changed while authorizing the workflow. Run project_check again to discover the current commands." })
             }
             const state = yield* Effect.promise(() => AutomaticChecks.files(target.canonical).catch(() => undefined))
-            const key = state ? createHash("sha256").update(JSON.stringify([context.sessionID, target.canonical, commandTexts, [...discovery?.inputs ?? []], [...state.files].sort()])).digest("hex") : undefined
+            const key = state
+              ? checkFingerprint({
+                  sessionID: context.sessionID,
+                  directory: target.canonical,
+                  commands: commandTexts,
+                  timeout: input.timeout ?? MAX_TIMEOUT_MS,
+                  revision: state.revision,
+                  discoveryInputs: [...discovery?.inputs ?? []],
+                  files: [...state.files].sort(([a], [b]) => a.localeCompare(b)),
+                })
+              : undefined
             if (key && (checks.get(key) ?? 0) >= 2) return yield* new ToolFailure({ message: "This check already failed twice on unchanged inputs. Inspect the existing failure, fix the cause, then run it again." })
             const completed: NonNullable<Output["checks"]>[number][] = []
             const outputs: string[] = []

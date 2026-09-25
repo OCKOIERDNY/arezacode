@@ -117,6 +117,17 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.setInstructions",
+        Effect.fn(function* (ctx) {
+          yield* session.setInstructions({ sessionID: ctx.params.sessionID, instructions: ctx.payload.instructions }).pipe(
+            Effect.catchTag("Session.NotFoundError", (error) =>
+              new SessionNotFoundError({ sessionID: error.sessionID, message: "Session not found" }),
+            ),
+          )
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
         "session.switchAgent",
         Effect.fn(function* (ctx) {
           yield* session.switchAgent({ sessionID: ctx.params.sessionID, agent: ctx.payload.agent }).pipe(
@@ -148,6 +159,19 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           return HttpApiSchema.NoContent.make()
         }),
       )
+      .handle("session.command", Effect.fn(function* (ctx) {
+        return { data: yield* session.command({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
+          Effect.catchTag("Session.NotFoundError", (error) => new SessionNotFoundError({ sessionID: error.sessionID, message: "Session not found" })),
+          Effect.catchTag("Session.PromptConflictError", (error) => new ConflictError({ message: "Command input conflicts with an existing record", resource: error.messageID })),
+          Effect.catchTag("Session.ContextLockedError", (error) => new ConflictError({ message: error.message, resource: ctx.params.sessionID })),
+          Effect.catchTag("Session.CommandError", (error) => new ConflictError({ message: error.message, resource: ctx.params.sessionID })),
+        ) }
+      }))
+      .handle("session.tasks", Effect.fn(function* (ctx) {
+        return { data: yield* session.tasks(ctx.params.sessionID).pipe(
+          Effect.catchTag("Session.NotFoundError", (error) => new SessionNotFoundError({ sessionID: error.sessionID, message: "Session not found" })),
+        ) }
+      }))
       .handle(
         "session.prompt",
         Effect.fn(function* (ctx) {

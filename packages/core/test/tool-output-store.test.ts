@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import path from "path"
 import { Cause, Effect, Exit, Fiber, Layer, Option } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
@@ -7,12 +7,25 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Global } from "@opencode-ai/core/global"
 import { Config } from "@opencode-ai/core/config"
 import { ConfigToolOutput } from "@opencode-ai/core/config/tool-output"
+import { Jev } from "@opencode-ai/core/jev"
+import { AutomaticChecks } from "@opencode-ai/core/automatic-checks"
 import { SessionV2 } from "@opencode-ai/core/session"
 import { ToolOutputStore } from "@opencode-ai/core/tool-output-store"
 import { testEffect } from "./lib/effect"
 import { tmpdir } from "./fixture/tmpdir"
 
 const sessionID = SessionV2.ID.make("ses_tool_output_store")
+
+test("current tool output uses the shared configured defaults", () => {
+  expect(ToolOutputStore.MAX_LINES).toBe(ConfigToolOutput.DEFAULT_MAX_LINES)
+  expect(ToolOutputStore.MAX_BYTES).toBe(ConfigToolOutput.DEFAULT_MAX_BYTES)
+})
+
+test("shared output limits count newline-delimited lines and UTF-8 bytes", () => {
+  expect(ConfigToolOutput.withinLimits("a\n", { maxLines: 2, maxBytes: 2 })).toBe(true)
+  expect(ConfigToolOutput.withinLimits("a\n", { maxLines: 1, maxBytes: 2 })).toBe(false)
+  expect(ConfigToolOutput.withinLimits("é", { maxLines: 1, maxBytes: 1 })).toBe(false)
+})
 
 const withStore = <A, E, R>(
   body: (input: { root: string; store: ToolOutputStore.Interface; fs: FSUtil.Interface }) => Effect.Effect<A, E, R>,
@@ -45,6 +58,32 @@ const withStore = <A, E, R>(
 const it = testEffect(Layer.empty)
 
 describe("ToolOutputStore", () => {
+  it.live("returns in-limit output before any auxiliary processing", () =>
+    withStore(({ store }) =>
+      Effect.gen(function* () {
+        const rank = spyOn(Jev, "context")
+        const compress = spyOn(AutomaticChecks, "compress")
+        const output = { structured: {}, content: [{ type: "text" as const, text: "result ".repeat(500) }] }
+        yield* store.bound({ sessionID, toolCallID: "call-within-limits", output }).pipe(
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result.output).toBe(output)
+              expect(result.outputPaths).toEqual([])
+              expect(rank).not.toHaveBeenCalled()
+              expect(compress).not.toHaveBeenCalled()
+            }),
+          ),
+          Effect.ensuring(
+            Effect.sync(() => {
+              rank.mockRestore()
+              compress.mockRestore()
+            }),
+          ),
+        )
+      }),
+    ),
+  )
+
   it.live("bounds the provider-facing text channel with one managed file", () =>
     withStore(({ store, fs }) =>
       Effect.gen(function* () {

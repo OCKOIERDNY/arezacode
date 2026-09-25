@@ -18,6 +18,12 @@ export type ProviderModelNotFoundError = {
 
 type Translator = (key: string, vars?: Record<string, string | number>) => string
 
+export class CommandUnavailableError extends Error {
+  constructor(readonly command: string, readonly reason: "missing" | "unsupported") {
+    super("CommandUnavailableError")
+  }
+}
+
 function tr(translator: Translator | undefined, key: string, text: string, vars?: Record<string, string | number>) {
   if (!translator) return text
   const out = translator(key, vars)
@@ -26,6 +32,11 @@ function tr(translator: Translator | undefined, key: string, text: string, vars?
 }
 
 export function formatServerError(error: unknown, translate?: Translator, fallback?: string) {
+  if (error instanceof CommandUnavailableError) {
+    return tr(translate, `error.command.${error.reason}`, error.reason === "missing"
+      ? `Command not found: ${error.command}`
+      : `Command ${error.command} requires server-side shell or subtask support.`, { command: error.command })
+  }
   const unwrapped = unwrapNamedError(error)
   if (isConfigInvalidErrorLike(unwrapped)) return parseReadableConfigInvalidError(unwrapped, translate)
   if (isProviderModelNotFoundErrorLike(unwrapped)) return parseReadableProviderModelNotFoundError(unwrapped, translate)

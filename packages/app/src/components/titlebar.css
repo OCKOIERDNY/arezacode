@@ -6,6 +6,13 @@
   outline: none;
 }
 
+#opencode-titlebar-right > div,
+#opencode-titlebar-swapped-actions > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 [data-slot="titlebar-v2"]
   [data-component="icon-button-v2"][data-variant="ghost-muted"]:is(:focus-visible, [data-state="focus"]):not(
     :disabled

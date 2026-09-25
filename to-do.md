@@ -5,6 +5,7 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 ## How to Use This Backlog
 
 - Unchecked items are pending work, not verified fixes. Audit findings and measurements below are reported evidence, not independently reverified during consolidation.
+- Checked implementation items may still have unchecked verification tasks. Mark verification complete only after recording the result.
 - The explicitly marked P1 bugs and P2 attachment bug are implemented. Remaining unchecked items are grouped by owner/area without an assigned severity; manual verification remains pending where noted.
 - Inspect the existing implementation before changing it, reuse shared owners, and verify the affected behavior. Historical file/line references may have moved.
 - Measure optimization results against the baseline below; preserve relevant checks and output quality rather than assuming fewer tokens or cheaper models guarantee savings.
@@ -48,8 +49,13 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 
 ### Composer, Attachments, and Chat Layout
 
-- [ ] Fix composer `/` and `@` discovery: project-file search does not return the correct matches, slash commands do not work, and available skills are missing from the slash menu.
-  - Manual verification — unverified: search for a known project file with `@` and check the relevant `/` discovery flow; expect correct project-scoped results. Open `/`, filter available commands and skills, and select one; expect skills to appear and the selected command or skill to work.
+- [x] Fix composer `/` and `@` discovery. Mixed filesystem searches now include files instead of filtering to directories; the shared directory catalog includes eligible skills in both composers, independently of MCP loading, and preserves custom-command precedence.
+  - Both native and fallback search engines wait for their initial index before answering. Real-filesystem regressions cover mixed, file-only, and directory-only queries with FFF enabled and disabled.
+  - Slash filtering recognizes the token at the caret after existing text in both composers; unmatched queries retain the empty-results menu, and inline selection preserves surrounding text, mentions, and attachments. Focused machine/store regressions pass; manual UI verification remains pending.
+  - Submission now recognizes registered slash commands after existing text or line breaks, passing the surrounding text as command arguments. All 21 focused submission tests and the App typecheck pass; installed-app verification remains pending.
+  - Current-server ordinary commands and skills use the current durable prompt endpoint rather than the removed command endpoint. Shared argument expansion, originating-session location, skill base directories, attachments, task isolation, and command model/agent overrides are preserved.
+  - [ ] Manual verification — unverified: search for a known project file with `@` and check the relevant `/` discovery flow; expect correct project-scoped results. Open `/`, filter available commands and skills, and select one; expect skills to appear and the selected command or skill to work.
+- [ ] Support custom command shell expansion and subtask execution through the current server API. These specialized commands now fail explicitly instead of calling a removed endpoint or silently losing their semantics; legacy execution is retained.
 - [x] **P2 — Keep pending attachments in their originating chat.** Capture the originating draft before processing or opening a picker. Upload, native-picker, file-input, and draft-preservation regressions pass; manual UI verification remains pending.
   - Evidence: `packages/session-ui/src/v2/components/prompt-input/interaction.ts:88`.
   - Expected: starting an attachment in A and switching to B never attaches it to B.
@@ -89,11 +95,12 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 
 ### Request Latency and Avoidable Model Work
 
-- [ ] Instrument request dispatch, first response, retry reason, and backoff; recover stalls safely while preserving partial output and avoiding repeated completed actions.
+- [x] Instrument request dispatch, first response, retry reason, and backoff; recover stalls safely while preserving partial output and avoiding repeated completed actions.
   - [x] Native HTTP dispatch, response headers, retry reasons, and backoff are recorded with request correlation; V2 model usage retains timing and durable retry events. Existing pre-response retry limits remain in place; tests confirm response-stream failures are not retried.
-  - Remaining: production stall diagnosis and a dedicated automatic stall-recovery policy. Other transports may lack timing; the dashboard labels this coverage explicitly.
+  - A shared five-minute inactivity watchdog bounds native HTTP/WebSocket and legacy AI SDK streams. Native requests can retry once after a one-second backoff only before any emitted event, without provider-executed tools or opaque request overrides. Partial-output and tool-bearing progress are never replayed; unsafe/legacy requests stop, release their transport, and retain durable partial history. Cancellation interrupts backoff. Focused recovery and durable-replay regressions pass.
+  - Production stall diagnosis remains unverified; the historical wait cannot be attributed retroactively. Other transports may lack detailed dispatch/header timing; the dashboard labels this coverage explicitly.
   - Evidence: one Mesto record waited 18m24s before its first stored response step; existing records cannot identify the source of that wait.
-- [ ] Reduce administrative model round trips by batching independent lookups and deriving deterministic progress updates from actual tool results.
+- [ ] Reduce administrative model round trips by batching independent lookups and deriving deterministic progress updates from actual tool results. Added model guidance against todo-only turns and skipped Jev's auxiliary ranking call when deduplicated findings contain fewer than two entries; task-wide savings remain unmeasured.
   - Evidence: 151 assistant steps only executed `todowrite`, carrying 34.5 million cumulative input tokens. Their entire duration is not necessarily removable.
 - [ ] Apply cheap deterministic output checks before auxiliary AI work; avoid model calls when deterministic checks can resolve the operation.
 - [x] Bound Home's data loading instead of scanning the server's entire session history before displaying a small list. Home requests at most 64 active roots per visible scope using server-side directory filters and updated-time ordering; it no longer drains cursors. Search is debounced and uses at most two bounded requests for title/project-name matches. Collapsed project sections do not fetch sessions. Scoped caches remain bounded and preserve events across overlapping fetches. Index-only database migration and regenerated client are included; focused query/cache tests pass. Production performance and visual verification remain pending.
@@ -101,7 +108,7 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 ### Working Context and Reuse
 
 - [ ] Reduce working context with validated checkpoints that preserve constraints, unfinished work, and test evidence, while keeping full history available for retrieval.
-  - Implemented foundation: durable context limits and local handoffs in `packages/core/src/session/health.ts` and `packages/core/src/session/handoff.ts`. Handoffs include bounded instruction excerpts, pending work, and verification receipts linked to the original session; complete checkpoint preservation/validation is not established.
+  - Implemented foundation: durable context limits and local handoffs in `packages/core/src/session/health.ts` and `packages/core/src/session/handoff.ts`. Handoffs now validate required sections and original-session linkage, and direct uncertain follow-up to the full transcript; content-aware excerpt reuse and complete checkpoint-quality validation remain open.
   - Evidence: Mesto context grew to 758,539 tokens per assistant record. Coordinate with the compaction correctness fix before relying on summaries.
 - [ ] Add content-aware reuse for missing-path discovery and unchanged file excerpts; reuse check results only when their actual inputs remain unchanged.
   - Evidence: the missing `.ai/rules/index.md` was requested 35 times.
@@ -113,7 +120,7 @@ Consolidated feature, bug, and optimization backlog. Audit baseline: September 2
 
 - [x] Include compaction tokens, cache usage, and known costs in session totals, including rejected summaries. Dedicated durable accounting events preserve usage independently of summary acceptance; replay and totals regressions pass. Unreported costs remain unknown in usage records.
 - [x] Fix OpenRouter cache hints lost in multimodal and certain assistant/tool placements. Cache markers are attached using source-message provenance during shared OpenAI-compatible lowering, preserving multipart text boundaries, assistant text, individual tool results, system blocks, and TTLs. Synthetic vision messages and chronological system updates retain their ordering without stealing another message's hints. Focused payload regressions pass; live-provider cache hits and billing remain unverified.
-- [ ] Verify live-provider cache behavior and record actual billed costs; stored zero values do not establish zero primary-provider cost.
+- [ ] Verify live-provider cache behavior and record actual billed costs; stored zero values do not establish zero primary-provider cost. Offline replay of the May 11, 2026 Anthropic/OpenAI/Gemini cache cassettes passed 3 tests and 6 assertions, including provider-reported cache tokens on repeated calls. This verifies parsing of historical fixtures only, not current live cache behavior or billed dollars.
 - [ ] Measure production performance and before/after optimization results while preserving relevant test coverage. Actual speedups and billed savings remain unmeasured.
 
 ## Maintainability — Consolidate Shared Owners
@@ -124,13 +131,13 @@ These tasks support the corresponding fixes above; extend existing implementatio
 - [x] Consolidate V1/V2 composer mention serialization and attachment capture; preserve resource identity and originating-chat ownership.
   - [x] Share mention serialization through `packages/session-ui/src/components/prompt-file-mention.ts`; both composers call the same reader/writer. Resource-identity regressions were recorded as passing in the implementation checks below.
   - [x] Consolidate attachment capture through `packages/session-ui/src/components/prompt-attachment-target.ts`; both composers use the same originating-prompt/cursor capture owner before asynchronous processing. Existing delayed-read, clipboard, batch, upload, native-picker, and file-input ownership regressions pass.
-- [ ] Centralize provider cache-placement, TTL, and marker-limit rules; coordinate with OpenRouter cache-hint fixes.
-- [ ] Consolidate current and legacy output-processing and automation policies, including deterministic checks before auxiliary AI work.
+- [x] Centralize provider cache-placement, TTL, and marker-limit rules; coordinate with OpenRouter cache-hint fixes. Shared TTL mapping and four-marker defaults now serve Anthropic, Bedrock, and OpenRouter; focused cache-policy tests pass.
+- [ ] Consolidate current and legacy output-processing and automation policies, including deterministic checks before auxiliary AI work. Shared line/byte truncation defaults now serve current and legacy output owners; differing processing flows and broader policy remain open.
 - [x] Share resize-handle behavior with Home's separate keyboard implementation; Home's duplicate Arrow-key handler and separator attributes now come from the shared `ResizeHandle` owner.
 
 ## Maintainability — Readable Code and UI Conventions
 
-- [ ] Establish AI-enforced conventions or a mechanical formatting/checking tool for clean, readable, shadcn-style code and restrained UI output.
+- [x] Establish AI-enforced conventions and a mechanical formatting check for clean, readable, shadcn-style code and restrained UI output. `AGENTS.md` now records UI review conventions and the root `format:check` script runs Prettier on explicitly supplied paths; visual restraint and copy/component choices remain review decisions.
   - Standardize readable imports, exports, Tailwind class organization, and vanilla CSS declarations; reuse existing formatters, lint rules, and shared components where possible.
   - Use layout spacing rather than decorative dots, em dashes, or separator lines between unrelated items merely to create space.
   - Remove unsolicited explanatory text and redundant helper copy; keep labels and essential guidance concise.
@@ -138,6 +145,24 @@ These tasks support the corresponding fixes above; extend existing implementatio
   - Mechanically enforce deterministic formatting rules and use focused AI review for readability and UI decisions that cannot be reliably autofixed.
 
 ## Verification and Audit Follow-Up
+
+### Open Workstream Assessment — September 24, 2026
+
+- A fresh `bun audit --json` reported 274 advisory records across 54 package names. `bun pm why` paths were collected for all 54 and classified in [the reachability assessment](specs/dependency-advisory-reachability-2026-09-24.md). Local builds confirmed DOMPurify in App, Astro 5.7.13 in the Web worker, Hono in Enterprise output, and tar/pacote/Arborist plus vulnerable provider-utils 4.0.23 in the rebuilt OpenCode Node bundle. These are local outputs, not signed/released artifacts; Function and Slack outputs and release provenance remain unverified.
+- Shared provider-cache TTL/marker rules and current/legacy output truncation defaults/limit predicates were consolidated. Jev deduplicates findings and deterministically sorts complete Semgrep-severity batches without an auxiliary model request; a focused counter verifies zero calls for a fixture that previously took one. Added todo guidance discouraging standalone bookkeeping turns. Aggregate round-trip savings remain unmeasured.
+- API-call consolidation remains open: `server.ts` and `server-health.ts` use different generated client families, while provider request paths have distinct auth/endpoint behavior. No generic wrapper was introduced around those differences.
+- Session handoffs validate required constraint, todo, uncertainty, verification, and transcript-reference sections; invalid handoffs direct readers to the full session. Safe content-aware excerpt/path reuse and session-owned preference updates remain open because reads are live/Location-scoped and no session preference owner or mutation invalidation contract exists. No preference category was specified to migrate.
+- Replayed three recorded provider-cache scenarios: 3 passed, 0 failed, 6 assertions. Historical responses report Anthropic 5,752 cache-read tokens, OpenAI Responses 4,608 cached of 4,765 input tokens, and Gemini 1,100 cached of 1,200 input tokens on repeated calls. These May 11, 2026 fixtures do not establish current live behavior or billing. See [offline measurement addendum](specs/mesto-chat-offline-measurements-2026-09-24.md).
+- Offline historical session analysis reports 94.59% response-reported cache-read share, 993 assistant records, 41,894 seconds of assistant-record lifetime, and $0.00 reported primary transcript cost; actual billing remains unknown. The addendum documents source window, definitions, reproducibility limits, and required billing/transport evidence. A separate current local DB had no session-message records; its 58 sessions and $0.00 recorded totals are not billing or production timing evidence.
+- Live billed costs/cache-hit confirmation and production before/after performance were not measured. No provider invoices/exports or production request telemetry were found; actual provider billing correlation and controlled production telemetry remain required. Browser benchmarks were not run under the manual-verification preference.
+- Current-server custom command shell expansion and subtask execution remain open: V2 `SessionExecution` drains durable inputs into ordinary user messages and explicitly avoids post-crash provider retries. Subtasks need a separate durable Session-owned task lifecycle with explicit crash/interruption policy, parent/result linkage, and server-authorized shell expansion; adding only a route or child-session record would violate current execution semantics.
+- Integrated verification: 11 focused Core Jev/automation tests and 36 Core session/automatic-integration/output tests passed; three recorded LLM provider-cache replay tests passed. Core, Opencode, and LLM typechecks passed. Prettier checks and `git diff --check` passed for updated workstream artifacts.
+
+### Discovery and Stalled Requests — September 24, 2026
+
+- Passed 31 App catalog/compatibility tests, 21 submission tests, 12 error-formatting tests, 23 LLM executor/recovery tests, five shared command-template tests, and the focused Core durable-stall replay regression. All four real-filesystem tests passed with the native search engine and again with `OPENCODE_DISABLE_FFF=1`. Legacy prompt tests: 62 passed, one existing projector test skipped.
+- App, Core, LLM, and Opencode typechecks passed. Rebuilt and packaged the macOS ARM64 desktop app and verified its code signature: `packages/desktop/dist/mac-arm64/ArezaCode.app`.
+- Installed-app behavior and production stall diagnosis remain unverified under the manual-verification preference. Current-server shell-expanded/subtask commands remain a separate open item above.
 
 ### Independent Tasks and Benchmark-Informed Jev — September 24, 2026
 
@@ -149,18 +174,24 @@ These tasks support the corresponding fixes above; extend existing implementatio
 
 #### Manual Checks — Unverified
 
-1. Enable Independent tasks, submit A, then B; expect both transcripts to remain visible while B receives no automatic conversation history from A.
-2. Disable the switch and submit C; expect C to continue B's context, including when B was still queued, without importing A.
-3. Reload the chat and repeat a followup; expect task boundaries and queued draft preferences to survive.
-4. With Jev Auto enabled and economical models available, delegate a bounded lookup; expect an allowed model/effort and concise evidence. An explicit model override should be retained.
-5. Tab to the Independent tasks control; expect keyboard activation and an announced pressed state without toolbar overflow.
+- [ ] Enable Independent tasks, submit A, then B; expect both transcripts to remain visible while B receives no automatic conversation history from A.
+- [ ] Disable the switch and submit C; expect C to continue B's context, including when B was still queued, without importing A.
+- [ ] Reload the chat and repeat a followup; expect task boundaries and queued draft preferences to survive.
+- [ ] With Jev Auto enabled and economical models available, delegate a bounded lookup; expect an allowed model/effort and concise evidence. An explicit model override should be retained.
+- [ ] Tab to the Independent tasks control; expect keyboard activation and an announced pressed state without toolbar overflow.
 
 ### Concrete Fixes and English-Only Runtime — September 24, 2026
 
 - Implemented shared keyboard resizing, OpenRouter cache-hint preservation, and shared composer attachment-target capture.
 - At the user's request, English is the only supported app/desktop locale. Removed both language pickers and non-English app/UI/desktop bundle loading; old non-English preferences normalize to English. Existing English strings and typed translation owners are retained. Non-English dictionary source files remain in the repository but are no longer loaded by these runtimes.
 - Focused checks passed: 3 resize-key tests; 6 OpenRouter, 28 OpenAI Chat, and 12 cache-policy tests; 11 English/native-i18n tests; 6 attachment ownership/deduplication tests; 9 V2 attachment/store tests. App, UI, session-ui, Desktop, and LLM package typechecks passed. Focused lint reported zero errors; existing warnings remain.
-- Manual checks remain unverified: Tab to Home/sidebar/terminal resize handles and use Arrow/Home/End; expect bounded resizing and visible focus. Start an attachment in A and switch to B; expect it to remain in A. Reopen with an old non-English preference; expect English app/native UI and no language picker. Live-provider caching/billing and production performance were not measured; no browser or production benchmark was run under the manual-verification preference.
+- Live-provider caching/billing and production performance were not measured; no browser or production benchmark was run under the manual-verification preference.
+
+#### Manual Checks — Unverified
+
+- [ ] Tab to Home/sidebar/terminal resize handles and use Arrow/Home/End; expect bounded resizing and visible focus.
+- [ ] Start an attachment in A and switch to B; expect it to remain in A.
+- [ ] Reopen with an old non-English preference; expect English app/native UI and no language picker.
 
 ### Backlog Status Recheck — September 24, 2026
 
@@ -178,11 +209,12 @@ These tasks support the corresponding fixes above; extend existing implementatio
 
 #### Manual Checks — Unverified
 
-1. Stop a native engine operation; expect its process tree to exit and the session to become idle.
-2. Insert an MCP resource mention, edit surrounding text, and send; expect the originally selected server/resource to be used.
-3. Expand and scroll a long plan, then collapse it; expect the scrollbar to remain inside the plan panel throughout.
-4. Click an active subagent card; expect its live activity and progress in the Agents sidebar, with the parent chat retained and an option to open the full child conversation.
-5. Send a message and watch its timer; expect it to tick while working, freeze after completion or Stop, and retain the recorded duration after reopening the chat.
+- [ ] Stop a native engine operation; expect its process tree to exit and the session to become idle.
+- [ ] Insert an MCP resource mention, edit surrounding text, and send; expect the originally selected server/resource to be used.
+- [ ] Expand and scroll a long plan, then collapse it; expect the scrollbar to remain inside the plan panel throughout.
+- [ ] Click an active subagent card; expect its live activity and progress in the Agents sidebar, with the parent chat retained and an option to open the full child conversation.
+- [ ] Send a message and watch its timer; expect elapsed time below the Thinking row, not below the user message, and the completed duration in the work summary after completion or reopening the chat.
+- [ ] On Windows, cancel and time out a native operation with child processes; expect the complete process tree to exit.
 
 ### Home Loading and Lint Checks — September 24, 2026
 
@@ -191,7 +223,14 @@ These tasks support the corresponding fixes above; extend existing implementatio
 - [x] Confirm the recent-session query uses its new index without a temporary ordering table. Only indexes are added; this migration does not change session records.
 - [x] Pass repository lint with zero errors and focused lint with zero warnings in 15 affected files.
 - [x] Build/package the desktop app and verify its code signature. Updated bundle: `packages/desktop/dist/mac-arm64/ArezaCode.app`.
-- Manual checks remain unverified: Home ordering and project isolation, searching older chats, reconnect freshness, and caret/typing behavior in the empty composer. Production latency and memory improvements have not been measured.
+- Production latency and memory improvements have not been measured.
+
+#### Manual Checks — Unverified
+
+- [ ] Open Home and switch projects; expect recent activity ordering and project-scoped chat lists.
+- [ ] Search for an older chat; expect matching results even when the chat is absent from the initial recent list.
+- [ ] Reconnect after chat activity elsewhere; expect Home to show current session data.
+- [ ] Focus the empty composer and type; expect a visible caret and normal placeholder/text behavior.
 
 ### Completed Implementation Checks — September 23, 2026
 
@@ -203,58 +242,69 @@ These tasks support the corresponding fixes above; extend existing implementatio
 
 ### Remaining Audit Follow-Up
 
+- Reconciled the source-confirmed findings in the removed September 23 audit against the current source and implementation receipts above. Corrected the still-open custom-answer, project-check suppression, and desktop health-poll defects; retained live cost/performance measurement and dependency reachability as evidence-gathering work.
 - [x] Investigate the four localization test failures reported by the audit. Reproduced the Punjabi `Aran`/`Arab` script mismatch, missing locale keys, missing plural variants, and the resulting placeholder-check crash. The user chose English-only support instead of completing translations. Removed unsupported-locale runtime loading/pickers and replaced obsolete multilingual parity checks with English/native-bundle and plural-family regressions; all 11 current i18n tests pass.
 - [x] Resolve the reported lint error and triage warnings in affected files. Replaced the invalid empty-editor CSS escape, bound composer callbacks, removed unsafe fixture assertions/unused imports, and fixed tuple-form request headers being spread into numeric keys. Repository lint now exits successfully with zero errors; 15 affected source/test files report zero warnings. The latest full lint run still reports 5,044 warnings elsewhere.
-- [ ] Assess application reachability of dependency advisory matches rather than treating advisory count as confirmed exploitable issues.
-- [ ] Bring the remaining actionable findings from the full audit into this backlog. The source audit reported 20 actionable findings and five optimization opportunities; its summarized findings are not the complete set of 20.
+- [x] Fix remaining source-confirmed audit findings: disallowed custom question answers are hidden and excluded from replies; failed project-check suppression now keys on timeout and clean Git revision; desktop sidecar health polling is cancelled when startup settles.
+- [x] Trace dependency paths and classify all 54 package names from the current advisory report rather than treating match count as confirmed exploitable issues. See `specs/dependency-advisory-reachability-2026-09-24.md`; selected higher-priority runtime findings include advisory-specific callsite/input/deployment review.
+- [ ] Confirm advisory-specific active callsites and shipped-bundle inclusion for remaining runtime paths before drawing exploitability conclusions.
+- [ ] Confirm affected resolved instances, active callsites, and shipped-bundle reachability for the highest-priority runtime advisory paths before drawing exploitability conclusions.
+- [ ] Measure live-provider cache hits/billing and production performance; static source and local tests cannot establish these outcomes.
 
 ### Manual Checks — Unverified
 
-1. Start an attachment in chat A, then switch to B; expect the attachment to remain in A.
-2. Disconnect during a run and reconnect after completion; expect history to recover, busy status to clear, and queued work to unblock.
-3. Expand tool output and switch chats; expect content to remain reachable without a flash and the previous reading position to be preserved.
-4. Repeat a small presentation edit and observe any slow request; expect focused work without repeated missing-file or bookkeeping loops, with timestamps and retry/wait status explaining delays.
-5. Repeat a substantial feature change; expect the same relevant tests to remain in place while measuring fewer avoidable model steps.
+- [ ] Start an attachment in chat A, then switch to B; expect the attachment to remain in A.
+- [ ] Disconnect during a run and reconnect after completion; expect history to recover, busy status to clear, and queued work to unblock.
+- [ ] Expand tool output and switch chats; expect content to remain reachable without a flash and the previous reading position to be preserved.
+- [ ] Repeat a small presentation edit and observe any slow request; expect focused work without repeated missing-file or bookkeeping loops, with timestamps and retry/wait status explaining delays.
+- [ ] Repeat a substantial feature change; expect the same relevant tests to remain in place while measuring fewer avoidable model steps.
+- [ ] Queue an image follow-up, reload, then send it; expect the image to remain available and reach the model.
+- [ ] Leave an unsent new-chat draft, switch projects, and return through New Chat; expect the original project's draft to be restored.
+- [ ] Open Context details for a session with subagents; expect compact summaries, clearly labeled accounting scope, and unknown costs distinguished from zero.
+- [ ] Submit with Jev enabled; expect the selecting-model label to clear after selection and a simple presentation edit to use an allowed low-effort variant.
+- [ ] Open a Markdown file reference and switch between Preview and Code; expect rendered Markdown and its raw source.
+- [ ] Answer a question with custom answers disabled; expect no custom-answer option and only listed answers in the reply.
+- [ ] Fail a project check twice, then increase its timeout or change the clean Git revision; expect the updated check to run instead of being suppressed as unchanged.
+- [ ] Start the desktop with a sidecar that fails health checks; expect startup polling to stop after the sidecar exits.
 
 ## Evidence — Reported Baselines and Sources
 
-### Source Reports
+### Historical Performance Report
 
-- [Full ArezaCode audit, evidence, coverage exclusions, and implementation order](file:///var/folders/tt/_33ntz395wbbs2flqd41ry_r0000gn/T/opencode/arezacode-audit-2026-09-23.md)
-- [Detailed Mesto timing and optimization report](file:///var/folders/tt/_33ntz395wbbs2flqd41ry_r0000gn/T/opencode/mesto-chat-performance-2026-09-23.md)
+- [Detailed Mesto timing and optimization report](specs/mesto-chat-performance-2026-09-23.md)
 
-The ArezaCode audit used four subagents. Application source was unchanged by the audit. Visual behavior, live-provider caching, and production performance were not verified; coverage exclusions are documented in the full report.
+The copied full application audit was removed after its actionable items were reconciled against the current implementation and backlog. The table below is the historical audit baseline, not a current verification receipt.
 
 ### Audit Verification Baseline
 
-| Check | Reported result |
-|---|---|
-| Tests | 877 passed; 4 failed, all in localization |
-| Package typechecks | Nine passed |
-| Lint | Failed: 1 error and 5,045 warnings |
-| Dependency audit | 274 advisory matches; application reachability unverified |
+| Check              | Reported result                                           |
+| ------------------ | --------------------------------------------------------- |
+| Tests              | 877 passed; 4 failed, all in localization                 |
+| Package typechecks | Nine passed                                               |
+| Lint               | Failed: 1 error and 5,045 warnings                        |
+| Dependency audit   | 274 advisory matches; application reachability unverified |
 
 ### Mesto Performance Baseline
 
 Coverage: **131 user messages and 993 assistant records**, through **September 23, 2026, 17:12 UTC**. Measurements cover chat/model/tool requests, not Laravel SQL-query execution times.
 
-| Metric | Recorded result | Interpretation or limit |
-|---|---|---|
-| Input-token cache reads | 94.6% | Caching already works heavily. |
-| Largest reported context | 758,539 tokens per assistant record | Working context grew substantially. |
-| Recognized checks | About 3 minutes within 11h38m of completed assistant intervals | Removing tests would save little and risk quality. |
-| Standalone bookkeeping | 151 assistant steps executed only `todowrite`; 34.5 million cumulative input tokens | Administrative round trips are an optimization target; their entire duration is not necessarily removable. |
-| Repeated failed discovery | Missing `.ai/rules/index.md` requested 35 times | Missing-path discovery was repeated unnecessarily. |
-| Unexplained stall | 18m24s before the first stored response step | Records cannot distinguish provider waiting, transport, retries, local scheduling, or host suspension. |
-| Headroom compression | 49 attempts; 1.01% overall reduction in accepted output | Benefit and transformation time need measurement. |
-| Primary provider cost | Unknown despite stored zero values | Stored zeros are not evidence of zero billed cost. |
+| Metric                    | Recorded result                                                                     | Interpretation or limit                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Input-token cache reads   | 94.6%                                                                               | Caching already works heavily.                                                                             |
+| Largest reported context  | 758,539 tokens per assistant record                                                 | Working context grew substantially.                                                                        |
+| Recognized checks         | About 3 minutes within 11h38m of completed assistant intervals                      | Removing tests would save little and risk quality.                                                         |
+| Standalone bookkeeping    | 151 assistant steps executed only `todowrite`; 34.5 million cumulative input tokens | Administrative round trips are an optimization target; their entire duration is not necessarily removable. |
+| Repeated failed discovery | Missing `.ai/rules/index.md` requested 35 times                                     | Missing-path discovery was repeated unnecessarily.                                                         |
+| Unexplained stall         | 18m24s before the first stored response step                                        | Records cannot distinguish provider waiting, transport, retries, local scheduling, or host suspension.     |
+| Headroom compression      | 49 attempts; 1.01% overall reduction in accepted output                             | Benefit and transformation time need measurement.                                                          |
+| Primary provider cost     | Unknown despite stored zero values                                                  | Stored zeros are not evidence of zero billed cost.                                                         |
 
 ### Recorded Task Examples
 
-| Request | Recorded duration | Assistant steps |
-|---|---|---|
-| Change sidebar heading from 11px to 13px | 10m11s | 9 |
-| Add only a new-event button trigger | 15m15s | 17 |
-| Participant-management feature work | 52m02s | 37 |
+| Request                                  | Recorded duration | Assistant steps |
+| ---------------------------------------- | ----------------- | --------------- |
+| Change sidebar heading from 11px to 13px | 10m11s            | 9               |
+| Add only a new-event button trigger      | 15m15s            | 17              |
+| Participant-management feature work      | 52m02s            | 37              |
 
 The first two requests already used **low reasoning effort**. Changing effort alone will not resolve the observed overhead.

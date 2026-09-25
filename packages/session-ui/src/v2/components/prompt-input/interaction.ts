@@ -144,6 +144,10 @@ export function createPromptInputV2Controller(input: {
       draft.setText(command.value)
       return
     }
+    if (command.type === "draft.replaceText") {
+      draft.replaceText(command.start, command.end, command.value)
+      return
+    }
     if (command.type === "mention.add") {
       if (command.item.mention) draft.addMention(command.item.mention)
       return
@@ -157,7 +161,7 @@ export function createPromptInputV2Controller(input: {
       if (item) dispatch({ type: "popover.select", item })
       return
     }
-    if (command.type === "focus.editor") requestAnimationFrame(() => editor?.focus())
+    if (command.type === "focus.editor") restoreFocus()
   }
 
   function dispatch(event: PromptInputV2InteractionEvent) {
@@ -166,11 +170,9 @@ export function createPromptInputV2Controller(input: {
     const result = transitionPromptInputV2(state, event, draft.state)
     const action = event.type === "popover.select" ? input.onSuggestionSelect?.(event.item) : undefined
     if (event.type === "popover.select") {
-      if (!action || state.popover.type !== "command-menu") result.commands.forEach(execute)
-      if (action && event.item.kind === "command" && state.popover.type !== "command-menu") {
-        draft.setPrompt(
-          draft.state.prompt.filter((part): part is PromptInputV2Attachment => part.type === "image"),
-          0,
+      if (!action || state.popover.type !== "command-menu") {
+        result.commands.forEach((command) =>
+          execute(action && command.type === "draft.replaceText" ? { ...command, value: "" } : command),
         )
       }
     }

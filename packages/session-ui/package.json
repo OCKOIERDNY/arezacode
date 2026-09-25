@@ -9,6 +9,7 @@
     "./session-diff": "./src/components/session-diff.ts",
     "./message-file": "./src/components/message-file.ts",
     "./prompt-file-mention": "./src/components/prompt-file-mention.ts",
+    "./prompt-slash": "./src/components/prompt-slash.ts",
     "./prompt-attachment-target": "./src/components/prompt-attachment-target.ts",
     "./message-part-text": "./src/components/message-part-text.ts",
     "./markdown-stream": "./src/components/markdown-stream.ts",

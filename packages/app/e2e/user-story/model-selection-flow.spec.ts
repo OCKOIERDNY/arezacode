@@ -4,6 +4,65 @@ import { expectAppVisible } from "../utils/waits"
 
 const directory = "C:/OpenCode/NewProject"
 
+test("restores collapsed model providers before displaying them", async ({ page }, testInfo) => {
+  await mockOpenCodeServer(page, {
+    directory,
+    project: { id: "proj_model_accordion", worktree: directory, vcs: "git", name: "NewProject", time: { created: 1, updated: 1 }, sandboxes: [] },
+    sessions: [],
+    pageMessages: () => ({ items: [] }),
+    provider: {
+      all: [{ id: "opencode", name: "OpenCode Zen", models: {
+        "zen-model": { id: "zen-model", name: "Zen Model", cost: { input: 0, output: 0 }, limit: { context: 200_000 } },
+      } }],
+      connected: ["opencode"],
+      default: { providerID: "opencode", modelID: "zen-model" },
+    },
+  })
+  await page.addInitScript(() => {
+    localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
+  })
+  await page.route("**/src/entry.tsx", async (route) => {
+    const response = await route.fetch()
+    const source = await response.text()
+    expect(source).toContain('platform: "web",')
+    await route.fulfill({ response, body: source.replace('platform: "web",', `platform: "desktop",
+      os: "macos",
+      storage: (name) => ({
+        getItem: async (key) => {
+          if (key.includes("settings-v2.models.providers")) {
+            document.documentElement.dataset.modelStorage = "pending";
+            await new Promise((resolve) => document.addEventListener("release-model-storage", resolve, { once: true }));
+            return localStorage.getItem(name + ":" + key) ?? JSON.stringify({ collapsed: { opencode: true } });
+          }
+          return localStorage.getItem(name + ":" + key) ?? localStorage.getItem(key);
+        },
+        setItem: async (key, value) => localStorage.setItem(name + ":" + key, value),
+        removeItem: async (key) => localStorage.removeItem(name + ":" + key),
+      }),`) })
+  })
+  await page.goto("/")
+  await page.getByRole("button", { name: "Settings", exact: true }).click()
+  const dialog = page.locator(".settings-v2-dialog")
+  await dialog.getByRole("tab", { name: "Models", exact: true }).click()
+  await expect(page.locator("html")).toHaveAttribute("data-model-storage", "pending")
+  await expect(dialog.locator(".settings-v2-models-status")).toContainText("Loading")
+  await expect(dialog.locator('[data-component="settings-models-provider"]')).toHaveCount(0)
+  await page.evaluate(() => document.dispatchEvent(new Event("release-model-storage")))
+  const provider = dialog.getByRole("button", { name: "OpenCode Zen", exact: true })
+  await expect(provider).toHaveAttribute("aria-expanded", "false")
+  await page.screenshot({ path: testInfo.outputPath("restored-collapsed-provider.png") })
+  await provider.click()
+  await expect(provider).toHaveAttribute("aria-expanded", "true")
+  await expect(dialog.getByRole("switch", { name: "Zen Model", exact: true })).toBeVisible()
+  await provider.click()
+  await expect(provider).toHaveAttribute("aria-expanded", "false")
+  const search = dialog.getByRole("searchbox")
+  await search.fill("Zen Model")
+  await expect(provider).toHaveAttribute("aria-expanded", "true")
+  await search.fill("")
+  await expect(provider).toHaveAttribute("aria-expanded", "false")
+})
+
 test("creates a session in a new project, connects OpenCode Go, and selects its model", async ({ page }) => {
   let connectedGo = false
   let pendingGo = false

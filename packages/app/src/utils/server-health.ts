@@ -1,7 +1,7 @@
 import { usePlatform } from "@/context/platform"
 import { ServerConnection } from "@/context/server"
-import { authTokenFromCredentials, createSdkForServer } from "./server"
-import { ClientError, OpenCode } from "@opencode-ai/client"
+import { createSdkForServer, serverClientOptions } from "./server"
+import { ClientError, OpenCode } from "@opencode-ai/client-current"
 import { Accessor, createEffect, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 
@@ -85,19 +85,16 @@ export async function checkServerHealth(
       .catch(() => ({ healthy: false }))
   }
   const attempt = async (count: number): Promise<ServerHealth> => {
-    const current = await OpenCode.make({
-      baseUrl: server.url,
-      fetch,
-      headers: server.password
-        ? {
-            Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}`,
-          }
-        : undefined,
-    })
+    const current = await OpenCode.make(serverClientOptions({ server, fetch }))
       .health.get({ signal })
       .then((x) =>
         typeof x.healthy === "boolean"
-          ? { data: { healthy: x.healthy, version: x.version } }
+          ? {
+              data: {
+                healthy: x.healthy,
+                version: "version" in x && typeof x.version === "string" ? x.version : undefined,
+              },
+            }
           : { error: new Error("Invalid health response") },
       )
       .catch((error) => ({ error }))

@@ -2,7 +2,7 @@ export * as FileSystemSearch from "./search"
 
 import { makeLocationNode } from "../effect/app-node"
 import path from "path"
-import { Context, Effect, Layer, Scope } from "effect"
+import { Context, Effect, Fiber, Layer, Scope } from "effect"
 import { Fff } from "#fff"
 import fuzzysort from "fuzzysort"
 import { FileSystem } from "../filesystem"
@@ -32,7 +32,7 @@ export const ripgrepLayer = Layer.effect(
       directories: [] as string[],
     }
     const directories = new Set<string>()
-    yield* ripgrep
+    const indexed = yield* ripgrep
       .find({
         cwd: location.directory,
         pattern: "*",
@@ -100,6 +100,7 @@ export const ripgrepLayer = Layer.effect(
         }),
       find: (input) =>
         Effect.gen(function* () {
+          yield* Fiber.join(indexed)
           const items =
             input.type === "file"
               ? state.files
@@ -189,7 +190,10 @@ export const fffLayer = Layer.effect(
           })
         }),
       find: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
+          const scanned = yield* Effect.promise(() => result.value.waitForScan(10_000))
+          if (!scanned.ok) return yield* Effect.die(new Error(scanned.error))
+          if (!scanned.value) return yield* Effect.die(new Error("File index did not finish loading within 10 seconds"))
           const options = { pageIndex: 0, pageSize: input.limit ?? 50 }
           const items = (() => {
             if (input.type === "file") {

@@ -159,6 +159,7 @@ export default {
           \`id\` text PRIMARY KEY,
           \`session_id\` text NOT NULL,
           \`prompt\` text NOT NULL,
+          \`preparation\` text,
           \`delivery\` text NOT NULL,
           \`admitted_seq\` integer NOT NULL,
           \`promoted_seq\` integer,
@@ -210,6 +211,25 @@ export default {
           \`time_compacting\` integer,
           \`time_archived\` integer,
           CONSTRAINT \`fk_session_project_id_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`session_task\` (
+          \`session_id\` text PRIMARY KEY,
+          \`parent_id\` text NOT NULL,
+          \`context_id\` text,
+          \`input_id\` text NOT NULL,
+          \`status\` text NOT NULL,
+          \`attempt\` integer DEFAULT 0 NOT NULL,
+          \`owner\` text,
+          \`output\` text,
+          \`error\` text,
+          \`result_input_id\` text UNIQUE,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL,
+          \`time_completed\` integer,
+          CONSTRAINT \`fk_session_task_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE,
+          CONSTRAINT \`fk_session_task_parent_id_session_id_fk\` FOREIGN KEY (\`parent_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)
       yield* tx.run(`
@@ -274,6 +294,8 @@ export default {
       yield* tx.run(
         `CREATE INDEX \`session_directory_recent_idx\` ON \`session\` (\`directory\`,\`parent_id\`,\`time_archived\`,\`time_updated\`,\`id\`);`,
       )
+      yield* tx.run(`CREATE INDEX \`session_task_parent_status_idx\` ON \`session_task\` (\`parent_id\`,\`status\`);`)
+      yield* tx.run(`CREATE INDEX \`session_task_owner_status_idx\` ON \`session_task\` (\`owner\`,\`status\`);`)
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
     })
   },

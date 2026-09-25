@@ -9,8 +9,12 @@ import {
   isContextOverflowFailure,
   type ProviderErrorEvent,
 } from "@opencode-ai/llm"
+import { ChildProcess } from "effect/unstable/process"
+import { AppProcess } from "../../process"
+import { Shell } from "../../shell"
+import { SessionInputTable } from "../sql"
 import { RequestExecutor } from "@opencode-ai/llm/route"
-import { Cause, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
+import { Cause, DateTime, Effect, FiberSet, Layer, Option, Schema, Semaphore, Stream } from "effect"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
 import { Catalog } from "../../catalog"
@@ -118,6 +122,7 @@ const layer = Layer.effect(
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
     const permissions = yield* PermissionV2.Service
+    const process = yield* AppProcess.Service
     const automations = new Map<string, Awaited<ReturnType<typeof AutomaticChecks.session>>>()
     const db = (yield* Database.Service).db
     const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
@@ -179,10 +184,35 @@ const layer = Layer.effect(
     const continueAfterOverflowCompaction = (step: number) =>
       new TurnTransitionError({ _tag: "ContinueAfterOverflowCompaction", step })
 
-    const loadSystemContext = (agent: AgentV2.Selection) =>
-      Effect.all([systemContext.load(), skillGuidance.load(agent), referenceGuidance.load()], {
+    const loadSystemContext = (agent: AgentV2.Selection, session: SessionSchema.Info) =>
+      Effect.all([systemContext.load(), skillGuidance.load(agent), referenceGuidance.load(),
+        Effect.succeed(session.instructions ? SystemContext.make({
+          key: SystemContext.Key.make("core/session-instructions"),
+          codec: Schema.toCodecJson(Schema.String),
+          load: Effect.succeed(session.instructions),
+          baseline: (text) => `Custom instructions for this session:\n${text}`,
+          update: (_previous, text) => `These custom instructions replace the previous custom instructions for this session:\n${text}`,
+          removed: () => "The previous custom instructions for this session no longer apply.",
+        }) : SystemContext.empty),
+      ], {
         concurrency: "unbounded",
       }).pipe(Effect.map(SystemContext.combine))
+
+    const prepareCommand = Effect.fn("SessionRunner.prepareCommand")(function* (row: typeof SessionInputTable.$inferSelect) {
+      const session = yield* getSession(row.session_id)
+      const agent = yield* agents.select(session.agent)
+      const matches = [...row.prompt.text.matchAll(/!`([^`]+)`/g)]
+      const outputs: string[] = []
+      for (const match of matches) {
+        yield* permissions.assert({ sessionID: session.id, agent: agent.id, action: "bash", resources: [match[1]!], metadata: { command: row.preparation?.command } }).pipe(Effect.orDie)
+        const shell = Shell.acceptable()
+        const result = yield* process.run(ChildProcess.make(shell, Shell.args(shell, match[1]!, location.directory), { cwd: location.directory }), { maxOutputBytes: 1_048_576, maxErrorBytes: 65_536, timeout: "2 minutes" }).pipe(Effect.flatMap(AppProcess.requireSuccess), Effect.orDie)
+        if (result.stdoutTruncated) return yield* Effect.die(new Error("Command output exceeds 1 MiB"))
+        outputs.push(result.stdout.toString("utf8"))
+      }
+      let index = 0
+      return row.prompt.text.replace(/!`([^`]+)`/g, () => outputs[index++]!)
+    })
 
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,
@@ -194,23 +224,25 @@ const layer = Layer.effect(
       if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
         return yield* Effect.interrupt
       const agent = yield* agents.select(session.agent)
-      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent), session.id)
+      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent, session), session.id)
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
       let currentStep = step
       if (promotion) {
         const cutoff = yield* EventV2.latestSequence(db, session.id)
         let promoted = 0
-        if (promotion === "steer") promoted = yield* SessionInput.promoteSteers(db, events, session.id, cutoff)
+        if (promotion === "steer") promoted = yield* SessionInput.promoteSteers(db, events, session.id, cutoff, prepareCommand)
         if (promotion === "queue") {
-          promoted += Number(yield* SessionInput.promoteNextQueued(db, events, session.id))
-          promoted += yield* SessionInput.promoteSteers(db, events, session.id, cutoff)
+          promoted += Number(yield* SessionInput.promoteNextQueued(db, events, session.id, prepareCommand))
+          promoted += yield* SessionInput.promoteSteers(db, events, session.id, cutoff, prepareCommand)
         }
+        yield* SessionInput.deliverTasks(db, events, session.id)
+        promoted += yield* SessionInput.promoteSteers(db, events, session.id, yield* EventV2.latestSequence(db, session.id), prepareCommand)
         if (promoted > 0) currentStep = 1
         if (promoted === 0 && step === 1 && (yield* SessionHealth.get(db, session.id)).locked)
           return { needsContinuation: false, step: currentStep }
       }
-      const system = yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id, initialized)
+      const system = yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session), session.id, initialized)
       const model = yield* models.resolve(session)
       if (model.route.defaults.limits?.context) yield* SessionHealth.recordModel(db, session.id, { id: session.model?.id ?? model.id, providerID: session.model?.providerID ?? model.provider, context: model.route.defaults.limits.context })
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
@@ -517,6 +549,7 @@ export const node = makeLocationNode({
     Config.node,
     Snapshot.node,
     PermissionV2.node,
+    AppProcess.node,
     Database.node,
   ],
 })

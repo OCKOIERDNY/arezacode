@@ -22,6 +22,8 @@ type ProjectApi = ServerApi["project"]
 
 const provider = { all: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
 const api = {
+  command: { list: async () => ({ location: {}, data: [{ name: "review", template: "Review" }] }) },
+  skill: { list: async () => ({ location: {}, data: [{ id: "animate", name: "animate", content: "Animate", location: "<built-in>" }] }) },
   agent: { list: async () => ({ location: {}, data: [] }) },
   provider: { list: async () => ({ location: {}, data: [] }) },
   model: {
@@ -145,7 +147,7 @@ describe("bootstrapDirectory", () => {
     expect(mcpReads.sort()).toEqual(["command", "resource", "status"])
   })
 
-  test("skips legacy config while refreshing a v2 directory", async () => {
+  test("loads commands and skills without MCP while skipping legacy config on v2", async () => {
     const [store, setStore] = directoryState()
 
     await bootstrapDirectory({
@@ -180,6 +182,7 @@ describe("bootstrapDirectory", () => {
     await new Promise((resolve) => setTimeout(resolve, 80))
 
     expect(store.status).toBe("complete")
+    expect(store.command.map((command) => command.name)).toEqual(["review", "animate"])
   })
 })
 
@@ -297,6 +300,26 @@ describe("query keys", () => {
 
     expect(calls).toEqual([{ location: { directory: "/repo" } }])
     expect(result).toEqual([{ name: "review", template: "Review files" /* source: "command" */ }])
+  })
+
+  test("includes location-scoped skills once and honors command overrides and hidden skills", async () => {
+    const locations: unknown[] = []
+    const result = await loadCommands("/repo", {
+      list: async () => ({ location: { directory: "/repo", project: { id: "project", directory: "/repo" } }, data: [{ name: "review", template: "Custom review" }] }),
+    }, undefined, Promise.resolve("v2"), {
+      list: async (input) => {
+        locations.push(input)
+        return { location: { directory: "/repo", project: { id: "project", directory: "/repo" } }, data: [
+          { id: "review", name: "review", description: "Skill review", content: "Skill", location: "/repo/.agents/skills/review/SKILL.md" },
+          { id: "animate", name: "animate", description: "Animate", content: "Animate safely", location: "/repo/.agents/skills/animate/SKILL.md" },
+          { id: "hidden", name: "hidden", content: "Hidden", location: "<built-in>", slash: false },
+        ] }
+      },
+    })
+    expect(locations).toEqual([{ location: { directory: "/repo" } }])
+    expect(result.map((item) => item.name)).toEqual(["review", "animate"])
+    expect(result[0]?.template).toBe("Custom review")
+    expect(result[1]).toMatchObject({ source: "skill", template: expect.stringContaining("Base directory for this skill: /repo/.agents/skills/animate") })
   })
 
   test("loads projects from the current endpoint", async () => {

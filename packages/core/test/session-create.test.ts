@@ -49,41 +49,80 @@ const location = Location.Ref.make({ directory: AbsolutePath.make("/project") })
 const id = SessionV2.ID.create()
 
 describe("SessionV2.create", () => {
+  it.effect("persists custom instructions once per change without overwriting approval settings", () =>
+    Effect.gen(function* () {
+      const service = yield* SessionV2.Service
+      const session = yield* service.create({ location })
+      yield* service.setApproval({ sessionID: session.id, mode: "ask" })
+      yield* service.setInstructions({ sessionID: session.id, instructions: "Be concise. Use Bun." })
+      yield* service.setInstructions({ sessionID: session.id, instructions: "Be concise. Use Bun." })
+      expect(yield* service.get(session.id)).toMatchObject({
+        instructions: "Be concise. Use Bun.",
+        approvalMode: "ask",
+      })
+      const history = yield* service.history({ sessionID: session.id, limit: 100 })
+      expect(history.events.filter((event) => event.type === "session.next.instructions.changed")).toHaveLength(1)
+      yield* service.setInstructions({ sessionID: session.id, instructions: "" })
+      expect(yield* service.get(session.id)).toMatchObject({ instructions: "", approvalMode: "ask" })
+    }),
+  )
+
   it.effect("lists a bounded set of active roots by activity across project directories", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const database = yield* Database.Service
       const parent = yield* session.create({ location: { directory: AbsolutePath.make("/other") } })
-      const records = yield* Effect.forEach([
-        { title: "old-recently-active", directory: "/project", created: 1, updated: 90 },
-        { title: "worktree", directory: "/worktree", created: 2, updated: 80 },
-        { title: "new-idle", directory: "/project", created: 50, updated: 50 },
-        { title: "archived", directory: "/project", created: 60, updated: 100, archived: 100 },
-        { title: "child", directory: "/project", created: 70, updated: 110, parentID: parent.id },
-      ], (record) => Effect.gen(function* () {
-        const info = yield* session.create({ location: { directory: AbsolutePath.make(record.directory) } })
-        yield* database.db.update(SessionTable).set({
-          title: record.title,
-          time_created: record.created,
-          time_updated: record.updated,
-          time_archived: record.archived,
-          parent_id: record.parentID,
-        }).where(eq(SessionTable.id, info.id)).run().pipe(Effect.orDie)
-        return info.id
-      }))
+      const records = yield* Effect.forEach(
+        [
+          { title: "old-recently-active", directory: "/project", created: 1, updated: 90 },
+          { title: "worktree", directory: "/worktree", created: 2, updated: 80 },
+          { title: "new-idle", directory: "/project", created: 50, updated: 50 },
+          { title: "archived", directory: "/project", created: 60, updated: 100, archived: 100 },
+          { title: "child", directory: "/project", created: 70, updated: 110, parentID: parent.id },
+        ],
+        (record) =>
+          Effect.gen(function* () {
+            const info = yield* session.create({ location: { directory: AbsolutePath.make(record.directory) } })
+            yield* database.db
+              .update(SessionTable)
+              .set({
+                title: record.title,
+                time_created: record.created,
+                time_updated: record.updated,
+                time_archived: record.archived,
+                parent_id: record.parentID,
+              })
+              .where(eq(SessionTable.id, info.id))
+              .run()
+              .pipe(Effect.orDie)
+            return info.id
+          }),
+      )
       const query = {
         directories: [AbsolutePath.make("/project"), AbsolutePath.make("/worktree")],
-        roots: true, archived: false, sort: "updated" as const, order: "desc" as const, limit: 2,
+        roots: true,
+        archived: false,
+        sort: "updated" as const,
+        order: "desc" as const,
+        limit: 2,
       }
       expect((yield* session.list(query)).map((item) => item.id)).toEqual(records.slice(0, 2))
       expect((yield* session.list({ ...query, search: "old-recently" })).map((item) => item.id)).toEqual([records[0]])
-      expect((yield* session.list({ ...query, anchor: { id: records[1], time: 80, direction: "next" } })).map((item) => item.id)).toEqual([records[2]])
+      expect(
+        (yield* session.list({ ...query, anchor: { id: records[1], time: 80, direction: "next" } })).map(
+          (item) => item.id,
+        ),
+      ).toEqual([records[2]])
       expect(yield* session.list({ ...query, directories: [] })).toEqual([])
-      const plan = yield* database.db.all<{ detail: string }>(sql`
+      const plan = yield* database.db
+        .all<{ detail: string }>(
+          sql`
         EXPLAIN QUERY PLAN SELECT * FROM session
         WHERE parent_id IS NULL AND time_archived IS NULL
         ORDER BY time_updated DESC, id DESC LIMIT 64
-      `).pipe(Effect.orDie)
+      `,
+        )
+        .pipe(Effect.orDie)
       expect(plan.some((row) => row.detail.includes("session_home_recent_idx"))).toBe(true)
       expect(plan.some((row) => row.detail.includes("TEMP B-TREE"))).toBe(false)
     }),
@@ -95,7 +134,12 @@ describe("SessionV2.create", () => {
       const session = yield* service.create({ location, approvalMode: "ask" })
       expect(session.approvalMode).toBe("ask")
       const { db } = yield* Database.Service
-      yield* db.update(SessionTable).set({ metadata: { approvalMode: "ask", retained: true } }).where(eq(SessionTable.id, session.id)).run().pipe(Effect.orDie)
+      yield* db
+        .update(SessionTable)
+        .set({ metadata: { approvalMode: "ask", retained: true } })
+        .where(eq(SessionTable.id, session.id))
+        .run()
+        .pipe(Effect.orDie)
       yield* service.setApproval({ sessionID: session.id, mode: "full" })
       expect((yield* service.get(session.id)).approvalMode).toBe("full")
       const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, session.id)).get().pipe(Effect.orDie)

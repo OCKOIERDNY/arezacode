@@ -1,8 +1,9 @@
 import { useNavigate } from "@solidjs/router"
 import { produce } from "solid-js/store"
-import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
+import { ServerConnection } from "@/context/server"
+import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { useTabs } from "@/context/tabs"
@@ -15,6 +16,7 @@ export function useSessionArchive() {
   const language = useLanguage()
   const navigate = useNavigate()
   const sdk = useSDK()
+  const serverSDK = useServerSDK()
   const sync = useSync()
   const serverSync = useServerSync()
   const tabs = useTabs()
@@ -40,27 +42,36 @@ export function useSessionArchive() {
   }
 
   const archive = async (sessionID: string) => {
-    const session = sync().session.get(sessionID)
+    const target = {
+      sdk: sdk(),
+      sync: sync(),
+      serverSync: serverSync(),
+      server: ServerConnection.key(serverSDK().server),
+    }
+    const session = target.sync.session.get(sessionID)
     if (!session) return
-    if ((await sdk().protocol) !== "v1") return
+    if ((await target.sdk.protocol) !== "v1") return
 
-    const sessions = sync().data.session ?? []
+    const sessions = target.sync.data.session ?? []
     const index = sessions.findIndex((s) => s.id === sessionID)
     const nextSession = index === -1 ? undefined : (sessions[index + 1] ?? sessions[index - 1])
 
-    await sdk()
-      .client.session.update({ sessionID, directory: sdk().directory, time: { archived: Date.now() } })
+    await target.sdk.client.session
+      .update({ sessionID, directory: target.sdk.directory, time: { archived: Date.now() } })
       .then(() => {
-        sync().set(
+        target.sync.set(
           produce((draft) => {
             const index = draft.session.findIndex((s) => s.id === sessionID)
             if (index !== -1) draft.session.splice(index, 1)
           }),
         )
-        sync().session.evict(sessionID)
-        serverSync().homeSessions.remove(sessionID)
-        navigateAfterRemoval(sessionID, session.parentID, nextSession?.id)
-        notifySessionTabsRemoved({ directory: sdk().directory, sessionIDs: [sessionID] })
+        target.sync.session.evict(sessionID)
+        target.serverSync.homeSessions.remove(sessionID)
+        const open = tabs.store.some(
+          (tab) => tab.type === "session" && tab.server === target.server && tab.sessionId === sessionID,
+        )
+        tabs.removeSessions({ server: target.server, directory: target.sdk.directory, sessionIDs: [sessionID] })
+        if (!open && sdk() === target.sdk) navigateAfterRemoval(sessionID, session.parentID, nextSession?.id)
       })
       .catch((err) => {
         showToast({

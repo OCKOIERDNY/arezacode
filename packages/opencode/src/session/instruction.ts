@@ -118,6 +118,9 @@ const layer: Layer.Layer<
           break
         }
       }
+      for (const file of Global.instructionFiles(global)) {
+        if (yield* fs.existsSafe(file)) paths.add(path.resolve(file))
+      }
 
       // The first project-level match wins so we don't stack AGENTS.md/CLAUDE.md from every ancestor.
       if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {

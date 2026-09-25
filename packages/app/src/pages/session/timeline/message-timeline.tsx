@@ -1281,11 +1281,6 @@ export function MessageTimeline(props: {
                       useV2Actions={settings.general.newLayoutDesigns()}
                       comments={messageComments()}
                     />
-                    <MessageElapsed
-                      created={message().time.created}
-                      assistants={assistantMessagesByParent().get(userMessageRow().userMessageID) ?? emptyAssistantMessages}
-                      running={workingTurn(userMessageRow().userMessageID)}
-                    />
                     <Show when={decisions().length > 0}>
                       <div class="mt-3" data-testid="session-jev-action" data-prompt-id={userMessageRow().userMessageID}>
                         <BasicTool
@@ -1388,6 +1383,15 @@ export function MessageTimeline(props: {
                 reasoningHeading={thinkingRow().reasoningHeading}
                 showReasoningSummaries={settings.general.showReasoningSummaries()}
               />
+              <Show when={messageByID().get(thinkingRow().userMessageID)}>
+                {(message) => (
+                  <MessageElapsed
+                    created={message().time.created}
+                    assistants={assistantMessagesByParent().get(thinkingRow().userMessageID) ?? emptyAssistantMessages}
+                    running={workingTurn(thinkingRow().userMessageID)}
+                  />
+                )}
+              </Show>
             </div>
           </TimelineRowFrame>
         )

@@ -1,4 +1,5 @@
 export { Route, LLMClient } from "./client"
+export { recoverStalls, StallPolicy } from "./recovery"
 export type {
   Route as RouteShape,
   RouteModelInput,

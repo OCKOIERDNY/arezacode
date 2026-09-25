@@ -26,7 +26,7 @@ import { Image } from "../../src/image/image"
 import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "@/session/session"
-import { SessionMessageTable } from "@opencode-ai/core/session/sql"
+import { SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -553,6 +553,26 @@ it.instance("loop calls LLM and returns assistant message", () =>
     expect(parts.some((p) => p.type === "text" && p.text === "world")).toBe(true)
     expect(yield* llm.hits).toHaveLength(1)
   }),
+)
+
+it.instance("legacy prompts refresh session custom instructions after updates and removal", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const database = yield* Database.Service
+    const chat = yield* sessions.create({ title: "Instructions" })
+    for (const instructions of ["Always use fixture-first", "Always use fixture-second", ""]) {
+      yield* database.db.update(SessionTable).set({ metadata: { instructions } })
+        .where(eq(SessionTable.id, chat.id)).run().pipe(Effect.orDie)
+      yield* llm.text("Done")
+      yield* prompt.prompt({ sessionID: chat.id, agent: "build", parts: [{ type: "text", text: "Continue" }] })
+      const body = JSON.stringify((yield* llm.hits).at(-1)?.body)
+      expect(body.includes("fixture-first")).toBe(instructions.includes("fixture-first"))
+      expect(body.includes("fixture-second")).toBe(instructions.includes("fixture-second"))
+    }
+  }),
+  20_000,
 )
 
 withMcpInstructions.instance(

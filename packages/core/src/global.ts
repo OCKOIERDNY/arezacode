@@ -30,6 +30,10 @@ const paths = {
 
 export const Path = paths
 
+export function instructionFiles(global: Pick<Interface, "home" | "config">) {
+  return [path.join(global.home, ".codex", "AGENTS.md"), path.join(global.config, "AGENTS.md")]
+}
+
 Flock.setGlobal({ state })
 
 await Promise.all([

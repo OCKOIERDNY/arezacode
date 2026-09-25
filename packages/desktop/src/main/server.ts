@@ -6,6 +6,7 @@ import { getLogger } from "./logging"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
+import { pollHealth } from "./health-poll"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -144,22 +145,21 @@ export async function spawnLocalServer(
   const wait = (async () => {
     const url = `http://${hostname}:${port}`
     let healthy = false
+    const healthAbort = new AbortController()
     const gone = exit.promise.then((code) => {
       if (healthy) return
       throw new Error(`Sidecar exited before health check passed with code ${code}`)
     })
 
-    const ready = async () => {
-      while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        if (await checkHealth(url, password)) {
-          healthy = true
-          return
-        }
-      }
-    }
+    const ready = pollHealth(async (signal) => {
+      const ready = await checkHealth(url, password, signal)
+      if (ready) healthy = true
+      return ready
+    }, healthAbort.signal)
 
-    await Promise.race([ready(), gone])
+    await Promise.race([ready, gone]).finally(() => {
+      healthAbort.abort()
+    })
   })()
 
   let stopping: Promise<void> | undefined
@@ -183,7 +183,7 @@ export async function spawnLocalServer(
   }
 }
 
-export async function checkHealth(url: string, password?: string | null): Promise<boolean> {
+export async function checkHealth(url: string, password?: string | null, signal?: AbortSignal): Promise<boolean> {
   let healthUrls: URL[]
   try {
     healthUrls = [new URL("/api/health", url), new URL("/global/health", url)]
@@ -202,7 +202,7 @@ export async function checkHealth(url: string, password?: string | null): Promis
       const res = await fetch(healthUrl, {
         method: "GET",
         headers,
-        signal: AbortSignal.timeout(3000),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000),
       })
       if (res.ok) return true
     } catch {}

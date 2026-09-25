@@ -27,6 +27,24 @@ const withTmp = <A, E, R>(f: (directory: string) => Effect.Effect<A, E, R>) =>
   ).pipe(Effect.flatMap((tmp) => f(tmp.path)))
 
 describe("FileSystem", () => {
+  it.live("finds both project files and directories when no type filter is supplied", () =>
+    withTmp((directory) => Effect.gen(function* () {
+      yield* Effect.promise(() => fs.mkdir(path.join(directory, "notes")))
+      yield* Effect.promise(() => fs.writeFile(path.join(directory, "notes.md"), "Project notes"))
+      yield* Effect.promise(() => fs.writeFile(path.join(directory, "notes", "item.md"), "Nested notes"))
+      yield* Effect.gen(function* () {
+        const service = yield* FileSystem.Service
+        const matches = yield* service.find({ query: "notes" })
+        expect(matches).toContainEqual({ path: RelativePath.make("notes.md"), type: "file" })
+        expect(matches).toContainEqual({ path: RelativePath.make(`notes${path.sep}`), type: "directory" })
+        const files = yield* service.find({ query: "notes", type: "file" })
+        expect(files).toContainEqual({ path: RelativePath.make("notes.md"), type: "file" })
+        expect(files.every((entry) => entry.type === "file")).toBe(true)
+        expect(yield* service.find({ query: "notes", type: "directory" })).toEqual([{ path: RelativePath.make(`notes${path.sep}`), type: "directory" }])
+      }).pipe(provide(directory))
+    })),
+  )
+
   it.live("reads text and binary files", () =>
     withTmp((directory) =>
       Effect.gen(function* () {

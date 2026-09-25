@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import type { CacheHint } from "../../schema"
-import { newBreakpoints, ttlBucket, type Breakpoints } from "./cache"
+import { BREAKPOINT_CAP, newBreakpoints, ttlBucket, type Breakpoints } from "./cache"
 
 // Bedrock cache markers are positional: emit a `cachePoint` block immediately
 // after the content the caller wants treated as a cacheable prefix. Bedrock
@@ -16,7 +16,7 @@ export type CachePointBlock = Schema.Schema.Type<typeof CachePointBlock>
 // Bedrock-Claude enforces the same 4-breakpoint cap as the Anthropic Messages
 // API. Callers pass a shared counter through every `block()` call site so the
 // budget is respected across `system`, `messages`, and `tools`.
-export const BEDROCK_BREAKPOINT_CAP = 4
+export const BEDROCK_BREAKPOINT_CAP = BREAKPOINT_CAP
 
 export type { Breakpoints } from "./cache"
 export const breakpoints = () => newBreakpoints(BEDROCK_BREAKPOINT_CAP)

@@ -58,6 +58,42 @@ function setup(
 }
 
 describe("createCompatibleApi", () => {
+  test.each(["command", "skill"] as const)("submits a current-server %s through durable prompt admission", async (kind) => {
+    const requests: Request[] = []
+    const server = { url: "http://localhost:4096" }
+    const current = createApiForServer({ server, fetch: Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init)
+      requests.push(request)
+      const path = new URL(request.url).pathname
+      if (path === "/api/session/ses_1") return Response.json({ data: { location: { directory: "/origin" } } })
+      if (path === "/api/command") return Response.json({ data: kind === "command" ? [{ name: "review", template: "Review $ARGUMENTS" }] : [] })
+      if (path === "/api/skill") return Response.json({ data: [{ name: "review", content: "Review thoroughly", location: "/origin/.agents/skills/review/SKILL.md" }] })
+      if (path.endsWith("/command") && request.method === "POST") return Response.json({ data: { admittedSeq: 1, id: "msg_1", sessionID: "ses_1", prompt: { text: "Review staged changes" }, delivery: "queue", timeCreated: 1 } })
+      if (path.endsWith("/prompt")) {
+        const body = await request.clone().json()
+        return Response.json({ data: { admittedSeq: 1, id: "msg_1", sessionID: "ses_1", prompt: body.prompt, delivery: "queue", timeCreated: 1 } })
+      }
+      return new Response(undefined, { status: 204 })
+    }, { preconnect: fetch.preconnect }) })
+    const api = createCompatibleApi({ protocol: Promise.resolve("v2"), current, legacy: () => createSdkForServer({ server }) })
+    await api.session.command({
+      sessionID: "ses_1", id: "msg_1", command: "review", arguments: "staged changes", delivery: "queue", independent: true,
+      agent: "build", model: { providerID: "openai", id: "test", variant: "low" },
+      files: [{ uri: "data:text/plain,context", name: "context.txt" }],
+    })
+    expect(requests.some((request) => new URL(request.url).pathname.endsWith("/command" ) && request.method === "POST")).toBe(kind === "command")
+    const sent = requests.find((request) => request.method === "POST" && new URL(request.url).pathname.endsWith(kind === "command" ? "/command" : "/prompt"))
+    expect(sent).toBeDefined()
+    expect(await sent?.json()).toMatchObject(kind === "command" ? { id: "msg_1", command: "review", arguments: "staged changes", independent: true, delivery: "queue", files: [{ uri: "data:text/plain,context", name: "context.txt" }] } : {
+      id: "msg_1", delivery: "queue", prompt: {
+        independent: true, files: [{ uri: "data:text/plain,context", name: "context.txt" }],
+        text: expect.stringContaining("Base directory for this skill: /origin/.agents/skills/review"),
+      },
+    })
+    const catalog = requests.find((request) => new URL(request.url).pathname === "/api/command")
+    expect(catalog && new URL(catalog.url).searchParams.get("location[directory]")).toBe("/origin")
+  })
+
   test("applies the selected model, effort, and agent before current-server prompt admission", async () => {
     const requests: Array<{ path: string; body: unknown }> = []
     const api = createApiForServer({ server: { url: "http://localhost:4096" }, fetch: Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
@@ -320,13 +356,15 @@ describe("createCompatibleApi", () => {
   })
   */
 
-  test("translates current file searches to the V1 dirs parameter", async () => {
+  test.each(["file", "directory", undefined] as const)("preserves V1 file search scope and type: %s", async (type) => {
     const { api, requests } = setup("v1")
-    await api.file.find({ location: { directory: "/repo" }, query: "src", type: "file", limit: 20 })
+    await api.file.find({ location: { directory: "/repo" }, query: "src", type, limit: 20 })
 
     const url = new URL(requests[0].url)
     expect(url.pathname).toBe("/find/file")
-    expect(url.searchParams.get("dirs")).toBe("false")
+    expect(url.searchParams.get("dirs")).toBe(type === "file" ? "false" : type === "directory" ? "true" : null)
+    expect(url.searchParams.get("type")).toBe(type ?? null)
+    expect(url.searchParams.get("directory")).toBe("/repo")
     expect(url.searchParams.get("limit")).toBe("20")
   })
 

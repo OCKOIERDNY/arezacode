@@ -10,6 +10,7 @@ export async function measureFirstNavigation(
   page: Page,
   input: {
     href: string
+    triggerSelector?: string
     destinationPath: string
     sourceSelector: string
     destinationSelector: string
@@ -18,7 +19,7 @@ export async function measureFirstNavigation(
   },
 ) {
   await page.evaluate(
-    ({ href, destinationPath, sourceSelector, destinationSelector, contentSelector }) => {
+    ({ href, triggerSelector, destinationPath, sourceSelector, destinationSelector, contentSelector }) => {
       const samples: FirstNavigationSample[] = []
       let started: number | undefined
       let running = true
@@ -36,7 +37,7 @@ export async function measureFirstNavigation(
             samples.push({
               observedAtMs: performance.now() - started,
               source: visible(sourceSelector),
-              destination: `${location.pathname}${location.search}` === destinationPath && visible(destinationSelector),
+              destination: (destinationPath.includes("?") ? `${location.pathname}${location.search}` : location.pathname) === destinationPath && visible(destinationSelector),
               content: visible(contentSelector),
               pathname: `${location.pathname}${location.search}`,
               center: document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.textContent?.slice(0, 80),
@@ -48,8 +49,8 @@ export async function measureFirstNavigation(
       document.addEventListener(
         "click",
         (event) => {
-          const link = event.target instanceof Element ? event.target.closest("a") : undefined
-          if (link?.getAttribute("href") !== href) return
+          const target = event.target instanceof Element ? event.target.closest(triggerSelector ?? `a[href="${href}"]`) : undefined
+          if (!target) return
           started = performance.now()
           sample()
         },
@@ -64,6 +65,7 @@ export async function measureFirstNavigation(
     },
     {
       href: input.href,
+      triggerSelector: input.triggerSelector,
       destinationPath: input.destinationPath,
       sourceSelector: input.sourceSelector,
       destinationSelector: input.destinationSelector,

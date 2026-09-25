@@ -1,5 +1,7 @@
 import { afterEach, describe, expect } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
+import { eq } from "drizzle-orm"
+import { SessionTaskTable } from "@opencode-ai/core/session/sql"
 import { Database } from "@opencode-ai/core/database/database"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
@@ -186,6 +188,9 @@ describe("tool.task", () => {
     expect(seen[0].variant).toBe("low")
     expect(seen[0].parts).toEqual([{ type: "text", text: "Return the route definition and its file/line" }])
     expect(result.metadata.model).toEqual({ providerID: model.providerID, modelID: model.modelID })
+    const database = yield* Database.Service
+    const task = yield* database.db.select().from(SessionTaskTable).where(eq(SessionTaskTable.parent_id, chat.id)).get().pipe(Effect.orDie)
+    expect(task).toMatchObject({ status: "completed", output: "done", attempt: 1, owner: null, input_id: assistant.id })
   }))
   it.instance(
     "description sorts subagents by name and is stable across calls",
@@ -300,6 +305,34 @@ describe("tool.task", () => {
       expect(result.output).toContain(`<task id="${child.id}" state="completed">`)
       expect(seen?.sessionID).toBe(child.id)
       expect(seen?.variant).toBe("xhigh")
+    }),
+  )
+
+  it.instance("rejects resuming a task owned by another parent before sending a prompt", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const other = yield* sessions.create({ title: "Other parent" })
+      const child = yield* sessions.create({ parentID: other.id, title: "Unrelated child" })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let sent = false
+      const result = yield* def.execute(
+        { description: "inspect bug", prompt: "continue", subagent_type: "general", task_id: child.id },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ text: "wrong parent", onPrompt: () => { sent = true } }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      ).pipe(Effect.exit)
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(sent).toBe(false)
+      expect(yield* sessions.children(chat.id)).toHaveLength(0)
     }),
   )
 

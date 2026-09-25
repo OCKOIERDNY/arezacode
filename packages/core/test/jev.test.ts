@@ -92,3 +92,19 @@ test("Jev sends one bounded typed request and rejects invalid, failed, or incomp
     server.stop(true)
   }
 })
+
+test("Jev deterministically orders complete Semgrep severity batches without a model call", async () => {
+  let modelCalls = 0
+  const fetcher: typeof fetch = Object.assign(async () => {
+    modelCalls++
+    return Response.json({ answers: {} })
+  }, { preconnect: fetch.preconnect })
+  const findings = [
+    "src/info.ts:1 [INFO] info: informational finding",
+    "src/warning.ts:2 [WARNING] warning: review this finding",
+    "src/error.ts:3 [ERROR] error: critical finding",
+  ]
+  const ranked = await Jev.prioritizeSemgrep(findings, undefined, fetcher)
+  expect(ranked).toEqual([findings[2], findings[1], findings[0]])
+  expect(modelCalls).toBe(0)
+})

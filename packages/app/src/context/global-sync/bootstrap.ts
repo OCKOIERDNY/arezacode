@@ -21,6 +21,8 @@ import type {
   ReferenceListInput,
   ReferenceListOutput,
   SessionApi,
+  SkillListInput,
+  SkillListOutput,
 } from "@opencode-ai/client/promise"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@opencode-ai/core/util/path"
@@ -44,6 +46,7 @@ import { ScopedKey, type ServerScope } from "@/utils/server-scope"
 import { normalizeSessionInfo } from "@/utils/session"
 import type { ServerProtocol } from "@/utils/server-protocol"
 import type { ServerApi } from "@/utils/server"
+import { skillCommand } from "@/utils/skill-command"
 
 type GlobalStore = {
   ready: boolean
@@ -249,6 +252,10 @@ type CommandListApi = {
   readonly list: (input?: CommandListInput) => Promise<CommandListOutput>
 }
 
+type SkillListApi = {
+  readonly list: (input?: SkillListInput) => Promise<SkillListOutput>
+}
+
 type ReferenceListApi = {
   readonly list: (input?: ReferenceListInput) => Promise<ReferenceListOutput>
 }
@@ -274,6 +281,7 @@ export const loadCommands = (
   api: CommandListApi,
   legacy?: OpencodeClient,
   protocol?: Promise<ServerProtocol>,
+  skills?: SkillListApi,
 ): Promise<SlashCommandInfo[]> =>
   retry(async () => {
     if ((await protocol) === "v1" && legacy) {
@@ -290,7 +298,16 @@ export const loadCommands = (
         }
       })
     }
-    return api.list({ location: { directory } }).then((result) => result.data)
+    const [commands, available] = await Promise.all([
+      api.list({ location: { directory } }),
+      skills?.list({ location: { directory } }),
+    ])
+    return [
+      ...commands.data,
+      ...(available?.data ?? [])
+        .filter((skill) => skill.slash !== false && !commands.data.some((command) => command.name === skill.name))
+        .map(skillCommand),
+    ]
   })
 
 export const loadPathQuery = (
@@ -333,6 +350,7 @@ export async function bootstrapDirectory(input: {
   api: CatalogApi & {
     readonly agent: AgentListApi
     readonly command: CommandListApi
+    readonly skill?: SkillListApi
     readonly mcp: McpApi
     readonly permission: PermissionApi
     readonly project: ProjectApi
@@ -430,11 +448,10 @@ export async function bootstrapDirectory(input: {
             if (next) input.vcsCache.setStore("value", next)
           })
         }),
-      input.mcp &&
-        (() =>
-          loadCommands(input.directory, input.api.command, input.sdk, input.protocol).then((commands) =>
-            input.setStore("command", commands),
-          )),
+      () =>
+        loadCommands(input.directory, input.api.command, input.sdk, input.protocol, input.api.skill).then((commands) =>
+          input.setStore("command", commands),
+        ),
       () =>
         input.queryClient.fetchQuery(
           loadReferencesQuery(input.scope, input.directory, input.api.reference, input.sdk, input.protocol),

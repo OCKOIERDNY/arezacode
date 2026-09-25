@@ -16,6 +16,24 @@ const fixture = Effect.gen(function* () {
 })
 
 describe("ReadToolFileSystem", () => {
+  it.effect("reads current contents after edits and discovers a formerly missing path", () =>
+    Effect.gen(function* () {
+      const { fs, files, directory } = yield* fixture
+      const file = path.join(directory, "changing.txt")
+      expect(yield* ReadToolFileSystem.read(fs, file, "changing.txt").pipe(Effect.flip))
+        .toMatchObject({ _tag: "PlatformError" })
+      yield* files.writeFileString(file, "first")
+      expect(yield* ReadToolFileSystem.read(fs, file, "changing.txt"))
+        .toMatchObject({ content: "first", encoding: "utf8" })
+      yield* files.writeFileString(file, "other")
+      expect(yield* ReadToolFileSystem.read(fs, file, "changing.txt"))
+        .toMatchObject({ content: "other", encoding: "utf8" })
+      yield* files.remove(file)
+      expect(yield* ReadToolFileSystem.read(fs, file, "changing.txt").pipe(Effect.flip))
+        .toMatchObject({ _tag: "PlatformError" })
+    }),
+  )
+
   it.effect("fails with a typed filesystem error when a resolved file disappears", () =>
     Effect.gen(function* () {
       const { fs, directory } = yield* fixture

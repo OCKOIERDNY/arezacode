@@ -36,12 +36,13 @@ export type TimingEvent =
   | { type: "dispatch"; time: number }
   | { type: "response"; time: number; status: number }
   | { type: "retry"; time: number; attempt: number; reason: string; delayMs: number }
+  | { type: "stall"; time: number; phase: "first-event" | "stream"; timeoutMs: number }
 
 export class Observer extends Context.Reference<(event: TimingEvent) => Effect.Effect<void>>("@opencode/LLM/RequestObserver", {
   defaultValue: () => () => Effect.void,
 }) {}
 
-const observe = (event: TimingEvent) => Effect.gen(function* () {
+export const observe = (event: TimingEvent) => Effect.gen(function* () {
   const observer = yield* Observer
   yield* Effect.logInfo("llm.request", event)
   yield* observer(event)

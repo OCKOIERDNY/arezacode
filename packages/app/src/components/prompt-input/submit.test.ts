@@ -717,11 +717,17 @@ describe("prompt submit worktree selection", () => {
     ])
   })
 
-  test("submits slash commands through the current session API", async () => {
+  test.each([
+    ["/review staged changes", "staged changes"],
+    ["please /review staged changes", "please staged changes"],
+    ["staged changes /review", "staged changes"],
+    ["please\n/review\nstaged changes", "please staged changes"],
+    ["check src/review /review staged changes", "check src/review staged changes"],
+  ])("submits slash commands anywhere through the current session API: %s", async (content, argumentsText) => {
     params = { id: "session-1" }
     variant = "high"
     commands.push({ name: "review" })
-    promptValue = [{ type: "text", content: "/review staged changes", start: 0, end: 22 }]
+    promptValue = [{ type: "text", content, start: 0, end: content.length }]
 
     const submit = createPromptSubmit({
       prompt,
@@ -749,7 +755,7 @@ describe("prompt submit worktree selection", () => {
         sessionID: "session-1",
         id: expect.stringMatching(/^msg_/),
         command: "review",
-        arguments: "staged changes",
+        arguments: argumentsText,
         agent: "agent",
         model: { id: "model", providerID: "provider", variant: "high" },
         files: [{

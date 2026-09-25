@@ -866,6 +866,8 @@ export const dict = {
   "directory.error.invalidUrl": "Invalid directory in URL.",
 
   "error.chain.unknown": "Unknown error",
+  "error.command.missing": "Command not found: {{command}}",
+  "error.command.unsupported": "Command {{command}} requires server-side shell or subtask support.",
   "error.server.invalidConfiguration": "Invalid configuration",
   "error.chain.causedBy": "Caused by:",
   "error.chain.apiError": "API error",
@@ -994,6 +996,8 @@ export const dict = {
 
   "session.header.search.placeholder": "Search {{project}}",
   "session.header.searchFiles": "Search files",
+  "session.instructions.title": "Custom instructions",
+  "session.instructions.description": "Instructions for this chat. Changes apply from the next model turn. Clear the field to remove them.",
   "session.header.openIn": "Open in",
   "session.header.open.action": "Open {{app}}",
   "session.header.open.ariaLabel": "Open in {{app}}",

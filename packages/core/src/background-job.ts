@@ -178,10 +178,8 @@ export const make = Effect.gen(function* () {
     run: Effect.Effect<string, unknown>,
   ) {
     return yield* run.pipe(
-      Effect.matchCauseEffect({
-        onSuccess: (output) => settle(id, token, sequence, Exit.succeed(output)),
-        onFailure: (cause) => settle(id, token, sequence, Exit.failCause(cause)),
-      }),
+      Effect.onExit((exit) => settle(id, token, sequence, exit)),
+      Effect.ignoreCause,
       Effect.asVoid,
       Effect.forkIn(scope, { startImmediately: true }),
     )
@@ -297,7 +295,9 @@ export const make = Effect.gen(function* () {
     if (input.timeout <= 0) return { info: snapshot(job), timedOut: true }
     const info = yield* Deferred.await(job.done).pipe(Effect.timeoutOption(input.timeout))
     if (info._tag === "Some") return { info: info.value, timedOut: false }
-    return { info: snapshot(job), timedOut: true }
+    const current = (yield* SynchronizedRef.get(state.jobs)).get(input.id)
+    const latest = current?.token === job.token ? current : job
+    return { info: snapshot(latest), timedOut: latest.info.status === "running" }
   })
 
   const waitForPromotion: Interface["waitForPromotion"] = Effect.fn("BackgroundJob.waitForPromotion")(function* (id) {

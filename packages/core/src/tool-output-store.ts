@@ -6,6 +6,7 @@ import { Jev } from "./jev"
 import path from "path"
 import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
 import { Config } from "./config"
+import { ConfigToolOutput } from "./config/tool-output"
 import { FSUtil } from "./fs-util"
 import { Global } from "./global"
 import { makeGlobalNode, makeLocationNode } from "./effect/app-node"
@@ -13,8 +14,8 @@ import { SessionSchema } from "./session/schema"
 import { Identifier } from "./util/identifier"
 import type { ToolOutput } from "@opencode-ai/llm"
 
-export const MAX_LINES = 2_000
-export const MAX_BYTES = 50 * 1024
+export const MAX_LINES = ConfigToolOutput.DEFAULT_MAX_LINES
+export const MAX_BYTES = ConfigToolOutput.DEFAULT_MAX_BYTES
 export const RETENTION = Duration.days(7)
 
 export const MANAGED_DIRECTORY = "tool-output"
@@ -106,12 +107,6 @@ const boundedPreview = (text: string, marker: string, maxLines: number, maxBytes
   return bounded.tail ? `${bounded.head}\n\n${marker}\n\n${bounded.tail}` : `${bounded.head}\n\n${marker}`
 }
 
-const lineCount = (text: string) => {
-  let count = 1
-  for (const char of text) if (char === "\n") count++
-  return count
-}
-
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -150,14 +145,16 @@ const layer = Layer.effect(
               catch: (cause) => new StorageError({ operation: "encode", cause }),
             })
           : text.map((item) => item.text).join("")
+      if (ConfigToolOutput.withinLimits(contextual, outputLimits)) return { output: input.output, outputPaths: [] }
       const ranked = yield* Effect.promise(() => Jev.context(contextual, input.sessionID))
-      const compressed = (yield* Effect.tryPromise((signal) => AutomaticChecks.compress(ranked ?? contextual, signal, input.sessionID)).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-      )) ?? ranked
+      const compressed =
+        (yield* Effect.tryPromise((signal) =>
+          AutomaticChecks.compress(ranked ?? contextual, signal, input.sessionID),
+        ).pipe(Effect.catch(() => Effect.succeed(undefined)))) ?? ranked
       if (
         compressed &&
         Buffer.byteLength(compressed) < outputLimits.maxBytes &&
-        lineCount(compressed) < outputLimits.maxLines
+        compressed.split("\n").length < outputLimits.maxLines
       ) {
         const outputPath = yield* write(contextual)
         return {
@@ -174,15 +171,6 @@ const layer = Layer.effect(
           outputPaths: [outputPath],
         }
       }
-      if (
-        lineCount(contextual) <= outputLimits.maxLines &&
-        Buffer.byteLength(contextual, "utf-8") <= outputLimits.maxBytes
-      )
-        return {
-          output: input.output,
-          outputPaths: [],
-        }
-
       const outputPath = yield* write(contextual)
       const marker = `... output truncated; full content saved to ${outputPath} ...`
 

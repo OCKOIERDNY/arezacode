@@ -8,6 +8,7 @@ import { ProviderID, type ModelID, type ProviderOptions, type CacheHint } from "
 import * as OpenAICompatibleProfiles from "./openai-compatible-profile"
 import * as OpenAIChat from "../protocols/openai-chat"
 import { isRecord } from "../protocols/shared"
+import { cacheControl } from "../protocols/utils/cache"
 
 export const profile = OpenAICompatibleProfiles.profiles.openrouter
 export const id = ProviderID.make(profile.provider)
@@ -45,7 +46,7 @@ export const protocol = Protocol.make({
     schema: OpenRouterBody,
     from: (request) => {
       const content = new Map<object, Array<Record<string, unknown>>>()
-      const marker = (hint?: CacheHint) => hint ? { cache_control: { type: "ephemeral", ...(hint.ttlSeconds === 3600 ? { ttl: "1h" } : {}) } } : {}
+      const marker = (hint?: CacheHint) => hint ? { cache_control: cacheControl(hint.ttlSeconds) } : {}
       return OpenAIChat.fromRequest(request, request.model.id.startsWith("anthropic/") ? (messages, source) => {
         for (const message of messages) {
           const parts = source.content.filter((part) => source.role !== "tool" || part.type === "tool-result" && message.role === "tool" && part.id === message.tool_call_id)
@@ -74,7 +75,7 @@ export const protocol = Protocol.make({
                   const marked = content.get(message)
                   return marked ? { ...message, content: marked } : message
                 }),
-                tools: body.tools?.map((tool, index) => request.tools[index]?.cache ? { ...tool, cache_control: { type: "ephemeral", ...(request.tools[index]?.cache?.ttlSeconds === 3600 ? { ttl: "1h" } : {}) } } : tool),
+                tools: body.tools?.map((tool, index) => request.tools[index]?.cache ? { ...tool, cache_control: cacheControl(request.tools[index]?.cache?.ttlSeconds) } : tool),
               } : {}),
               ...bodyOptions(request.providerOptions?.openrouter),
             }) as OpenRouterBody,

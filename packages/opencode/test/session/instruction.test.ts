@@ -210,6 +210,24 @@ describe("Instruction.resolve", () => {
 })
 
 describe("Instruction.system", () => {
+  it.live("automatically loads current global custom instructions for separate chats", () =>
+    Effect.gen(function* () {
+      const home = yield* tmpWithFiles({ ".codex/AGENTS.md": "Use Bun for every task", "AGENTS.md": "Areza rules" })
+      const parent = yield* tmpdirScoped()
+      const child = yield* tmpdirScoped()
+      const observe = (directory: string) => Instruction.Service.pipe(
+        Effect.flatMap((service) => service.system()),
+        provideInstance(directory),
+        provideInstruction({ home, config: home }),
+      )
+      expect((yield* observe(parent)).join("\n")).toContain("Use Bun for every task")
+      expect((yield* observe(child)).join("\n")).toContain("Use Bun for every task")
+      yield* write(path.join(home, ".codex", "AGENTS.md"), "Use Bun and answer in English")
+      expect((yield* observe(parent)).join("\n")).toContain("answer in English")
+      expect((yield* observe(child)).join("\n")).toContain("answer in English")
+    }),
+  )
+
   it.live("loads both project and global AGENTS.md when both exist", () =>
     Effect.gen(function* () {
       const globalTmp = yield* tmpWithFiles({ "AGENTS.md": "# Global Instructions" })

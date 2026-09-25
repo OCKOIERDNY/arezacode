@@ -4,7 +4,6 @@ import path from "path"
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { ChildProcess } from "effect/unstable/process"
-import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Config } from "@opencode-ai/core/config"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -14,7 +13,7 @@ import { PermissionV2 } from "@opencode-ai/core/permission"
 import { AppProcess } from "@opencode-ai/core/process"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { SessionV2 } from "@opencode-ai/core/session"
-import { BashTool } from "@opencode-ai/core/tool/bash"
+import { BashTool, checkFingerprint } from "@opencode-ai/core/tool/bash"
 import { ToolRegistry } from "@opencode-ai/core/tool/registry"
 import { ToolOutputStore } from "@opencode-ai/core/tool-output-store"
 import { location } from "./fixture/location"
@@ -132,6 +131,21 @@ const call = (input: typeof BashTool.Input.Type, id = "call-bash") => ({
 })
 
 const it = testEffect(Layer.empty)
+
+test("failed-check fingerprints change when the timeout or clean revision changes", () => {
+  const input = {
+    sessionID: "session",
+    directory: "/project",
+    commands: ["test /project/package.json [\"test\"]"],
+    timeout: 120_000,
+    revision: "revision-a",
+    discoveryInputs: [["/project/package.json", "hash"]] as [string, string][],
+    files: [] as [string, string][],
+  }
+
+  expect(checkFingerprint(input)).not.toBe(checkFingerprint({ ...input, timeout: 300_000 }))
+  expect(checkFingerprint(input)).not.toBe(checkFingerprint({ ...input, revision: "revision-b" }))
+})
 
 describe("BashTool", () => {
   it.live("runs one verification pipeline in order and stops before build or deploy on failure", () => Effect.acquireUseRelease(

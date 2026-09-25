@@ -10,11 +10,12 @@ import { ToolID } from "./schema"
 import { TRUNCATION_DIR } from "./truncation-dir"
 import { AutomaticChecks } from "@opencode-ai/core/automatic-checks"
 import { Jev } from "@opencode-ai/core/jev"
+import { ConfigToolOutput } from "@opencode-ai/core/config/tool-output"
 
 const RETENTION = Duration.days(7)
 
-export const MAX_LINES = 2000
-export const MAX_BYTES = 50 * 1024
+export const MAX_LINES = ConfigToolOutput.DEFAULT_MAX_LINES
+export const MAX_BYTES = ConfigToolOutput.DEFAULT_MAX_BYTES
 export const DIR = TRUNCATION_DIR
 export const GLOB = path.join(TRUNCATION_DIR, "*")
 
@@ -91,10 +92,12 @@ const layer = Layer.effect(
       const resolved = yield* limits()
       const maxLines = options.maxLines ?? resolved.maxLines
       const maxBytes = options.maxBytes ?? resolved.maxBytes
+      if (ConfigToolOutput.withinLimits(text, { maxLines, maxBytes })) return
       const ranked = yield* Effect.promise(() => Jev.context(text, options.sessionID))
-      const compressed = (yield* Effect.tryPromise((signal) => AutomaticChecks.compress(ranked ?? text, signal, options.sessionID)).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-      )) ?? ranked
+      const compressed =
+        (yield* Effect.tryPromise((signal) => AutomaticChecks.compress(ranked ?? text, signal, options.sessionID)).pipe(
+          Effect.catch(() => Effect.succeed(undefined)),
+        )) ?? ranked
       if (compressed && Buffer.byteLength(compressed) < maxBytes && compressed.split("\n").length < maxLines) {
         const file = yield* write(text)
         return {
@@ -112,13 +115,13 @@ const layer = Layer.effect(
       const maxLines = options.maxLines ?? resolved.maxLines
       const maxBytes = options.maxBytes ?? resolved.maxBytes
       const direction = options.direction ?? "head"
-      const lines = text.split("\n")
       const totalBytes = Buffer.byteLength(text, "utf-8")
 
-      if (lines.length <= maxLines && totalBytes <= maxBytes) {
+      if (ConfigToolOutput.withinLimits(text, { maxLines, maxBytes })) {
         return { content: text, truncated: false } as const
       }
 
+      const lines = text.split("\n")
       const out: string[] = []
       let i = 0
       let bytes = 0

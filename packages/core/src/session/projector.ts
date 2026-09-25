@@ -361,6 +361,17 @@ const layer = Layer.effectDiscard(
         .run()
         .pipe(Effect.orDie),
     )
+    yield* events.project(SessionEvent.InstructionsChanged, (event) =>
+      db
+        .update(SessionTable)
+        .set({
+          metadata: sql`json_set(coalesce(${SessionTable.metadata}, '{}'), '$.instructions', ${event.data.instructions})`,
+          time_updated: DateTime.toEpochMillis(event.data.timestamp),
+        })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie),
+    )
     yield* events.project(SessionEvent.AgentSwitched, (event) =>
       db
         .update(SessionTable)
@@ -400,6 +411,7 @@ const layer = Layer.effectDiscard(
         if (event.durable === undefined) return yield* Effect.die("Durable Session event is missing aggregate sequence")
         yield* SessionInput.projectAdmitted(db, {
           admittedSeq: event.durable.seq,
+          preparation: event.data.preparation,
           id: event.data.messageID,
           sessionID: event.data.sessionID,
           prompt: event.data.prompt,
@@ -407,6 +419,11 @@ const layer = Layer.effectDiscard(
           timeCreated: event.data.timestamp,
         })
       }),
+    )
+    yield* events.project(SessionEvent.CommandPrepared, (event) =>
+      db.update(SessionInputTable).set({ preparation: event.data.preparation })
+        .where(and(eq(SessionInputTable.id, event.data.messageID), eq(SessionInputTable.session_id, event.data.sessionID)))
+        .run().pipe(Effect.orDie, Effect.asVoid),
     )
     yield* events.project(SessionEvent.ContextUpdated, (event) => run(db, event))
     yield* events.project(SessionEvent.Synthetic, (event) => run(db, event))

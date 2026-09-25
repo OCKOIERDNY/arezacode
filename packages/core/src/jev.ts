@@ -497,8 +497,8 @@ export async function context(text: string, sessionID?: string, fetcher: typeof 
 
 export async function testFindings(text: string, sessionID?: string, fetcher: typeof fetch = fetch) {
   if (text.includes("Jev prioritized test failures:")) return
-  const findings = [...new Set(text.replace(/\u001b\[[0-9;]*m/g, "").split("\n")
-    .filter((line) => /^\s*(?:\(fail\)|FAIL(?:ED)?\b|[×✕✗]\s|AssertionError:)/.test(line)))]
+  const findings = uniqueFindings(text.replace(/\u001b\[[0-9;]*m/g, "").split("\n")
+    .filter((line) => /^\s*(?:\(fail\)|FAIL(?:ED)?\b|[×✕✗]\s|AssertionError:)/.test(line)))
   if (findings.length < 2) return
   const ranked = await prioritize(findings, sessionID, fetcher)
   if (ranked.every((line, index) => line === findings[index])) return
@@ -506,10 +506,11 @@ export async function testFindings(text: string, sessionID?: string, fetcher: ty
 }
 
 export async function prioritize(findings: string[], sessionID?: string, fetcher: typeof fetch = fetch) {
-  if (sessionID && quickEdit(sessionID)) return findings
-  if (findings.length < 2) return findings
-  const batches = await Promise.all(Array.from({ length: Math.ceil(Math.min(findings.length, 300) / 30) }, async (_, batch) => {
-    const items = findings.slice(batch * 30, batch * 30 + 30)
+  const unique = uniqueFindings(findings)
+  if (unique.length < 2) return unique
+  if (sessionID && quickEdit(sessionID)) return unique
+  const batches = await Promise.all(Array.from({ length: Math.ceil(Math.min(unique.length, 300) / 30) }, async (_, batch) => {
+    const items = unique.slice(batch * 30, batch * 30 + 30)
     const answers = await evaluate(
     "findings",
     { task: sessionID ? tasks.get(sessionID)?.text : undefined, findings: items },
@@ -529,12 +530,30 @@ export async function prioritize(findings: string[], sessionID?: string, fetcher
     return items.map((text, index) => ({ text, answer: answers?.[`finding${index}`] }))
   }))
   const latest = await settings()
-  if (!latest.enabled || !latest.findings) return findings
-  return [...batches.flat(), ...findings.slice(300).map((text) => ({ text, answer: undefined }))]
+  if (!latest.enabled || !latest.findings) return unique
+  return [...batches.flat(), ...unique.slice(300).map((text) => ({ text, answer: undefined }))]
     .sort((a, b) => {
       const score = (answer: Answer | undefined) =>
         answer?.type === "score" && answer.confidence >= 0.8 ? answer.score : 1
       return score(b.answer) - score(a.answer)
     })
     .map((item) => item.text)
+}
+
+export async function prioritizeSemgrep(findings: string[], sessionID?: string, fetcher: typeof fetch = fetch) {
+  const unique = uniqueFindings(findings)
+  const severity = new Map([["ERROR", 3], ["WARNING", 2], ["INFO", 1]])
+  const labeled = unique.map((text) => ({ text, rank: severity.get(text.match(/\[(ERROR|WARNING|INFO)\]/)?.[1] ?? "") }))
+  if (labeled.every((item) => item.rank !== undefined))
+    return labeled.sort((a, b) => b.rank! - a.rank!).map((item) => item.text)
+  return prioritize(unique, sessionID, fetcher)
+}
+
+function uniqueFindings(findings: string[]) {
+  const unique = new Map<string, string>()
+  findings.forEach((finding) => {
+    const key = finding.replace(/\u001b\[[0-9;]*m/g, "").trim().replace(/\s+/g, " ")
+    if (!unique.has(key)) unique.set(key, finding)
+  })
+  return [...unique.values()]
 }

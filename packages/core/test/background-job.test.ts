@@ -1,7 +1,8 @@
 import { describe, expect } from "bun:test"
 import { BackgroundJob } from "@opencode-ai/core/background-job"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Deferred, Effect, Exit, Scope } from "effect"
+import { Deferred, Effect, Exit, Fiber, Scope } from "effect"
+import { TestClock } from "effect/testing"
 import { it } from "./lib/effect"
 
 const jobsLayer = LayerNode.compile(BackgroundJob.node)
@@ -86,7 +87,19 @@ describe("BackgroundJob", () => {
     }).pipe(Effect.provide(jobsLayer)),
   )
 
-  it.live("interrupts live work without promising settlement after the owning process-local scope closes", () =>
+  it.effect("returns the latest metadata after a timed wait", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const job = yield* jobs.start({ type: "test", run: Effect.never })
+      const waiting = yield* jobs.wait({ id: job.id, timeout: 100 }).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      yield* jobs.promote(job.id)
+      yield* TestClock.adjust(100)
+      expect(yield* Fiber.join(waiting)).toMatchObject({ timedOut: true, info: { metadata: { background: true } } })
+    }).pipe(Effect.provide(jobsLayer)),
+  )
+
+  it.live("settles interrupted work when its owning scope closes", () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make()
       const interrupted = yield* Deferred.make<void>()
@@ -99,8 +112,11 @@ describe("BackgroundJob", () => {
       yield* Scope.close(scope, Exit.void)
 
       yield* Deferred.await(interrupted).pipe(Effect.timeout("1 second"))
-      // The abandoned in-memory registry is not a durable observation channel.
-      expect((yield* jobs.get(job.id))?.status).toBe("running")
+      expect((yield* jobs.get(job.id))?.status).toBe("cancelled")
+      expect(yield* jobs.wait({ id: job.id, timeout: 0 })).toMatchObject({
+        timedOut: false,
+        info: { status: "cancelled" },
+      })
     }),
   )
 })

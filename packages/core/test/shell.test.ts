@@ -54,13 +54,23 @@ describe("shell", () => {
     expect(Shell.name(Shell.acceptable("nu"))).not.toBe("nu")
   })
 
+  test("preserves command substitution and variable evaluation order", async () => {
+    for (const shell of ["/bin/bash", "/bin/zsh"]) {
+      if (!(await Bun.file(shell).exists())) continue
+      const process = Bun.spawn([shell, ...Shell.args(shell, 'value=done; printf "%s:%s" "$value" "$(printf nested)"', "/tmp")], { stdout: "pipe", stderr: "pipe" })
+      expect(await new Response(process.stdout).text()).toBe("done:nested")
+      expect(await process.exited).toBe(0)
+    }
+  })
+
   test("builds command args per shell family", () => {
     expect(Shell.args("/bin/sh", "echo hi", "/tmp")).toEqual(["-c", "echo hi"])
     expect(Shell.args("/usr/bin/fish", "echo hi", "/tmp")).toEqual(["-c", "echo hi"])
     const zsh = Shell.args("/bin/zsh", "echo hi", "/tmp")
     expect(zsh[0]).toBe("-l")
     expect(zsh[1]).toBe("-c")
-    expect(zsh.at(-1)).toBe("/tmp")
+    expect(zsh.at(-2)).toBe("/tmp")
+    expect(zsh.at(-1)).toBe("echo hi")
   })
 
   if (process.platform === "win32") {

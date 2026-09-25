@@ -1,11 +1,14 @@
-import { Permission } from "@opencode-ai/schema/permission"
-import { Schema } from "effect"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { OpenCode, type OpenCodeClient } from "@opencode-ai/client/promise"
-import type { SessionsPromptOutput, SessionsHealthOutput, SessionsHandoffOutput, SessionsListInput } from "@opencode-ai/client-current"
+import type {
+  SessionsPromptOutput,
+  SessionsHealthOutput,
+  SessionsHandoffOutput,
+  SessionsListInput,
+} from "@opencode-ai/client-current"
 import type { ServerConnection } from "@/context/server"
 import { decode64 } from "@/utils/base64"
-import { withCurrentContract, type LegacyPrompt } from "./server-compat"
+import { createApprovalApi, withCurrentContract, type LegacyPrompt } from "./server-compat"
 
 export function authTokenFromCredentials(input: { username?: string; password: string }) {
   return btoa(`${input.username ?? "opencode"}:${input.password}`)
@@ -22,18 +25,25 @@ export function authFromToken(token: string | null) {
   }
 }
 
+export function serverClientOptions(input: { server: ServerConnection.HttpBase; fetch?: typeof globalThis.fetch }) {
+  return {
+    baseUrl: input.server.url,
+    fetch: input.fetch,
+    headers: input.server.password
+      ? {
+          Authorization: `Basic ${authTokenFromCredentials({ username: input.server.username, password: input.server.password })}`,
+        }
+      : undefined,
+  }
+}
+
 export function createSdkForServer({
   server,
   ...config
 }: Omit<NonNullable<Parameters<typeof createOpencodeClient>[0]>, "baseUrl"> & {
   server: ServerConnection.HttpBase
 }) {
-  const auth = (() => {
-    if (!server.password) return undefined
-    return {
-      Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}`,
-    }
-  })()
+  const options = serverClientOptions({ server, fetch: config.fetch })
 
   return createOpencodeClient({
     ...config,
@@ -41,7 +51,7 @@ export function createSdkForServer({
       ...(config.headers instanceof Headers || Array.isArray(config.headers)
         ? Object.fromEntries(config.headers instanceof Headers ? config.headers.entries() : config.headers)
         : config.headers),
-      ...auth,
+      ...options.headers,
     },
     baseUrl: server.url,
   })
@@ -51,53 +61,29 @@ export function createApiForServer(input: {
   server: ServerConnection.HttpBase
   fetch?: typeof globalThis.fetch
 }): ServerApi {
-  const options = {
-    baseUrl: input.server.url,
-    fetch: input.fetch,
-    headers: input.server.password
-      ? {
-          Authorization: `Basic ${authTokenFromCredentials({
-            username: input.server.username,
-            password: input.server.password,
-          })}`,
-        }
-      : undefined,
-  }
+  const options = serverClientOptions(input)
   return withCurrentContract(OpenCode.make(options), options)
 }
 
-export function createApprovalApiForServer(input: { server: ServerConnection.HttpBase; fetch?: typeof globalThis.fetch }) {
-  const request = async (sessionID: string, mode?: Permission.ApprovalMode) => {
-    const response = await (input.fetch ?? fetch)(new URL(`/api/session/${encodeURIComponent(sessionID)}${mode ? "/approval" : ""}`, input.server.url), {
-      method: mode ? "POST" : "GET",
-      headers: {
-        "Content-Type": "application/json",
-        ...(input.server.password ? { Authorization: `Basic ${authTokenFromCredentials({ username: input.server.username, password: input.server.password })}` } : {}),
-      },
-      ...(mode ? { body: JSON.stringify({ mode }) } : {}),
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!response.ok) throw new Error(`Approval request failed (${response.status})`)
-    if (mode) return undefined
-    const body: unknown = await response.json()
-    const data = body && typeof body === "object" && "data" in body ? body.data : body
-    if (!data || typeof data !== "object" || !("id" in data)) throw new Error("Invalid session response")
-    const value = "approvalMode" in data ? data.approvalMode : undefined
-    return Schema.is(Permission.ApprovalMode)(value) ? value : "default"
-  }
-  return {
-    get: (sessionID: string) => request(sessionID),
-    set: (sessionID: string, mode: Permission.ApprovalMode) => request(sessionID, mode),
-  }
+export function createApprovalApiForServer(input: {
+  server: ServerConnection.HttpBase
+  fetch?: typeof globalThis.fetch
+}) {
+  return createApprovalApi(serverClientOptions(input))
 }
 
 export type ServerApi = Omit<OpenCodeClient, "session"> & {
   session: Omit<OpenCodeClient["session"], "prompt" | "list"> & {
+    getInstructions: (input: { sessionID: string }, options?: { signal?: AbortSignal }) => Promise<string>
+    setInstructions: (input: { sessionID: string; instructions: string }, options?: { signal?: AbortSignal }) => Promise<void>
     list: (
       input?: Parameters<OpenCodeClient["session"]["list"]>[0] & SessionsListInput,
       options?: Parameters<OpenCodeClient["session"]["list"]>[1],
     ) => ReturnType<OpenCodeClient["session"]["list"]>
-    prompt: (input: Parameters<OpenCodeClient["session"]["prompt"]>[0] & LegacyPrompt, options?: Parameters<OpenCodeClient["session"]["prompt"]>[1]) => Promise<SessionsPromptOutput>
+    prompt: (
+      input: Parameters<OpenCodeClient["session"]["prompt"]>[0] & LegacyPrompt,
+      options?: Parameters<OpenCodeClient["session"]["prompt"]>[1],
+    ) => Promise<SessionsPromptOutput>
     health: (input: { sessionID: string }, options?: { signal?: AbortSignal }) => Promise<SessionsHealthOutput>
     handoff: (input: { sessionID: string }, options?: { signal?: AbortSignal }) => Promise<SessionsHandoffOutput>
   }

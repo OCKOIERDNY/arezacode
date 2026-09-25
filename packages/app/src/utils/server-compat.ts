@@ -1,6 +1,11 @@
 import type { ServerApi } from "./server"
 import type { ServerProtocol } from "./server-protocol"
 import { OpenCode } from "@opencode-ai/client-current"
+import { Permission } from "@opencode-ai/schema/permission"
+import { Schema } from "effect"
+import { expandCommandTemplate } from "@opencode-ai/core/util/command-template"
+import { skillCommand } from "./skill-command"
+import { CommandUnavailableError } from "./server-errors"
 import type { AgentPartInput, FilePartInput, OpencodeClient, Session, TextPartInput } from "@opencode-ai/sdk/v2/client"
 import type {
   Project,
@@ -89,12 +94,27 @@ function sessionInfo(session: Session): SessionInfo {
   }
 }
 
+export function createApprovalApi(options: Parameters<typeof OpenCode.make>[0]) {
+  const client = OpenCode.make(options)
+  return {
+    get: async (sessionID: string) => {
+      const session = await client.sessions.get({ sessionID }, { signal: AbortSignal.timeout(5000) })
+      return Schema.is(Permission.ApprovalMode)(session.approvalMode) ? session.approvalMode : "default"
+    },
+    set: (sessionID: string, mode: Permission.ApprovalMode) =>
+      client.sessions.setApproval({ sessionID, mode }, { signal: AbortSignal.timeout(5000) }),
+  }
+}
+
 export function withCurrentContract(legacy: OpenCodeClient, options: Parameters<typeof OpenCode.make>[0]): ServerApi {
   const current = OpenCode.make(options)
   return {
     ...legacy,
     session: {
       ...legacy.session,
+      getInstructions: async (input, requestOptions) =>
+        (await current.sessions.get(input, requestOptions)).instructions ?? "",
+      setInstructions: current.sessions.setInstructions,
       async list(value, requestOptions) {
         const result = await current.sessions.list({
           ...value,
@@ -123,6 +143,36 @@ export function withCurrentContract(legacy: OpenCodeClient, options: Parameters<
       active: current.sessions.active,
       health: current.sessions.health,
       handoff: current.sessions.handoff,
+      async command(value: SessionCommandInput & { independent?: boolean }, requestOptions) {
+        const session = await current.sessions.get({ sessionID: value.sessionID }, requestOptions)
+        const location = session.location
+        const commands = await current.commands.list({ location }, requestOptions)
+        const command = commands.data.find((command) => command.name === value.command)
+        const skill = command ? undefined : (await current.skills.list({ location }, requestOptions)).data
+          .find((skill) => skill.name === value.command && skill.slash !== false)
+        if (!command && !skill) throw new CommandUnavailableError(value.command, "missing")
+        const template = command?.template ?? (skill ? skillCommand(skill).template : "")
+        if (command) {
+          const result = await current.sessions.command(value, requestOptions)
+          return { ...result, type: "user" as const, data: { text: result.prompt.text } }
+        }
+        const agent = value.agent
+        const model = value.model
+        if (agent) await current.sessions.switchAgent({ sessionID: value.sessionID, agent }, requestOptions)
+        if (model) await current.sessions.switchModel({ sessionID: value.sessionID, model }, requestOptions)
+        const result = await current.sessions.prompt({
+          sessionID: value.sessionID,
+          id: value.id,
+          delivery: value.delivery,
+          resume: value.resume,
+          prompt: {
+            text: expandCommandTemplate(template, value.arguments ?? "").trim(),
+            independent: value.independent,
+            files: value.files,
+          },
+        }, requestOptions)
+        return { ...result, type: "user" as const, data: { text: result.prompt.text } }
+      },
       async prompt(value, requestOptions) {
         if (value.agent) await current.sessions.switchAgent({ sessionID: value.sessionID, agent: value.agent }, requestOptions)
         if (value.model) await current.sessions.switchModel({ sessionID: value.sessionID, model: { providerID: value.model.providerID, id: value.model.modelID, variant: value.variant } }, requestOptions)
@@ -515,11 +565,12 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
       async find(value: Parameters<ServerApi["file"]["find"]>[0]) {
         const result = await legacy(value.location).find.files({
           query: value.query,
+          type: value.type,
           dirs: value.type === undefined ? undefined : value.type === "directory" ? "true" : "false",
           limit: value.limit,
         })
         return located(
-          (result.data ?? []).map((path) => ({ path, type: value.type ?? "file" })),
+          (result.data ?? []).map((path) => ({ path, type: value.type ?? (/[\\/]$/.test(path) ? "directory" : "file") })),
           value.location,
         )
       },

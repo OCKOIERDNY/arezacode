@@ -4,7 +4,7 @@ import type { HomeScrollController } from "./home-scroll-controller"
 
 export function HomeProjects(props: {
   projects: HomeProjectsController
-  scroll: HomeScrollController
+  scroll?: HomeScrollController
   renderSessions?: HomeProjectsViewProps["renderSessions"]
   projectActive?: (server: string, directory: string) => boolean
 }) {
@@ -25,7 +25,7 @@ export function HomeProjects(props: {
       defaultServerKey={props.projects.server.defaultKey}
       canRevealProject={props.projects.project.canReveal}
       unseenCount={props.projects.project.unseenCount}
-      onWheel={props.scroll.viewport.containWheel}
+      onWheel={props.scroll?.viewport.containWheel}
       onChooseProject={props.projects.project.choose}
       onFocusServer={props.projects.server.focus}
       onToggleCollapsed={props.projects.server.toggleCollapsed}

@@ -77,6 +77,7 @@ import {
 } from "./prompt-input/contracts"
 import { createPromptSubmit } from "./prompt-input/submit"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
+import { matchPromptSlash } from "@opencode-ai/session-ui/prompt-slash"
 import { PromptContextItems } from "./prompt-input/context-items"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
 import { PromptDragOverlay } from "./prompt-input/drag-overlay"
@@ -723,7 +724,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (!cmd) return
     const menu = store.slashMenu
     closePopover()
-    const images = imageAttachments()
 
     if (cmd.type === "custom") {
       const text = `/${cmd.trigger} `
@@ -734,10 +734,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         focusEditorEnd()
         return
       }
-      setEditorText(text)
-      prompt.set([{ type: "text", content: text, start: 0, end: text.length }, ...images], text.length)
-      focusEditorEnd()
-      return
+      return replaceSlash(text)
     }
 
     if (menu) {
@@ -745,9 +742,23 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return
     }
 
-    clearEditor()
-    prompt.set([...DEFAULT_PROMPT, ...images], 0)
+    replaceSlash("")
     command.trigger(cmd.id, "slash")
+  }
+
+  const replaceSlash = (text: string) => {
+    const value = prompt.current().map((part) => ("content" in part ? part.content : "")).join("")
+    const trigger = matchPromptSlash(value, prompt.cursor() ?? value.length)
+    if (!trigger) return
+    editorRef.focus()
+    const range = document.createRange()
+    setRangeEdge(editorRef, range, "start", trigger.start)
+    setRangeEdge(editorRef, range, "end", trigger.end)
+    const selection = window.getSelection()
+    if (!selection) return
+    selection.removeAllRanges()
+    selection.addRange(range)
+    addPart({ type: "text", content: text, start: 0, end: text.length })
   }
 
   const {
@@ -969,13 +980,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     if (!shellMode) {
       const atMatch = rawText.substring(0, cursorPosition).match(/@(\S*)$/)
-      const slashMatch = rawText.match(/^\/(\S*)$/)
+      const slashMatch = matchPromptSlash(rawText, cursorPosition)
 
       if (atMatch) {
         atOnInput(atMatch[1])
         setStore({ popover: "at", slashMenu: false, slashMenuQuery: "" })
       } else if (slashMatch) {
-        slashOnInput(slashMatch[1])
+        slashOnInput(slashMatch.query)
         setStore({ popover: "slash", slashMenu: false, slashMenuQuery: "" })
       } else {
         closePopover()

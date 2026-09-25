@@ -128,6 +128,17 @@ assert.equal((await Jev.guardTool(input.sessionID, "project_check", { operation:
 assert.equal(await Jev.context("large output".repeat(500), input.sessionID, cosmetic), undefined)
 assert.deepEqual(await Jev.prioritize(["one", "two"], input.sessionID, cosmetic), ["one", "two"])
 assert.equal(calls, beforeCosmetic + 1)
+let duplicateRankingCalls = 0
+const duplicateRanking: typeof fetch = Object.assign(async () => {
+  duplicateRankingCalls++
+  return Response.json({ answers: {} })
+}, { preconnect: fetch.preconnect })
+assert.deepEqual(await Jev.prioritize(["same", "same"], undefined, duplicateRanking), ["same"])
+assert.equal(duplicateRankingCalls, 0)
+assert.deepEqual(await Jev.prioritize(["  FAIL same   test  ", "FAIL same test", "FAIL other test"], undefined, duplicateRanking), ["  FAIL same   test  ", "FAIL other test"])
+assert.equal(duplicateRankingCalls, 1)
+assert.equal(await Jev.testFindings("FAIL duplicate\n  \u001b[31mFAIL   duplicate\u001b[0m", undefined, duplicateRanking), undefined)
+assert.equal(duplicateRankingCalls, 1)
 let expansions = 0
 const expand: typeof fetch = Object.assign(async (_: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
   expansions++

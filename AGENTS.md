@@ -20,6 +20,16 @@ Examples: `fix(tui): simplify thinking toggle styling`, `docs: update contributi
 
 ## Style Guide
 
+### UI Conventions
+
+- Before building UI, look for an existing shared component and follow the nearest package's established patterns.
+- Keep imports and exports explicit and easy to scan; group related imports, avoid aliases and star imports, and expose only the API callers need.
+- Use Prettier for deterministic formatting. Check changed files with `bun run format:check -- <paths>`; do not reformat unrelated files.
+- Organize Tailwind utilities into readable groups that follow the local component pattern. Do not add a class-sorting plugin or rewrite existing class strings solely to impose a new order.
+- In vanilla CSS, group declarations by purpose and keep related selectors together; avoid one-off rules when a shared token, utility, or component already covers the need.
+- Prefer spacing, alignment, and hierarchy over decorative separators. Keep interface copy concise; use an icon-only control only when its action is recognizable, and retain an accessible name and tooltip where needed.
+- Treat visual restraint, copy quality, component choice, and whether an icon is recognizable as review decisions; formatting tools do not determine these.
+
 ### General Principles
 
 - Keep things in one function unless composable or reusable

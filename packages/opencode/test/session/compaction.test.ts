@@ -196,6 +196,7 @@ function createCompactionMarker(sessionID: SessionID) {
 function fake(
   input: Parameters<SessionProcessorModule.SessionProcessor.Interface["create"]>[0],
   result: "continue" | "compact",
+  session: SessionNs.Interface,
 ) {
   const msg = input.assistantMessage
   return {
@@ -204,17 +205,33 @@ function fake(
     },
     updateToolCall: Effect.fn("TestSessionProcessor.updateToolCall")(() => Effect.succeed(undefined)),
     completeToolCall: Effect.fn("TestSessionProcessor.completeToolCall")(() => Effect.void),
-    process: Effect.fn("TestSessionProcessor.process")(() => Effect.succeed(result)),
+    process: Effect.fn("TestSessionProcessor.process")(function* () {
+      if (result === "continue") {
+        msg.finish = "stop"
+        yield* session.updateMessage(msg)
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID: msg.sessionID,
+          messageID: msg.id,
+          type: "text",
+          text: "summary",
+        })
+      }
+      return result
+    }),
   } satisfies SessionProcessorModule.SessionProcessor.Handle
 }
 
 function processorLayer(result: "continue" | "compact") {
-  return Layer.succeed(
+  return Layer.effect(
     SessionProcessorModule.SessionProcessor.Service,
-    SessionProcessorModule.SessionProcessor.Service.of({
-      create: Effect.fn("TestSessionProcessor.create")((input) => Effect.succeed(fake(input, result))),
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      return SessionProcessorModule.SessionProcessor.Service.of({
+        create: Effect.fn("TestSessionProcessor.create")((input) => Effect.succeed(fake(input, result, session))),
+      })
     }),
-  )
+  ).pipe(Layer.provide(LayerNode.compile(SessionNs.node)))
 }
 
 function cfg(compaction?: ConfigV1.Info["compaction"]) {
@@ -812,6 +829,49 @@ describe("session.compaction.prune", () => {
 })
 
 describe("session.compaction.process", () => {
+  for (const terminal of ["length", "empty", "eof"] as const) {
+    itCompaction.instance(`retains original history after ${terminal} summary output`, () => {
+      const stub = llm()
+      stub.push(
+        Stream.fromIterable([
+          LLMEvent.textStart({ id: "summary" }),
+          LLMEvent.textDelta({ id: "summary", text: terminal === "empty" ? "" : "Incomplete summary" }),
+          LLMEvent.textEnd({ id: "summary" }),
+          ...(terminal === "eof"
+            ? []
+            : [
+                LLMEvent.stepFinish({
+                  index: 0,
+                  reason: terminal === "length" ? "length" : "stop",
+                  usage: basicUsage(),
+                }),
+                LLMEvent.finish({ reason: terminal === "length" ? "length" : "stop", usage: basicUsage() }),
+              ]),
+        ]),
+      )
+      return Effect.gen(function* () {
+        const sessions = yield* SessionNs.Service
+        const session = yield* sessions.create({})
+        const original = yield* createUserMessage(session.id, "Keep these constraints and unfinished work")
+        yield* createSummaryCompaction(session.id)
+        const messages = yield* sessions.messages({ sessionID: session.id })
+        expect(
+          yield* SessionCompaction.use.process({
+            sessionID: session.id,
+            parentID: messages.at(-1)!.info.id,
+            messages,
+            auto: true,
+          }),
+        ).toBe("stop")
+        const history = MessageV2.filterCompacted(yield* MessageV2.stream(session.id))
+        expect(history.some((item) => item.info.id === original.id)).toBe(true)
+        expect(
+          history.some((item) => item.parts.some((part) => part.type === "text" && part.metadata?.compaction_continue)),
+        ).toBe(false)
+      }).pipe(withCompaction({ llm: stub.llmLayer }))
+    })
+  }
+
   it.instance(
     "throws when parent is not a user message",
     Effect.gen(function* () {

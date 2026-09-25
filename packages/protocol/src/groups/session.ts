@@ -187,6 +187,14 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
       }).middleware(sessionLocationMiddleware),
     )
     .add(
+      HttpApiEndpoint.post("session.setInstructions", "/api/session/:sessionID/instructions", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ instructions: Schema.String }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      }).middleware(sessionLocationMiddleware),
+    )
+    .add(
       HttpApiEndpoint.post("session.switchAgent", "/api/session/:sessionID/agent", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ agent: Agent.ID }),
@@ -217,6 +225,31 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             description: "Switch the model used by subsequent provider turns.",
           }),
         ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.command", "/api/session/:sessionID/command", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({
+          id: SessionMessage.ID.pipe(Schema.optional),
+          command: Schema.String,
+          arguments: Schema.String.pipe(Schema.optional),
+          independent: Schema.Boolean.pipe(Schema.optional),
+          agent: Schema.String.pipe(Schema.optional),
+          model: Model.Ref.pipe(Schema.optional),
+          files: PromptInput.Prompt.fields.files,
+          delivery: SessionInput.Delivery.pipe(Schema.optional),
+          resume: Schema.Boolean.pipe(Schema.optional),
+        }),
+        success: Schema.Struct({ data: SessionInput.Admitted }),
+        error: [ConflictError, SessionNotFoundError],
+      }).middleware(sessionLocationMiddleware),
+    )
+    .add(
+      HttpApiEndpoint.get("session.tasks", "/api/session/:sessionID/tasks", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({ data: Schema.Array(SessionInput.Task) }),
+        error: SessionNotFoundError,
+      }).middleware(sessionLocationMiddleware),
     )
     .add(
       HttpApiEndpoint.post("session.prompt", "/api/session/:sessionID/prompt", {

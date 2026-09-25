@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { Database } from "@opencode-ai/core/database/database"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { Session } from "./session"
@@ -105,10 +106,12 @@ function completedCompactions(messages: SessionV1.WithParts[]) {
 
   return messages.flatMap((msg, assistantIndex): CompletedCompaction[] => {
     if (msg.info.role !== "assistant") return []
-    if (!msg.info.summary || !msg.info.finish || msg.info.error) return []
+    if (!MessageV2.isCompletedSummary(msg)) return []
+    const summary = summaryText(msg)
+    if (!summary) return []
     const userIndex = users.get(msg.info.parentID)
     if (userIndex === undefined) return []
-    return [{ userIndex, assistantIndex, summary: summaryText(msg) }]
+    return [{ userIndex, assistantIndex, summary }]
   })
 }
 
@@ -193,6 +196,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const config = yield* Config.Service
     const session = yield* Session.Service
+    const database = yield* Database.Service
     const agents = yield* Agent.Service
     const plugin = yield* Plugin.Service
     const processors = yield* SessionProcessor.Service
@@ -458,6 +462,19 @@ const layer = Layer.effect(
         return "stop"
       }
 
+      const generated = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id }).pipe(
+        Effect.provideService(Database.Service, database),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      if (!generated || !MessageV2.isCompletedSummary(generated)) {
+        processor.message.error ??= new SessionV1.APIError({
+          message: "Compaction did not produce a complete summary. Original history was retained.",
+          isRetryable: false,
+        }).toObject()
+        yield* session.updateMessage(processor.message)
+        return "stop"
+      }
+
       if (compactionPart && selected.tail_start_id && compactionPart.tail_start_id !== selected.tail_start_id) {
         yield* session.updatePart({
           ...compactionPart,
@@ -594,6 +611,7 @@ export const node = LayerNode.make({
   service: Service,
   layer: layer,
   deps: [
+    Database.node,
     Config.node,
     Session.node,
     Agent.node,

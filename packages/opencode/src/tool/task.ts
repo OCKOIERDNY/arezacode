@@ -10,7 +10,7 @@ import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
-import { Effect, Exit, Schema, Scope } from "effect"
+import { Cause, Effect, Exit, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@opencode-ai/core/database/database"
@@ -18,6 +18,9 @@ import { Jev } from "@opencode-ai/core/jev"
 import { Provider } from "@/provider/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { eq, sql } from "drizzle-orm"
+import { SessionTaskTable } from "@opencode-ai/core/session/sql"
+import { SessionMessage } from "@opencode-ai/core/session/message"
 import { SessionHealth } from "@opencode-ai/core/session/health"
 
 export interface TaskPromptOps {
@@ -144,8 +147,11 @@ export const TaskTool = Tool.define(
       }
 
       const session = params.task_id
-        ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+        ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catch(() => Effect.succeed(undefined)))
         : undefined
+      if (session && session.parentID !== ctx.sessionID) {
+        return yield* Effect.fail(new Error("Cannot resume a task owned by another parent session"))
+      }
       const childPermission = deriveSubagentSessionPermission({
         parentSessionPermission: parent.permission ?? [],
         subagent: next,
@@ -215,6 +221,7 @@ export const TaskTool = Tool.define(
       if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
 
       const runTask = Effect.fn("TaskTool.runTask")(function* () {
+        yield* database.db.insert(SessionTaskTable).values({ session_id: nextSession.id, parent_id: ctx.sessionID, context_id: contextID, input_id: SessionMessage.ID.make(ctx.messageID), status: "running", attempt: 1, owner: String(process.pid), time_created: Date.now(), time_updated: Date.now() }).onConflictDoUpdate({ target: SessionTaskTable.session_id, set: { status: "running", context_id: contextID, input_id: SessionMessage.ID.make(ctx.messageID), attempt: sql`${SessionTaskTable.attempt} + 1`, owner: String(process.pid), output: null, error: null, result_input_id: null, time_completed: null, time_updated: Date.now() } }).run().pipe(Effect.orDie)
         const parts = [...(yield* ops.resolvePromptParts(params.prompt))]
         if (routed?.model) parts.push({ type: "text", synthetic: true, text: "Keep this delegated task bounded to its supplied objective and context. Return concise evidence with file/line references, checks actually performed, and uncertainties. Escalate ambiguous or high-risk conclusions to the parent; do not repeat parent work or expand the task without evidence." })
         const result = yield* ops.prompt({
@@ -260,7 +267,7 @@ export const TaskTool = Tool.define(
           return yield* Effect.fail(new Error(`Subagent failed (task_id: ${nextSession.id}): ${failed.state.error}`))
         }
         return result.parts.findLast((item) => item.type === "text")?.text ?? ""
-      })
+      }, Effect.onExit((exit) => database.db.update(SessionTaskTable).set({ status: Exit.isSuccess(exit) ? "completed" : Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failed", output: Exit.isSuccess(exit) ? exit.value : null, error: Exit.isFailure(exit) ? String(Cause.squash(exit.cause)) : null, owner: null, time_updated: Date.now(), time_completed: Date.now() }).where(eq(SessionTaskTable.session_id, nextSession.id)).run().pipe(Effect.orDie, Effect.asVoid)))
 
       const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (
         state: "completed" | "error",

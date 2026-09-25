@@ -57,6 +57,22 @@ test("health schema omits absent fields", () => {
   expect(encoded).not.toHaveProperty("lockedAt")
 })
 
+test("handoff checkpoint validation requires constraints, pending work, uncertain outcomes, evidence, and transcript reference", () => {
+  const sections = [
+    "Original session: ses_test",
+    "## Recent instructions / constraints (quoted)\nNo constraints recorded.",
+    "## Pending todos\nNone recorded.",
+    "## Incomplete / uncertain work\nNo incomplete outcomes recorded.",
+    "## Verification receipts\nVerification is unknown.",
+  ].join("\n\n")
+  expect(SessionHandoff.validate(sections, "ses_test" as SessionV2.ID)).toEqual({ valid: true, missing: [] })
+  expect(SessionHandoff.validate(sections.replace("## Verification receipts\nVerification is unknown.", ""), "ses_test" as SessionV2.ID)).toEqual({
+    valid: false,
+    missing: ["## Verification receipts"],
+  })
+  expect(SessionHandoff.validate(sections, "ses_other" as SessionV2.ID).valid).toBe(false)
+})
+
 for (const tokens of [249_999, 250_000, 250_001]) {
   it.effect(`lazily recognizes legacy inclusive input ${tokens}`, () => Effect.gen(function* () {
     const input = yield* setup

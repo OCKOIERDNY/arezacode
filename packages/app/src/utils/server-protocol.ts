@@ -1,18 +1,11 @@
 import type { ServerConnection } from "@/context/server"
-import { authTokenFromCredentials } from "./server"
+import { serverClientOptions } from "./server"
 
 export type ServerProtocol = "v1" | "v2"
 
-function headers(server: ServerConnection.HttpBase) {
-  if (!server.password) return
-  return {
-    Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}`,
-  }
-}
-
 async function probe(server: ServerConnection.HttpBase, fetch: typeof globalThis.fetch, path: string) {
   const response = await fetch(new URL(path, server.url), {
-    headers: headers(server),
+    headers: serverClientOptions({ server }).headers,
     signal: AbortSignal.timeout(5_000),
   })
   if (!response.ok || !response.headers.get("content-type")?.includes("application/json")) return

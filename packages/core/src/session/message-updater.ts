@@ -101,6 +101,8 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
   return Effect.gen(function* () {
     yield* SessionEvent.All.match(event, {
       "session.next.approval.changed": () => Effect.void,
+      "session.next.instructions.changed": () => Effect.void,
+      "session.next.command.prepared": () => Effect.void,
       "session.next.compaction.accounted": () => Effect.void,
       "session.next.agent.switched": (event) => {
         return adapter.appendMessage(

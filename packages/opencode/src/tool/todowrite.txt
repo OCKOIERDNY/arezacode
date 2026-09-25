@@ -8,6 +8,7 @@ Use proactively when:
 - New instructions arrive - capture them as todos
 - You start a task - mark it `in_progress` (only one at a time) before working
 - You finish a task - mark it `completed` and add any follow-ups discovered during the work
+- Update progress alongside useful work; do not make standalone todo-only model turns. Derive completed status from actual tool/check results, and batch independent bookkeeping with other safe actions.
 
 ## When NOT to use
 Skip when:

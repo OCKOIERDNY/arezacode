@@ -41,6 +41,9 @@ import { SessionRevert } from "./session/revert"
 import { Revert } from "@opencode-ai/schema/revert"
 import { FSUtil } from "./fs-util"
 import { Jev } from "./jev"
+import { CommandV2 } from "./command"
+import { expandCommandTemplate } from "./util/command-template"
+import { SessionInputTable, SessionTaskTable } from "./session/sql"
 import { SessionDurable } from "@opencode-ai/schema/durable-event-manifest"
 
 export const RevertState = Revert.State
@@ -87,6 +90,7 @@ export type ListInput = typeof ListInput.Type
 
 type CreateInput = {
   approvalMode?: Permission.ApprovalMode
+  parentID?: SessionSchema.ID
   id?: SessionSchema.ID
   agent?: AgentV2.ID
   model?: ModelV2.Ref
@@ -120,10 +124,29 @@ export type MessageNotFoundError = SessionRevert.MessageNotFoundError
 
 export type Error = NotFoundError | MessageDecodeError | OperationUnavailableError | PromptConflictError
 
+export class CommandError extends Schema.TaggedErrorClass<CommandError>()("Session.CommandError", { message: Schema.String }) {}
+
+type CommandInput = {
+  id?: SessionMessage.ID
+  sessionID: SessionSchema.ID
+  command: string
+  arguments?: string
+  independent?: boolean
+  agent?: string
+  model?: ModelV2.Ref
+  files?: PromptInput.Prompt["files"]
+  delivery?: SessionInput.Delivery
+  resume?: boolean
+}
+
 export interface Interface {
+  readonly command: (input: CommandInput) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError | SessionHealth.LockedError | CommandError>
+  readonly tasks: (sessionID: SessionSchema.ID) => Effect.Effect<SessionInput.Task[], NotFoundError>
+
   readonly list: (input?: ListInput) => Effect.Effect<SessionSchema.Info[]>
   readonly create: (input: CreateInput) => Effect.Effect<SessionSchema.Info>
   readonly setApproval: (input: { sessionID: SessionSchema.ID; mode: Permission.ApprovalMode }) => Effect.Effect<void, NotFoundError>
+  readonly setInstructions: (input: { sessionID: SessionSchema.ID; instructions: string }) => Effect.Effect<void, NotFoundError>
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info, NotFoundError>
   readonly usage: (sessionID: SessionSchema.ID) => Effect.Effect<SessionMessage.UsageEntry[], NotFoundError>
   readonly health: (sessionID: SessionSchema.ID) => Effect.Effect<SessionHealth.Info, NotFoundError>
@@ -162,6 +185,7 @@ export interface Interface {
     id?: SessionMessage.ID
     sessionID: SessionSchema.ID
     prompt: PromptInput.Prompt
+    preparation?: SessionInput.Preparation
     delivery?: SessionInput.Delivery
     resume?: boolean
   }) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError | SessionHealth.LockedError>
@@ -233,6 +257,7 @@ const layer = Layer.effect(
         const now = Date.now()
         const info = SessionV1.SessionInfo.make({
           id: sessionID,
+          parentID: input.parentID,
           slug: Slug.create(),
           version: InstallationVersion,
           projectID: project.id,
@@ -458,6 +483,7 @@ const layer = Layer.effect(
               id: messageID,
               sessionID: input.sessionID,
               prompt,
+              preparation: input.preparation,
               delivery,
             }).pipe(
               Effect.catchDefect((defect) =>
@@ -466,18 +492,68 @@ const layer = Layer.effect(
                   : Effect.die(defect),
               ),
             )
-            if (!SessionInput.equivalent(admitted, expected))
+            if (!SessionInput.equivalent(admitted, expected) || admitted.preparation?.command !== input.preparation?.command)
               return yield* new PromptConflictError({ sessionID: input.sessionID, messageID })
             if (input.resume !== false) yield* execution.wake(admitted.sessionID)
             return admitted
           }),
         ),
       ),
+      command: Effect.fn("V2Session.command")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        const command = yield* CommandV2.Service.use((commands) => commands.get(input.command)).pipe(Effect.provide(locations.get(session.location)))
+        if (!command) return yield* new CommandError({ message: `Unknown command: ${input.command}` })
+        const id = input.id ?? SessionMessage.ID.create()
+        const prompt = resolvePrompt({ text: expandCommandTemplate(command.template, input.arguments ?? "").trim(), files: input.files, independent: input.independent })
+        const preparation = { command: input.command, status: "pending" as const }
+        const admitted = yield* events.transaction(Effect.gen(function* () {
+          if (!command.subtask) {
+            const admitted = yield* result.prompt({ ...input, id, prompt, preparation, resume: false })
+            if (command.agent ?? input.agent) yield* result.switchAgent({ sessionID: session.id, agent: (command.agent ?? input.agent)! })
+            if (command.model ?? input.model) yield* result.switchModel({ sessionID: session.id, model: (command.model ?? input.model)! })
+            return admitted
+          }
+          const recorded = yield* db.select().from(SessionTaskTable).where(and(eq(SessionTaskTable.parent_id, session.id), eq(SessionTaskTable.input_id, id))).get().pipe(Effect.orDie)
+          const child = recorded?.session_id ?? SessionSchema.ID.create()
+          if (!recorded) {
+            yield* result.create({ id: child, parentID: session.id, location: session.location, approvalMode: session.approvalMode, agent: AgentV2.ID.make(command.agent ?? input.agent ?? session.agent ?? "build"), model: command.model ?? input.model ?? session.model })
+            if (session.instructions) yield* result.setInstructions({ sessionID: child, instructions: session.instructions })
+          }
+          const childInput = recorded ? yield* db.select().from(SessionInputTable).where(eq(SessionInputTable.session_id, child)).orderBy(asc(SessionInputTable.admitted_seq)).limit(1).get().pipe(Effect.orDie) : undefined
+          yield* result.prompt({ sessionID: child, id: childInput?.id, prompt: { ...prompt, independent: false }, preparation, resume: false })
+          const admitted = yield* result.prompt({ ...input, id, prompt: { text: `/${input.command} ${input.arguments ?? ""}\n\nDelegated to subtask ${child}. Its result will be delivered here. Do not repeat the delegated work.`, independent: input.independent }, resume: false })
+          if (!recorded) yield* db.insert(SessionTaskTable).values({ session_id: child, parent_id: session.id, context_id: yield* SessionInput.contextID(db, admitted), input_id: id, status: "pending", time_created: Date.now(), time_updated: Date.now() }).run().pipe(Effect.orDie)
+          return admitted
+        })).pipe(Effect.catchTag("SqlError", Effect.die))
+        if (input.resume !== false) {
+          const task = yield* db.select().from(SessionTaskTable).where(and(eq(SessionTaskTable.parent_id, session.id), eq(SessionTaskTable.input_id, id))).get().pipe(Effect.orDie)
+          if (task?.status === "pending") yield* execution.wake(task.session_id)
+          yield* execution.wake(session.id)
+        }
+        return admitted
+      }),
+      tasks: Effect.fn("V2Session.tasks")(function* (sessionID) {
+        yield* result.get(sessionID)
+        yield* SessionInput.recoverTasks(db)
+        const tasks = yield* db.select().from(SessionTaskTable).where(eq(SessionTaskTable.parent_id, sessionID)).all().pipe(Effect.orDie)
+        return tasks.map((task) => ({ sessionID: task.session_id, parentID: task.parent_id, contextID: task.context_id, inputID: task.input_id, status: task.status, attempt: task.attempt, output: task.output, error: task.error, resultInputID: task.result_input_id }))
+      }),
       shell: Effect.fn("V2Session.shell")(function* () {
         return yield* new OperationUnavailableError({ operation: "shell" })
       }),
       skill: Effect.fn("V2Session.skill")(function* () {
         return yield* new OperationUnavailableError({ operation: "skill" })
+      }),
+      setInstructions: Effect.fn("V2Session.setInstructions")(function* (input) {
+        yield* events.transaction(Effect.gen(function* () {
+          const session = yield* result.get(input.sessionID)
+          if ((session.instructions ?? "") === input.instructions) return
+          yield* events.publish(SessionEvent.InstructionsChanged, {
+            sessionID: input.sessionID,
+            timestamp: yield* DateTime.now,
+            instructions: input.instructions,
+          })
+        })).pipe(Effect.catchTag("SqlError", Effect.die))
       }),
       switchAgent: Effect.fn("V2Session.switchAgent")(function* (input) {
         const session = yield* result.get(input.sessionID)

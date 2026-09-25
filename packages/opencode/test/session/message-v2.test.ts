@@ -74,6 +74,89 @@ function userInfo(id: string): SessionV1.User {
   } as unknown as SessionV1.User
 }
 
+test("reuses only identical read results present in the lowered history", async () => {
+  const read = (call: string, output: string, filePath = "source.ts"): SessionV1.WithParts => ({
+    info: assistantInfo(`msg_${call}`, "msg_user"),
+    parts: [
+      {
+        ...basePart(`msg_${call}`, call),
+        type: "tool",
+        tool: "read",
+        callID: call,
+        state: {
+          status: "completed",
+          input: { filePath },
+          output,
+          title: filePath,
+          metadata: {},
+          time: { start: 0, end: 1 },
+        },
+      },
+    ],
+  })
+  const original = "source content\n".repeat(100)
+  const first = read("first", original)
+  const second = read("second", original)
+  const changed = read("changed", original + "new line")
+  const other = read("other", original, "other.ts")
+  const outputs = async (messages: SessionV1.WithParts[]) =>
+    (await MessageV2.toModelMessages(messages, model))
+      .flatMap((message) => (message.role === "tool" ? message.content : []))
+      .flatMap((part) => (part.type === "tool-result" && part.output.type === "text" ? [part.output.value] : []))
+  expect(await outputs([first, second, changed, other])).toEqual([
+    original,
+    "Unchanged result; see read tool call first in this history. This call returned exactly the same content.",
+    original + "new line",
+    original,
+  ])
+  expect(await outputs([second])).toEqual([original])
+  expect(
+    second.parts[0]?.type === "tool" && second.parts[0].state.status === "completed" && second.parts[0].state.output,
+  ).toBe(original)
+})
+
+test("shortens repeated missing-path errors while retaining error status and changed errors", async () => {
+  const missing = (call: string, error: string): SessionV1.WithParts => ({
+    info: assistantInfo(`msg_${call}`, "msg_user"),
+    parts: [{ ...basePart(`msg_${call}`, call), type: "tool", tool: "read", callID: call,
+      state: { status: "error", input: { filePath: "missing.ts" }, error, time: { start: 0, end: 1 } },
+    }],
+  })
+  const error = "File not found: missing.ts. Check the containing directory before retrying."
+  const first = missing("missing-first", error)
+  const second = missing("missing-second", error)
+  const changed = missing("changed-error", "Permission denied: missing.ts")
+  const results = async (messages: SessionV1.WithParts[]) => (await MessageV2.toModelMessages(messages, model))
+    .flatMap((message) => message.role === "tool" ? message.content : [])
+    .flatMap((part) => part.type === "tool-result" ? [part.output] : [])
+  expect(await results([first, second, changed])).toEqual([
+    { type: "error-text", value: error },
+    { type: "error-text", value: "Same error as read call missing-first in this history." },
+    { type: "error-text", value: "Permission denied: missing.ts" },
+  ])
+  expect(await results([second])).toEqual([{ type: "error-text", value: error }])
+})
+
+test("incomplete compaction never hides original history", () => {
+  const original: SessionV1.WithParts = {
+    info: userInfo("msg_original"),
+    parts: [{ ...basePart("msg_original", "original"), type: "text", text: "Required constraints" }],
+  }
+  const marker: SessionV1.WithParts = {
+    info: userInfo("msg_marker"),
+    parts: [{ ...basePart("msg_marker", "marker"), type: "compaction", auto: true }],
+  }
+  for (const finish of ["length", "content-filter", "tool-calls", "error", undefined, "stop"]) {
+    const summary: SessionV1.WithParts = {
+      info: { ...assistantInfo("msg_summary", "msg_marker"), summary: true, finish },
+      parts: [
+        { ...basePart("msg_summary", "summary"), type: "text", text: finish === "stop" ? "" : "Partial summary" },
+      ],
+    }
+    expect(MessageV2.filterCompacted([summary, marker, original])).toContain(original)
+  }
+})
+
 function assistantInfo(
   id: string,
   parentID: string,

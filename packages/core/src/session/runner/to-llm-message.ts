@@ -9,6 +9,7 @@ import {
 } from "@opencode-ai/llm"
 import { SessionMessage } from "../message"
 import type { FileAttachment } from "../prompt"
+import { ConfigToolOutput } from "../../config/tool-output"
 
 const media = (file: FileAttachment): ContentPart => ({
   type: "media",
@@ -36,7 +37,11 @@ const toolCall = (tool: SessionMessage.AssistantTool, providerMetadata: Provider
     providerMetadata,
   })
 
-const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: ProviderMetadata | undefined) => {
+const toolResult = (
+  tool: SessionMessage.AssistantTool,
+  providerMetadata: ProviderMetadata | undefined,
+  reuse: ReturnType<typeof ConfigToolOutput.reuse>,
+) => {
   if (tool.state.status === "completed") {
     // TODO: Materialize remote and managed URIs before provider-history lowering.
     // ToolOutput.toResultValue rejects unresolved URIs rather than treating them as media bytes.
@@ -44,22 +49,30 @@ const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: Provid
       tool.provider?.executed === true && tool.state.result !== undefined
         ? tool.state.result
         : ToolOutput.toResultValue({ structured: tool.state.structured, content: tool.state.content })
+    const reference =
+      tool.provider?.executed || tool.state.content.some((part) => part.type === "file")
+        ? undefined
+        : reuse({ name: tool.name, id: tool.id, arguments: tool.state.input, output: JSON.stringify(result) })
     return ToolResultPart.make({
       id: tool.id,
       name: tool.name,
-      result,
+      result: reference === undefined ? result : { type: "text", value: reference },
       providerExecuted: tool.provider?.executed,
       providerMetadata,
     })
   }
   if (tool.state.status === "error") {
+    const result =
+      tool.provider?.executed === true && tool.state.result !== undefined
+        ? tool.state.result
+        : { error: tool.state.error, content: tool.state.content, structured: tool.state.structured }
+    const reference = tool.provider?.executed || tool.state.content.some((part) => part.type === "file")
+      ? undefined
+      : reuse({ name: tool.name, id: tool.id, arguments: tool.state.input, output: JSON.stringify(result), error: true })
     return ToolResultPart.make({
       id: tool.id,
       name: tool.name,
-      result:
-        tool.provider?.executed === true && tool.state.result !== undefined
-          ? tool.state.result
-          : { error: tool.state.error, content: tool.state.content, structured: tool.state.structured },
+      result: reference === undefined ? result : reference,
       resultType: "error",
       providerExecuted: tool.provider?.executed,
       providerMetadata,
@@ -67,7 +80,11 @@ const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: Provid
   }
 }
 
-const assistant = (message: SessionMessage.Assistant, model: Model) => {
+const assistant = (
+  message: SessionMessage.Assistant,
+  model: Model,
+  reuse: ReturnType<typeof ConfigToolOutput.reuse>,
+) => {
   const sameModel =
     String(message.model.providerID) === String(model.provider) && String(message.model.id) === String(model.id)
   const reuseProviderMetadata = sameModel && message.error === undefined
@@ -90,6 +107,7 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
     const result = toolResult(
       item,
       reuseProviderMetadata ? (item.provider.resultMetadata ?? item.provider.metadata) : undefined,
+      reuse,
     )
     return result ? [call, result] : [call]
   })
@@ -101,7 +119,11 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
   const results = message.content
     .filter((item): item is SessionMessage.AssistantTool => item.type === "tool" && item.provider?.executed !== true)
     .map((item) =>
-      toolResult(item, reuseProviderMetadata ? (item.provider?.resultMetadata ?? item.provider?.metadata) : undefined),
+      toolResult(
+        item,
+        reuseProviderMetadata ? (item.provider?.resultMetadata ?? item.provider?.metadata) : undefined,
+        reuse,
+      ),
     )
     .filter((message) => message !== undefined)
     .map(Message.tool)
@@ -112,7 +134,11 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
   ]
 }
 
-function toLLMMessage(message: SessionMessage.Message, model: Model): Message[] {
+function toLLMMessage(
+  message: SessionMessage.Message,
+  model: Model,
+  reuse: ReturnType<typeof ConfigToolOutput.reuse>,
+): Message[] {
   switch (message.type) {
     case "agent-switched":
     case "model-switched":
@@ -143,7 +169,7 @@ function toLLMMessage(message: SessionMessage.Message, model: Model): Message[] 
         }),
       ]
     case "assistant":
-      return assistant(message, model)
+      return assistant(message, model, reuse)
     case "compaction":
       return [
         Message.make({
@@ -167,5 +193,7 @@ ${message.recent}
 }
 
 /** Translate projected V2 Session history into canonical @opencode-ai/llm context. */
-export const toLLMMessages = (messages: readonly SessionMessage.Message[], model: Model) =>
-  messages.flatMap((message) => toLLMMessage(message, model))
+export const toLLMMessages = (messages: readonly SessionMessage.Message[], model: Model) => {
+  const reuse = ConfigToolOutput.reuse()
+  return messages.flatMap((message) => toLLMMessage(message, model, reuse))
+}

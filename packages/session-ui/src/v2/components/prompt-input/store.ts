@@ -69,6 +69,12 @@ export function createPromptInputV2Store(input: PromptInputV2StoreInput) {
         setStore()("cursor", cursor + content.length)
       })
     },
+    replaceText(start: number, end: number, content: string) {
+      batch(() => {
+        setStore()("prompt", (prompt) => insertText(prompt, start, content, end))
+        setStore()("cursor", start + content.length)
+      })
+    },
     reset() {
       batch(() => {
         setStore()("prompt", [{ type: "text", content: "", start: 0, end: 0 }])
@@ -108,18 +114,24 @@ export function createPromptInputV2Store(input: PromptInputV2StoreInput) {
 
 export type PromptInputV2Store = ReturnType<typeof createPromptInputV2Store>
 
-function insertText(prompt: PromptInputV2Prompt, cursor: number, content: string): PromptInputV2Prompt {
+function insertText(prompt: PromptInputV2Prompt, cursor: number, content: string, end = cursor): PromptInputV2Prompt {
   let position = 0
   let inserted = false
   const parts = prompt.flatMap<PromptInputV2Prompt[number]>((part) => {
     if (part.type === "image") return [part]
     const start = position
     position += part.content.length
-    if (inserted) return [part]
+    if (inserted) {
+      if (part.type !== "text" || start >= end) return [part]
+      return [{ ...part, content: part.content.slice(Math.min(end, position) - start) }]
+    }
     if (part.type === "text" && cursor >= start && cursor <= position) {
       inserted = true
       const offset = cursor - start
-      return [{ ...part, content: part.content.slice(0, offset) + content + part.content.slice(offset) }]
+      return [{
+        ...part,
+        content: part.content.slice(0, offset) + content + part.content.slice(Math.min(end, position) - start),
+      }]
     }
     if (cursor > start) return [part]
     inserted = true

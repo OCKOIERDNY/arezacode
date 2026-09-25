@@ -24,6 +24,29 @@ function createPromptStore() {
 }
 
 describe("prompt input v2 store", () => {
+  test("replaces a split slash query without losing surrounding text or mentions", () => {
+    const prompt = createPromptStore()
+    const attachment = prompt.state.prompt[1]!
+    prompt.setPrompt([
+      { type: "file", path: "one", content: "@one", start: 0, end: 4 },
+      { type: "text", content: " explain /r", start: 4, end: 15 },
+      { type: "text", content: "e afterwards ", start: 15, end: 28 },
+      { type: "agent", name: "build", content: "@build", start: 28, end: 34 },
+      attachment,
+    ], 16)
+
+    prompt.replaceText(13, 16, "/review ")
+
+    expect(prompt.state.prompt).toEqual([
+      { type: "file", path: "one", content: "@one", start: 0, end: 4 },
+      { type: "text", content: " explain /review ", start: 4, end: 21 },
+      { type: "text", content: " afterwards ", start: 21, end: 33 },
+      { type: "agent", name: "build", content: "@build", start: 33, end: 39 },
+      attachment,
+    ])
+    expect(prompt.state.cursor).toBe(21)
+  })
+
   test("captures the originating store while retaining its latest draft", () => {
     const a = createStore<PromptInputV2PersistedState>({ prompt: [], cursor: 0, context: { items: [] } })
     const b = createStore<PromptInputV2PersistedState>({ prompt: [], cursor: 0, context: { items: [] } })

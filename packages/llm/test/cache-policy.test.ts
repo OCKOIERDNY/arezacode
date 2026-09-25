@@ -7,6 +7,7 @@ import * as AnthropicMessages from "../src/protocols/anthropic-messages"
 import * as Gemini from "../src/protocols/gemini"
 import * as OpenAIChat from "../src/protocols/openai-chat"
 import { applyCachePolicy } from "../src/cache-policy"
+import { BREAKPOINT_CAP, cacheControl, newBreakpoints } from "../src/protocols/utils/cache"
 import { it } from "./lib/effect"
 
 const anthropicModel = AnthropicMessages.route
@@ -27,6 +28,13 @@ const geminiModel = Gemini.route
     auth: Auth.header("x-goog-api-key", "test"),
   })
   .model({ id: "gemini-2.5-flash" })
+
+test("provider cache marker defaults and limits share one policy", () => {
+  expect(cacheControl(undefined)).toEqual({ type: "ephemeral" })
+  expect(cacheControl(3599)).toEqual({ type: "ephemeral" })
+  expect(cacheControl(3600)).toEqual({ type: "ephemeral", ttl: "1h" })
+  expect(newBreakpoints()).toEqual({ remaining: BREAKPOINT_CAP, dropped: 0 })
+})
 
 describe("applyCachePolicy", () => {
   it.effect("undefined cache resolves to 'auto' (the recommended default)", () =>

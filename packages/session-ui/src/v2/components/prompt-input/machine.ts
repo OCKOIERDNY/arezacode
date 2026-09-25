@@ -1,4 +1,5 @@
 import type { PromptInputV2HistoryEntry, PromptInputV2PersistedState, PromptInputV2Suggestion } from "./types"
+import { matchPromptSlash } from "../../../components/prompt-slash"
 
 export type PromptInputV2InteractionState = {
   mode: "normal" | "shell"
@@ -34,6 +35,7 @@ export type PromptInputV2InteractionEvent =
 
 export type PromptInputV2InteractionCommand =
   | { type: "draft.setText"; value: string }
+  | { type: "draft.replaceText"; value: string; start: number; end: number }
   | { type: "mention.add"; item: PromptInputV2Suggestion }
   | { type: "popover.filter"; popover: "command" | "context"; query: string }
   | { type: "suggestion.select"; id: string }
@@ -102,9 +104,9 @@ function inputChanged(
     ])
   }
 
-  const command = value.match(/^\/(\S*)$/)
+  const command = state.mode === "normal" && matchPromptSlash(value, persist ? value.length : cursor)
   if (command) {
-    const query = command[1] ?? ""
+    const query = command.query
     return changed({ ...state, popover: { type: "command-inline", query }, focus: "editor" }, [
       ...setText,
       { type: "popover.filter", popover: "command", query },
@@ -173,15 +175,21 @@ function suggestionSelected(
   const current = promptText(persisted)
   const commands: PromptInputV2InteractionCommand[] = []
   if (item.kind === "command") {
-    commands.push({
-      type: "draft.setText",
-      value:
-        state.popover.type === "command-menu"
-          ? current.trim()
-            ? `${item.label} ${current.trim()}`
-            : `${item.label} `
-          : replaceTrigger(current, "/", `${item.label} `),
-    })
+    const trigger = state.popover.type === "command-inline" && matchPromptSlash(
+      persisted.prompt.map((part) => ("content" in part ? part.content : "")).join(""),
+      persisted.cursor,
+    )
+    commands.push(
+      trigger
+        ? { type: "draft.replaceText", value: `${item.label} `, start: trigger.start, end: trigger.end }
+        : {
+            type: "draft.setText",
+            value:
+              state.popover.type === "command-menu" && current.trim()
+                ? `${item.label} ${current.trim()}`
+                : `${item.label} `,
+          },
+    )
   } else {
     commands.push({ type: "mention.add", item })
   }
@@ -237,11 +245,6 @@ function populated(persisted: PromptInputV2PersistedState) {
     persisted.context.items.length > 0 ||
     persisted.prompt.some((part) => part.type === "file" || part.type === "image")
   )
-}
-
-function replaceTrigger(value: string, trigger: "@" | "/", replacement: string) {
-  const index = trigger === "/" ? value.indexOf(trigger) : value.lastIndexOf(trigger)
-  return index < 0 ? replacement : value.slice(0, index) + replacement
 }
 
 function changed(

@@ -40,6 +40,9 @@ const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <te
 
 ## Relevant Files
 - [file or directory path: why it matters, or "(none)"]
+
+## Verification
+- [checks actually performed, their recorded outcomes and tool call identifiers; distinguish passed, failed, and unverified work, or "(none)"]
 </template>
 
 Rules:
@@ -88,12 +91,16 @@ const estimate = (value: unknown) => Token.estimate(JSON.stringify(value))
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`
 
-export const serializeToolContent = (content: SessionMessage.ToolStateCompleted["content"]) =>
-  content
-    .map((item) =>
-      item.type === "text" ? item.text : `[Attached ${item.mime}${item.name === undefined ? "" : `: ${item.name}`}]`,
-    )
-    .join("\n")
+export const serializeToolContent = (content: SessionMessage.ToolStateCompleted["content"], structured?: unknown) =>
+  content.length === 0
+    ? (JSON.stringify(structured) ?? "")
+    : content
+        .map((item) =>
+          item.type === "text"
+            ? item.text
+            : `[Attached ${item.mime}${item.name === undefined ? "" : `: ${item.name}`}]`,
+        )
+        .join("\n")
 
 const serialize = (message: SessionMessage.Message) => {
   if (message.type === "user") {
@@ -108,8 +115,9 @@ const serialize = (message: SessionMessage.Message) => {
         const input = typeof part.state.input === "string" ? part.state.input : JSON.stringify(part.state.input)
         if (part.state.status === "completed")
           return [
-            `[Assistant tool call]: ${part.name}(${input})`,
-            `[Tool result]: ${truncate(serializeToolContent(part.state.content))}`,
+            `[Assistant tool call ${part.id}]: ${part.name}(${input})`,
+            `[Tool completion ${part.id}]: completed${typeof part.state.structured.exit === "number" ? `; exit ${part.state.structured.exit}` : ""}`,
+            `[Tool result]: ${truncate(serializeToolContent(part.state.content, part.state.structured))}`,
           ]
         if (part.state.status === "error")
           return [`[Assistant tool call]: ${part.name}(${input})`, `[Tool error]: ${part.state.error.message}`]
@@ -218,7 +226,10 @@ export const make = (dependencies: Dependencies) => {
       .pipe(
         Stream.runForEach((event) => {
           if (finished) failed = true
-          if (LLMEvent.is.providerError(event)) { failed = true; finish = "error" }
+          if (LLMEvent.is.providerError(event)) {
+            failed = true
+            finish = "error"
+          }
           if (LLMEvent.is.stepFinish(event) || LLMEvent.is.finish(event)) usage = event.usage ?? usage
           if (LLMEvent.is.finish(event)) {
             finished = true
@@ -229,19 +240,24 @@ export const make = (dependencies: Dependencies) => {
           return Effect.void
         }),
         Effect.as(true),
-        Effect.catchTag("LLM.Error", () => { finish = "error"; return Effect.succeed(false) }),
-        Effect.ensuring(Effect.gen(function* () {
-          yield* dependencies.events.publish(SessionEvent.Compaction.Accounted, {
-            sessionID: input.sessionID,
-            messageID,
-            model: { providerID: ProviderV2.ID.make(input.model.provider), id: ModelV2.ID.make(input.model.id) },
-            timestamp: yield* DateTime.now,
-            startedAt,
-            usage: accountUsage(usage),
-            tokens: usageTokens(usage),
-            finish: failed && finish === "stop" ? "incomplete" : finish,
-          })
-        })),
+        Effect.catchTag("LLM.Error", () => {
+          finish = "error"
+          return Effect.succeed(false)
+        }),
+        Effect.ensuring(
+          Effect.gen(function* () {
+            yield* dependencies.events.publish(SessionEvent.Compaction.Accounted, {
+              sessionID: input.sessionID,
+              messageID,
+              model: { providerID: ProviderV2.ID.make(input.model.provider), id: ModelV2.ID.make(input.model.id) },
+              timestamp: yield* DateTime.now,
+              startedAt,
+              usage: accountUsage(usage),
+              tokens: usageTokens(usage),
+              finish: failed && finish === "stop" ? "incomplete" : finish,
+            })
+          }),
+        ),
       )
     const summary = chunks.join("")
     if (!summarized || !finished || failed || !summary.trim()) return false

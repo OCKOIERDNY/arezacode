@@ -18,12 +18,12 @@ import { createHomeController } from "./home/home-controller"
 import { createHomeProjectsController } from "./home/home-projects-controller"
 import { HomeProjects } from "./home/home-projects"
 import { createHomeScrollController } from "./home/home-scroll-controller"
-import { createHomeSessionsController } from "./home/home-sessions-controller"
+import { createHomeSessionsController, registerHomeCommandPalette } from "./home/home-sessions-controller"
 
 export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visible: boolean; toggle: () => void } }) {
   const home = createHomeController()
   const projects = createHomeProjectsController(home)
-  const sessions = createHomeSessionsController(home, Infinity)
+  registerHomeCommandPalette(home)
   const layout = useLayout()
   const settings = useSettings()
   const notification = useNotification()
@@ -59,7 +59,6 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
       if (project) home.server.context(conn).projects.expand(project.worktree)
     })
   })
-  const scroll = createHomeScrollController(sessions.data.groups)
   return (
     <div
       id="project-sidebar"
@@ -77,7 +76,6 @@ export function HomeSidebar(props: { onCollapse: () => void; debugTools?: { visi
       />
       <HomeProjects
         projects={projects}
-        scroll={scroll}
         projectActive={(server, directory) => {
           const tab = tabs.store.find((tab) => tab.type === "draft" && tab.draftID === selectedDraft())
           return tab?.type === "draft" && tab.server === server && tab.directory === directory

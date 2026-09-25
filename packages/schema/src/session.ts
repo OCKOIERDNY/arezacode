@@ -40,6 +40,7 @@ export const Info = Schema.Struct({
   }),
   title: Schema.String,
   approvalMode: Permission.ApprovalMode.pipe(optional),
+  instructions: Schema.String.pipe(optional),
   location: Location.Ref,
   subpath: RelativePath.pipe(optional),
   revert: Revert.State.pipe(optional),

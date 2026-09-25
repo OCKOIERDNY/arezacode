@@ -1,7 +1,10 @@
 export * as InstructionContext from "./instruction-context"
 
-import { Array, Effect, Layer, Schema } from "effect"
-import { isAbsolute, join, relative, sep } from "path"
+import { Array, Effect, FileSystem, Layer, Schema } from "effect"
+import { basename, dirname, isAbsolute, join, relative, sep } from "path"
+import { HttpClient, HttpIncomingMessage } from "effect/unstable/http"
+import { Config } from "./config"
+import { LayerNodePlatform } from "./effect/app-node-platform"
 import { FSUtil } from "./fs-util"
 import { Flag } from "./flag/flag"
 import { Global } from "./global"
@@ -12,7 +15,7 @@ import { SystemContextRegistry } from "./system-context/registry"
 import { makeLocationNode } from "./effect/app-node"
 
 class File extends Schema.Class<File>("InstructionContext.File")({
-  path: AbsolutePath,
+  path: Schema.String,
   content: Schema.String,
 }) {}
 
@@ -25,6 +28,8 @@ const layer = Layer.effectDiscard(
     const global = yield* Global.Service
     const location = yield* Location.Service
     const registry = yield* SystemContextRegistry.Service
+    const config = yield* Config.Service
+    const http = HttpClient.filterStatusOk(yield* HttpClient.HttpClient)
 
     const source = (value: ReadonlyArray<File> | SystemContext.Unavailable) =>
       SystemContext.make({
@@ -55,7 +60,32 @@ const layer = Layer.effectDiscard(
           fs.resolve,
         ),
       )
-      const paths = Array.dedupe([yield* fs.resolve(join(global.config, "AGENTS.md")), ...discovered])
+      const instructions = Array.dedupe(
+        (yield* config.entries()).flatMap((entry) => {
+          if (entry.type !== "document") return []
+          if (
+            (Flag.OPENCODE_DISABLE_PROJECT_CONFIG || !insideProject) &&
+            entry.path &&
+            !FSUtil.contains(global.config, entry.path)
+          )
+            return []
+          return entry.info.instructions ?? []
+        }),
+      )
+      const urls = instructions.filter((instruction) => /^https?:\/\//.test(instruction))
+      const additional = yield* Effect.forEach(
+        instructions.filter((instruction) => !urls.includes(instruction)),
+        (raw) => {
+          const instruction = raw.startsWith("~/") ? join(global.home, raw.slice(2)) : raw
+          return isAbsolute(instruction)
+            ? fs.glob(basename(instruction), { cwd: dirname(instruction), absolute: true, include: "file", dot: true })
+            : insideProject
+              ? fs.globUp(instruction, start, stop)
+              : Effect.succeed([])
+        },
+      )
+      additional.flat().forEach((path) => discovered.add(path))
+      const paths = Array.dedupe([...(yield* Effect.forEach(Global.instructionFiles(global), fs.resolve)), ...discovered])
       const files = yield* Effect.forEach(
         paths,
         (path) =>
@@ -70,7 +100,18 @@ const layer = Layer.effectDiscard(
       )
       if (files.some((file, index) => file === undefined && discovered.has(paths[index])))
         return SystemContext.unavailable
-      return files.filter((file): file is File => file !== undefined)
+      const remote = yield* Effect.forEach(
+        urls,
+        (url) =>
+          http.get(url).pipe(
+            Effect.flatMap((response) => response.text),
+            Effect.map((content) => new File({ path: url, content })),
+            Effect.provideService(HttpIncomingMessage.MaxBodySize, FileSystem.Size(1024 * 1024)),
+            Effect.timeout("10 seconds"),
+          ),
+        { concurrency: 4 },
+      )
+      return [...files.filter((file): file is File => file !== undefined), ...remote]
     })
 
     yield* registry.register({
@@ -93,7 +134,14 @@ const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "instruction-context",
   layer,
-  deps: [FSUtil.node, Global.node, Location.node, SystemContextRegistry.node],
+  deps: [
+    FSUtil.node,
+    Global.node,
+    Location.node,
+    SystemContextRegistry.node,
+    Config.node,
+    LayerNodePlatform.httpClient,
+  ],
 })
 
 function render(files: ReadonlyArray<File>) {

@@ -106,10 +106,11 @@ export async function session(directory: string, sessionID: string) {
 
 export async function files(directory: string) {
   const root = (await nativeCommand("git", ["rev-parse", "--show-toplevel"], { cwd: directory })).trim()
-  const [tracked, staged, untracked] = await Promise.all([
+  const [tracked, staged, untracked, revision] = await Promise.all([
     nativeCommand("git", ["diff", "--name-only", "-z"], { cwd: root }),
     nativeCommand("git", ["diff", "--cached", "--name-only", "-z"], { cwd: root }),
     nativeCommand("git", ["ls-files", "--others", "--exclude-standard", "-z"], { cwd: root }),
+    nativeCommand("git", ["rev-parse", "HEAD"], { cwd: root }).catch(() => undefined),
   ])
   const entries = await Promise.all(
     [...new Set((tracked + staged + untracked).split("\0").filter(Boolean))].map(async (name) => {
@@ -124,7 +125,7 @@ export async function files(directory: string) {
       return [name, hash(await readFile(file))] as const
     }),
   )
-  return { root, files: new Map(entries.filter((entry) => entry !== undefined)) }
+  return { root, revision: revision?.trim(), files: new Map(entries.filter((entry) => entry !== undefined)) }
 }
 
 export function scan(root: string, changed: Map<string, string>, sessionID?: string, signal?: AbortSignal) {
@@ -136,7 +137,7 @@ export function scan(root: string, changed: Map<string, string>, sessionID?: str
     : ""
   if (!targets.length) return Promise.resolve(incomplete)
   const format = async (findings: string[], errors: number) => [
-    findings.length ? `Automatic Semgrep findings (${findings.length}):\n${(await Jev.prioritize(findings, sessionID)).join("\n")}` : "",
+    findings.length ? `Automatic Semgrep findings (${findings.length}):\n${(await Jev.prioritizeSemgrep(findings, sessionID)).join("\n")}` : "",
     errors ? `Semgrep reported ${errors} scan errors; coverage is incomplete.` : "",
     incomplete,
   ].filter(Boolean).join("\n")

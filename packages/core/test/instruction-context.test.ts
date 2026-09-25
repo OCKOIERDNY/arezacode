@@ -5,6 +5,7 @@ import path from "path"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
+import { Config } from "@opencode-ai/core/config"
 import { Global } from "@opencode-ai/core/global"
 import { InstructionContext } from "@opencode-ai/core/instruction-context"
 import { Location } from "@opencode-ai/core/location"
@@ -23,12 +24,122 @@ const instructionLayer = (input: {
   filesystemLayer?: Layer.Layer<FSUtil.Service>
 }) =>
   AppNodeBuilder.build(LayerNode.group([SystemContextRegistry.node, InstructionContext.node]), [
-    [Global.node, Global.layerWith({ config: input.config })],
+    [Global.node, Global.layerWith({ config: input.config, home: path.dirname(input.config) })],
     [Location.node, input.locationServiceLayer],
     ...(input.filesystemLayer ? [[FSUtil.node, input.filesystemLayer] as const] : []),
+    ...(input.filesystemLayer
+      ? [
+          [
+            Config.node,
+            Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
+          ] as const,
+        ]
+      : []),
   ])
 
 describe("InstructionContext", () => {
+  it.live("loads and refreshes global custom instructions across independent locations", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(Effect.flatMap((tmp) => Effect.gen(function* () {
+      const file = path.join(tmp.path, ".codex", "AGENTS.md")
+      yield* Effect.promise(async () => {
+        await fs.mkdir(path.dirname(file), { recursive: true })
+        await fs.writeFile(file, "Use Bun for every task")
+      })
+      const observe = (directory: string) => SystemContextRegistry.Service.pipe(
+        Effect.flatMap((service) => service.load()),
+        Effect.provide(instructionLayer({
+          config: path.join(tmp.path, "global"),
+          locationServiceLayer: Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(directory) }))),
+        })),
+      )
+      const first = yield* SystemContext.initialize(yield* observe(tmp.path))
+      const child = yield* SystemContext.initialize(yield* observe(path.join(tmp.path, "child")))
+      expect(first.baseline).toContain("Use Bun for every task")
+      expect(child.baseline).toContain("Use Bun for every task")
+      yield* Effect.promise(() => fs.writeFile(file, "Use Bun and answer in English"))
+      expect(yield* SystemContext.reconcile(yield* observe(tmp.path), first.snapshot)).toMatchObject({ _tag: "Updated", text: expect.stringContaining("answer in English") })
+      expect(yield* SystemContext.reconcile(yield* observe(path.join(tmp.path, "child")), child.snapshot)).toMatchObject({ _tag: "Updated", text: expect.stringContaining("answer in English") })
+    }))),
+  )
+
+  it.live("refreshes configured local and remote instructions without accepting failed reads", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          const remote = { text: "remote first", status: 200 }
+          const server = yield* Effect.acquireRelease(
+            Effect.sync(() =>
+              Bun.serve({
+                hostname: "127.0.0.1",
+                port: 0,
+                fetch: () => new Response(remote.text, { status: remote.status }),
+              }),
+            ),
+            (server) => Effect.sync(() => server.stop(true)),
+          )
+          const file = path.join(tmp.path, "custom.txt")
+          yield* Effect.promise(async () => {
+            await fs.writeFile(file, "local first")
+            await fs.writeFile(
+              path.join(tmp.path, "opencode.json"),
+              JSON.stringify({
+                instructions: ["custom.txt", server.url.href],
+              }),
+            )
+          })
+          const load = SystemContextRegistry.Service.pipe(
+            Effect.flatMap((service) => service.load()),
+            Effect.provide(
+              instructionLayer({
+                config: path.join(tmp.path, "global"),
+                locationServiceLayer: Layer.succeed(
+                  Location.Service,
+                  Location.Service.of(
+                    location(
+                      { directory: AbsolutePath.make(tmp.path) },
+                      { projectDirectory: AbsolutePath.make(tmp.path) },
+                    ),
+                  ),
+                ),
+              }),
+            ),
+          )
+          const initialized = yield* SystemContext.initialize(yield* load)
+          expect(initialized.baseline).toContain("local first")
+          expect(initialized.baseline).toContain("remote first")
+          expect(yield* SystemContext.reconcile(yield* load, initialized.snapshot)).toEqual({ _tag: "Unchanged" })
+          yield* Effect.promise(() => fs.writeFile(file, "local second"))
+          remote.text = "remote second"
+          const updated = yield* SystemContext.reconcile(yield* load, initialized.snapshot)
+          expect(updated._tag).toBe("Updated")
+          if (updated._tag !== "Updated") throw new Error("Expected refreshed instructions")
+          expect(updated.text).toContain("local second")
+          expect(updated.text).toContain("remote second")
+          remote.status = 503
+          expect(yield* SystemContext.reconcile(yield* load, initialized.snapshot)).toEqual({ _tag: "Unchanged" })
+          const previous = process.env.OPENCODE_DISABLE_PROJECT_CONFIG
+          process.env.OPENCODE_DISABLE_PROJECT_CONFIG = "true"
+          yield* load.pipe(
+            Effect.flatMap(SystemContext.initialize),
+            Effect.tap((result) => Effect.sync(() => expect(result.baseline).toBe(""))),
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (previous === undefined) delete process.env.OPENCODE_DISABLE_PROJECT_CONFIG
+                if (previous !== undefined) process.env.OPENCODE_DISABLE_PROJECT_CONFIG = previous
+              }),
+            ),
+          )
+        }),
+      ),
+    ),
+  )
+
   it.live("loads global and upward project AGENTS.md files as one aggregate context", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),

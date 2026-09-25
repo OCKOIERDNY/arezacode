@@ -25,7 +25,7 @@ export function MessageElapsed(props: {
   }
   return (
     <Show when={elapsed() !== undefined}>
-      <div data-slot="message-elapsed" class="mt-1 text-end text-12-regular text-text-weak tabular-nums" aria-live="off">
+      <div data-slot="message-elapsed" class="mt-1 text-start text-12-regular text-text-weak tabular-nums" aria-live="off">
         {language.t(props.running ? "session.message.elapsed" : "session.message.duration", { duration: duration() })}
       </div>
     </Show>

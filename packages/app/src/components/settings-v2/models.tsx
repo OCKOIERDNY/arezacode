@@ -23,7 +23,7 @@ export const SettingsModelsV2: Component = () => {
   const language = useLanguage()
   const models = useSettingsModels()
   const serverSdk = useServerSDK()
-  const [store, setStore] = persisted(
+  const [store, setStore, , ready] = persisted(
     Persist.serverGlobal(serverSdk().scope, "settings-v2.models.providers"),
     createStore({ collapsed: {} as Record<string, boolean> }),
   )
@@ -82,7 +82,7 @@ export const SettingsModelsV2: Component = () => {
 
       <div class="settings-v2-tab-body settings-v2-models">
         <Show
-          when={!list.grouped.loading}
+          when={ready() && !list.grouped.loading}
           fallback={
             <div class="settings-v2-models-status">
               {language.t("common.loading")}

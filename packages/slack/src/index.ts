@@ -50,20 +50,13 @@ async function handleToolUpdate(part: ToolPart, channel: string, thread: string)
     .catch(() => {})
 }
 
-app.use(async ({ next, context }) => {
-  console.log("📡 Raw Slack event:", JSON.stringify(context, null, 2))
-  await next()
-})
-
 app.message(async ({ message, say }) => {
-  console.log("📨 Received message event:", JSON.stringify(message, null, 2))
-
   if (message.subtype || !("text" in message) || !message.text) {
     console.log("⏭️ Skipping message - no text or has subtype")
     return
   }
 
-  console.log("✅ Processing message:", message.text)
+  console.log("✅ Processing message")
 
   const channel = message.channel
   const thread = (message as any).thread_ts || message.ts
@@ -92,22 +85,13 @@ app.message(async ({ message, say }) => {
 
     session = { client, server, sessionId: createResult.data.id, channel, thread }
     sessions.set(sessionKey, session)
-
-    const shareResult = await client.session.share({ path: { id: createResult.data.id } })
-    if (!shareResult.error && shareResult.data) {
-      const sessionUrl = shareResult.data.share?.url
-      console.log("🔗 Session shared:", sessionUrl)
-      await app.client.chat.postMessage({ channel, thread_ts: thread, text: sessionUrl })
-    }
   }
 
-  console.log("📝 Sending to opencode:", message.text)
+  console.log("📝 Sending to opencode")
   const result = await session.client.session.prompt({
     path: { id: session.sessionId },
     body: { parts: [{ type: "text", text: message.text }] },
   })
-
-  console.log("📤 Opencode response:", JSON.stringify(result, null, 2))
 
   if (result.error) {
     console.error("❌ Failed to send message:", result.error)
@@ -129,15 +113,15 @@ app.message(async ({ message, say }) => {
       .join("\n") ||
     "I received your message but didn't have a response."
 
-  console.log("💬 Sending response:", responseText)
+  console.log("💬 Sending response")
 
   // Send main response (tool updates will come via live events)
   await say({ text: responseText, thread_ts: thread })
 })
 
-app.command("/test", async ({ command, ack, say }) => {
+app.command("/test", async ({ ack, say }) => {
   await ack()
-  console.log("🧪 Test command received:", JSON.stringify(command, null, 2))
+  console.log("🧪 Test command received")
   await say("🤖 Bot is working! I can hear you loud and clear.")
 })
 

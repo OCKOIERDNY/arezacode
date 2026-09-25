@@ -358,7 +358,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       void bootstrapInstance(directory)
     },
     onMcp: (directory, setStore) => {
-      void loadCommands(directory, serverSDK.api.command, sdkFor(directory), serverSDK.protocol)
+      void loadCommands(directory, serverSDK.api.command, sdkFor(directory), serverSDK.protocol, serverSDK.api.skill)
         .then((commands) => setStore("command", commands))
         .catch((err) => {
           showToast({

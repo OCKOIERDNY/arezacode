@@ -13,10 +13,16 @@ import type {
   SessionsGetOutput,
   SessionsSetApprovalInput,
   SessionsSetApprovalOutput,
+  SessionsSetInstructionsInput,
+  SessionsSetInstructionsOutput,
   SessionsSwitchAgentInput,
   SessionsSwitchAgentOutput,
   SessionsSwitchModelInput,
   SessionsSwitchModelOutput,
+  SessionsCommandInput,
+  SessionsCommandOutput,
+  SessionsTasksInput,
+  SessionsTasksOutput,
   SessionsPromptInput,
   SessionsPromptOutput,
   SessionsCompactInput,
@@ -377,6 +383,18 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      setInstructions: (input: SessionsSetInstructionsInput, requestOptions?: RequestOptions) =>
+        request<SessionsSetInstructionsOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/instructions`,
+            body: { instructions: input["instructions"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 409, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
       switchAgent: (input: SessionsSwitchAgentInput, requestOptions?: RequestOptions) =>
         request<SessionsSwitchAgentOutput>(
           {
@@ -401,6 +419,39 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      command: (input: SessionsCommandInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsCommandOutput }>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/command`,
+            body: {
+              id: input["id"],
+              command: input["command"],
+              arguments: input["arguments"],
+              independent: input["independent"],
+              agent: input["agent"],
+              model: input["model"],
+              files: input["files"],
+              delivery: input["delivery"],
+              resume: input["resume"],
+            },
+            successStatus: 200,
+            declaredStatuses: [409, 404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      tasks: (input: SessionsTasksInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsTasksOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/tasks`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 409, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
       prompt: (input: SessionsPromptInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: SessionsPromptOutput }>(
           {

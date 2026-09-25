@@ -15,18 +15,114 @@ const id = (value: string) => SessionMessage.ID.make(`msg_${value}`)
 const model = Model.make({ id: "model", provider: "provider", route: OpenAIChat.route })
 
 test("usage keeps missing counts unknown and snapshots estimates separately from provider charges", () => {
-  expect(accountUsage(undefined)).toMatchObject({ version: 1, costSource: "unknown", cost: undefined, input: undefined, total: undefined })
+  expect(accountUsage(undefined)).toMatchObject({
+    version: 1,
+    costSource: "unknown",
+    cost: undefined,
+    input: undefined,
+    total: undefined,
+  })
   const prices = [{ input: 2, output: 10, cache: { read: 0.2, write: 2.5 } }]
-  const usage = new Usage({ inputTokens: 1000, outputTokens: 120, reasoningTokens: 20, cacheReadInputTokens: 600, cacheWriteInputTokens: 100, totalTokens: 1120 })
-  expect(accountUsage(usage, { prices })).toMatchObject({ costSource: "estimated", cost: 0.00217, prices: prices[0], input: 1000, output: 120 })
-  expect(accountUsage(new Usage({ ...usage, cost: 0 }), { prices })).toMatchObject({ costSource: "reported", cost: 0, prices: undefined })
+  const usage = new Usage({
+    inputTokens: 1000,
+    outputTokens: 120,
+    reasoningTokens: 20,
+    cacheReadInputTokens: 600,
+    cacheWriteInputTokens: 100,
+    totalTokens: 1120,
+  })
+  expect(accountUsage(usage, { prices })).toMatchObject({
+    costSource: "estimated",
+    cost: 0.00217,
+    prices: prices[0],
+    input: 1000,
+    output: 120,
+  })
+  expect(accountUsage(new Usage({ ...usage, cost: 0 }), { prices })).toMatchObject({
+    costSource: "reported",
+    cost: 0,
+    prices: undefined,
+  })
   expect(accountUsage(new Usage({ cost: Number.NaN }))).toMatchObject({ costSource: "unknown", cost: undefined })
-  const tiers = [...prices, { tier: { type: "context" as const, size: 200_000 }, input: 4, output: 20, cache: { read: 0.4, write: 5 } }]
+  const tiers = [
+    ...prices,
+    { tier: { type: "context" as const, size: 200_000 }, input: 4, output: 20, cache: { read: 0.4, write: 5 } },
+  ]
   expect(accountUsage(new Usage({ inputTokens: 200_000, outputTokens: 0 }), { prices: tiers }).cost).toBe(0.4)
   expect(accountUsage(new Usage({ inputTokens: 200_001, outputTokens: 0 }), { prices: tiers }).cost).toBe(0.800004)
 })
 
 describe("toLLMMessages", () => {
+  test("shortens repeated missing-path errors without hiding changed results or replaying absent history", () => {
+    const missing = (call: string, message: string) => SessionMessage.Assistant.make({
+      id: id(call), type: "assistant", agent: "build",
+      model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+      content: [SessionMessage.AssistantTool.make({
+        type: "tool", id: call, name: "read",
+        state: SessionMessage.ToolStateError.make({
+          status: "error", input: { path: "missing.ts" },
+          error: { type: "unknown", message }, content: [], structured: {},
+        }),
+        time: { created, completed: created },
+      })],
+      time: { created, completed: created },
+    })
+    const first = missing("missing-first", "File not found: missing.ts. Check the containing directory before retrying.")
+    const second = missing("missing-second", "File not found: missing.ts. Check the containing directory before retrying.")
+    const changed = missing("changed-error", "Permission denied: missing.ts")
+    const results = (messages: SessionMessage.Message[]) => toLLMMessages(messages, model)
+      .flatMap((message) => message.content).flatMap((part) => part.type === "tool-result" ? [part.result] : [])
+    expect(results([first, second, changed])[1]).toEqual({ type: "error", value: "Same error as read call missing-first in this history." })
+    expect(results([first, second, changed])[2]?.value).toMatchObject({ error: { message: "Permission denied: missing.ts" } })
+    expect(results([second])[0]?.value).toMatchObject({ error: { message: expect.stringContaining("File not found") } })
+  })
+
+  test("references only identical read results retained in the current history", () => {
+    const read = (call: string, text: string, file = "source.ts") =>
+      SessionMessage.Assistant.make({
+        id: id(call),
+        type: "assistant",
+        agent: "build",
+        model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+        content: [
+          SessionMessage.AssistantTool.make({
+            type: "tool",
+            id: call,
+            name: "read",
+            state: SessionMessage.ToolStateCompleted.make({
+              status: "completed",
+              input: { path: file },
+              structured: {},
+              content: [{ type: "text", text }],
+            }),
+            time: { created, completed: created },
+          }),
+        ],
+        time: { created, completed: created },
+      })
+    const original = "source content\n".repeat(100)
+    const first = read("first", original)
+    const second = read("second", original)
+    const changed = read("changed", original + "new line")
+    const other = read("other", original, "other.ts")
+    const result = (messages: SessionMessage.Message[]) =>
+      toLLMMessages(messages, model)
+        .flatMap((message) => message.content)
+        .flatMap((part) => (part.type === "tool-result" ? [part.result.value] : []))
+    expect(result([first, second, changed, other])).toEqual([
+      original,
+      "Unchanged result; see read tool call first in this history. This call returned exactly the same content.",
+      original + "new line",
+      original,
+    ])
+    expect(result([second])).toEqual([original])
+    expect(
+      second.content[0]?.type === "tool" &&
+        second.content[0].state.status === "completed" &&
+        second.content[0].state.content,
+    ).toEqual([{ type: "text", text: original }])
+  })
+
   test("omits empty assistant turns", () => {
     const assistant = (value: string, content: SessionMessage.Assistant["content"]) =>
       SessionMessage.Assistant.make({

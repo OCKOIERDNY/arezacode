@@ -235,10 +235,7 @@ const invalid = ProviderShared.invalidRequest
 // across `tools`, `system`, and `messages`. Beyond the cap the API returns a
 // 400 — so the lowering layer counts emitted markers and silently drops any
 // that exceed it.
-const ANTHROPIC_BREAKPOINT_CAP = 4
-
-const EPHEMERAL_5M = { type: "ephemeral" as const }
-const EPHEMERAL_1H = { type: "ephemeral" as const, ttl: "1h" as const }
+const ANTHROPIC_BREAKPOINT_CAP = Cache.BREAKPOINT_CAP
 
 const cacheControl = (breakpoints: Cache.Breakpoints, cache: CacheHint | undefined) => {
   if (cache?.type !== "ephemeral" && cache?.type !== "persistent") return undefined
@@ -247,7 +244,7 @@ const cacheControl = (breakpoints: Cache.Breakpoints, cache: CacheHint | undefin
     return undefined
   }
   breakpoints.remaining -= 1
-  return Cache.ttlBucket(cache.ttlSeconds) === "1h" ? EPHEMERAL_1H : EPHEMERAL_5M
+  return Cache.cacheControl(cache.ttlSeconds)
 }
 
 const anthropicMetadata = (metadata: Record<string, unknown>): ProviderMetadata => ({ anthropic: metadata })

@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, getOwner, onCleanup } from "solid-js"
 import { createTabMemory } from "./tab-memory"
-import { nextTabAfterClose, pushClosedTab, removeClosedTabs, takeClosedTab, type ClosedTab } from "./closed-tabs"
+import {
+  nextTabAfterClose,
+  pushClosedTab,
+  removeClosedTabs,
+  removeSessionTabs,
+  takeClosedTab,
+  type ClosedTab,
+} from "./closed-tabs"
 import type { SessionTab, Tab } from "./tabs"
 import { migrateTabs } from "./tab-migration"
 import type { ServerConnection } from "./server"
@@ -121,5 +128,55 @@ describe("closed tab stack", () => {
     expect(nextTabAfterClose(tabs, 1, false)).toBeUndefined()
     expect(nextTabAfterClose(tabs, 1, true)).toEqual(sessionTab("c"))
     expect(nextTabAfterClose([sessionTab("a")], 0, true)).toBeNull()
+  })
+})
+
+describe("archived session tabs", () => {
+  test("removes only the selected chat and selects its next open neighbor", () => {
+    const tabs = [sessionTab("a"), sessionTab("b"), sessionTab("c")]
+    const result = removeSessionTabs(tabs, server, ["b"], tabs[1])
+
+    expect(result.tabs).toEqual([tabs[0], tabs[2]])
+    expect(result.removed).toEqual([tabs[1]])
+    expect(result.next).toBe(tabs[2])
+    expect(tabs.map((tab) => tab.sessionId)).toEqual(["a", "b", "c"])
+  })
+
+  test("preserves drafts and chats on other servers with the same session ID", () => {
+    const selected = sessionTab("a")
+    const remote = { ...selected, server: "remote" as ServerConnection.Key }
+    const draft: Tab = { type: "draft", draftID: "draft", server, directory: "/project" }
+    const result = removeSessionTabs([selected, draft, remote], server, ["a"], selected)
+
+    expect(result.tabs).toEqual([draft, remote])
+    expect(result.next).toBe(draft)
+    expect(result.removed).toEqual([selected])
+  })
+
+  test("does not navigate when archiving a background chat", () => {
+    const tabs = [sessionTab("a"), sessionTab("b"), sessionTab("c")]
+    const result = removeSessionTabs(tabs, server, ["b"], tabs[2])
+
+    expect(result.tabs).toEqual([tabs[0], tabs[2]])
+    expect(result.next).toBeUndefined()
+  })
+
+  test("selects the previous open tab when archiving the last tab", () => {
+    const tabs = [sessionTab("a"), sessionTab("b")]
+    const result = removeSessionTabs(tabs, server, ["b"], tabs[1])
+
+    expect(result.tabs).toEqual([tabs[0]])
+    expect(result.next).toBe(tabs[0])
+    expect(removeSessionTabs([tabs[0]], server, ["a"], tabs[0]).next).toBeNull()
+  })
+
+  test("repeated removal leaves surviving tabs untouched", () => {
+    const tabs = [sessionTab("a"), sessionTab("b"), sessionTab("c")]
+    const first = removeSessionTabs(tabs, server, ["b"], tabs[1])
+    const second = removeSessionTabs(first.tabs, server, ["b"], tabs[2])
+
+    expect(second.tabs).toEqual([tabs[0], tabs[2]])
+    expect(second.removed).toEqual([])
+    expect(second.next).toBeUndefined()
   })
 })
