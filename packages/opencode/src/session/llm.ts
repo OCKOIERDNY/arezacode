@@ -376,7 +376,11 @@ const live: Layer.Layer<
               Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
               Stream.flatMap((events) => Stream.fromIterable(events)),
             )
-            return recoverStalls(events, { retrySafe: false, abort: Effect.sync(() => ctrl.abort()) })
+            return recoverStalls(events, {
+              retrySafe: false,
+              executesTools: true,
+              abort: Effect.sync(() => ctrl.abort()),
+            })
           }),
         ),
       )
