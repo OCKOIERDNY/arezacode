@@ -173,12 +173,22 @@ beforeAll(async () => {
   mock.module("@/context/server-sdk", () => ({
     useServerSDK: () => () => {
       const server = permissionServer
-      return { approval: { set: async (sessionID: string, mode: string) => { approvalChanges.push({ server, sessionID, mode }) } } }
+      return {
+        approval: {
+          set: async (sessionID: string, mode: string) => {
+            approvalChanges.push({ server, sessionID, mode })
+          },
+        },
+      }
     },
   }))
 
   mock.module("@/context/server", () => ({
-    useServer: () => ({ key: "server-key" }),
+    ServerConnection: { key: () => "server-key" },
+    useServer: () => ({
+      key: "server-key",
+      projects: { forServer: () => ({ assignment: () => undefined, list: () => [] }) },
+    }),
   }))
 
   mock.module("@/context/tabs", () => ({
@@ -324,19 +334,40 @@ describe("prompt submit worktree selection", () => {
     params = { id: "session-1" }
     const gate = Promise.withResolvers<boolean>()
     const first = sendFollowupDraft({
-      scope: "local", before: () => gate.promise,
+      scope: "local",
+      before: () => gate.promise,
       api: { prompt: async () => undefined },
       serverSync: { session: { set: () => undefined } },
       sync: { data: { command: [] }, session: { optimistic: { add: () => undefined, remove: () => undefined } } },
-      draft: { sessionID: "session-1", sessionDirectory: "/repo/main", prompt: [], context: [], agent: "build", model: { providerID: "provider", modelID: "model" }, independent: true },
+      draft: {
+        sessionID: "session-1",
+        sessionDirectory: "/repo/main",
+        prompt: [],
+        context: [],
+        agent: "build",
+        model: { providerID: "provider", modelID: "model" },
+        independent: true,
+      },
     } as unknown as Parameters<typeof sendFollowupDraft>[0])
     const queued: Array<{ independent?: boolean }> = []
     const submit = createPromptSubmit({
-      prompt, info: () => ({ id: "session-1" }), imageAttachments: () => [], commentCount: () => 0,
-      autoAccept: () => false, independentTasks: () => false, mode: () => "normal", working: () => true,
-      editor: () => undefined, queueScroll: () => undefined, promptLength: () => 2, addToHistory: () => undefined,
-      resetHistoryNavigation: () => undefined, setMode: () => undefined, setPopover: () => undefined,
-      shouldQueue: () => false, onQueue: (draft) => queued.push(draft),
+      prompt,
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      independentTasks: () => false,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: () => 2,
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      shouldQueue: () => false,
+      onQueue: (draft) => queued.push(draft),
     })
     await submit.handleSubmit({ preventDefault() {} } as Event)
     expect(queued).toMatchObject([{ independent: false }])
@@ -352,11 +383,23 @@ describe("prompt submit worktree selection", () => {
     let independent = true
     const queued: Array<{ independent?: boolean }> = []
     const submit = createPromptSubmit({
-      prompt, info: () => ({ id: "session-1" }), imageAttachments: () => [], commentCount: () => 0,
-      autoAccept: () => false, independentTasks: () => independent, mode: () => "normal", working: () => true,
-      editor: () => undefined, queueScroll: () => undefined, promptLength: () => 2, addToHistory: () => undefined,
-      resetHistoryNavigation: () => undefined, setMode: () => undefined, setPopover: () => undefined,
-      shouldQueue: () => true, onQueue: (draft) => queued.push(draft),
+      prompt,
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      independentTasks: () => independent,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: () => 2,
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      shouldQueue: () => true,
+      onQueue: (draft) => queued.push(draft),
     })
     const pending = submit.handleSubmit({ preventDefault() {} } as Event)
     independent = false
@@ -373,11 +416,26 @@ describe("prompt submit worktree selection", () => {
       let queued = false
       let history = false
       const submit = createPromptSubmit({
-        prompt, info: () => ({ id: "session-1" }), imageAttachments: () => [], commentCount: () => 0,
-        autoAccept: () => false, mode: () => mode, working: () => true, editor: () => undefined,
-        queueScroll: () => undefined, promptLength: () => 2, addToHistory: () => { history = true },
-        resetHistoryNavigation: () => undefined, setMode: () => undefined, setPopover: () => undefined,
-        shouldQueue: () => true, onQueue: () => { queued = true },
+        prompt,
+        info: () => ({ id: "session-1" }),
+        imageAttachments: () => [],
+        commentCount: () => 0,
+        autoAccept: () => false,
+        mode: () => mode,
+        working: () => true,
+        editor: () => undefined,
+        queueScroll: () => undefined,
+        promptLength: () => 2,
+        addToHistory: () => {
+          history = true
+        },
+        resetHistoryNavigation: () => undefined,
+        setMode: () => undefined,
+        setPopover: () => undefined,
+        shouldQueue: () => true,
+        onQueue: () => {
+          queued = true
+        },
       })
       await submit.handleSubmit({ preventDefault() {} } as Event)
       expect(promptValue).toBe(original)
@@ -394,10 +452,20 @@ describe("prompt submit worktree selection", () => {
     const gate = Promise.withResolvers<void>()
     healthGate = gate.promise
     const submit = createPromptSubmit({
-      prompt, info: () => params.id ? ({ id: params.id }) : undefined, imageAttachments: () => [], commentCount: () => 0,
-      autoAccept: () => false, mode: () => "normal", working: () => false, editor: () => undefined,
-      queueScroll: () => undefined, promptLength: () => 2, addToHistory: () => undefined,
-      resetHistoryNavigation: () => undefined, setMode: () => undefined, setPopover: () => undefined,
+      prompt,
+      info: () => (params.id ? { id: params.id } : undefined),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: () => 2,
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
     })
     const sending = submit.handleSubmit({ preventDefault() {} } as Event)
     params.id = "session-2"
@@ -409,49 +477,133 @@ describe("prompt submit worktree selection", () => {
 
   test("sends the captured browser preference for each draft", async () => {
     const { sendFollowupDraft } = await import("./submit")
-    const requests: Array<{ text: string; independent?: boolean; legacyParts: Array<{ metadata?: { browserVerification?: string } }> }> = []
+    const requests: Array<{
+      text: string
+      independent?: boolean
+      legacyParts: Array<{ metadata?: { browserVerification?: string } }>
+    }> = []
     for (const automatic of [false, true, false]) {
       await sendFollowupDraft({
-        api: { prompt: async (input: (typeof requests)[number]) => { requests.push(input) } },
+        api: {
+          prompt: async (input: (typeof requests)[number]) => {
+            requests.push(input)
+          },
+        },
         serverSync: { session: { set: () => undefined } },
         sync: { data: { command: [] }, session: { optimistic: { add: () => undefined, remove: () => undefined } } },
         draft: {
-          sessionID: "session-browser", sessionDirectory: "/repo", prompt: [{ type: "text", content: "Check layout", start: 0, end: 12 }],
-          context: [], agent: "build", model: { providerID: "provider", modelID: "model" }, browserVerification: automatic, independent: automatic,
+          sessionID: "session-browser",
+          sessionDirectory: "/repo",
+          prompt: [{ type: "text", content: "Check layout", start: 0, end: 12 }],
+          context: [],
+          agent: "build",
+          model: { providerID: "provider", modelID: "model" },
+          browserVerification: automatic,
+          independent: automatic,
         },
       } as unknown as Parameters<typeof sendFollowupDraft>[0])
     }
-    expect(requests.map((request) => request.legacyParts.at(-1)?.metadata?.browserVerification)).toEqual(["manual", "automatic", "manual"])
+    expect(requests.map((request) => request.legacyParts.at(-1)?.metadata?.browserVerification)).toEqual([
+      "manual",
+      "automatic",
+      "manual",
+    ])
     expect(requests.map((request) => request.independent)).toEqual([undefined, true, undefined])
     expect(requests[0].text).toContain("Do not run browser checks")
     expect(requests[1].text).toContain("Browser checks are already approved")
     expect(requests[2].text).toContain("marked unverified")
   })
 
+  test("sends every selected source folder and explicitly clears detached project context", async () => {
+    const { sendFollowupDraft } = await import("./submit")
+    const requests: Array<{ text: string }> = []
+    for (const project of [{ name: "Named project", folders: ["/source/api", "/source/site"] }, null]) {
+      await sendFollowupDraft({
+        api: {
+          prompt: async (input: (typeof requests)[number]) => {
+            requests.push(input)
+          },
+        },
+        serverSync: { session: { set: () => undefined } },
+        sync: { data: { command: [] }, session: { optimistic: { add: () => undefined, remove: () => undefined } } },
+        draft: {
+          sessionID: "project-chat",
+          sessionDirectory: "/state/chats",
+          prompt: [{ type: "text", content: "Review", start: 0, end: 6 }],
+          context: [],
+          agent: "build",
+          model: { providerID: "provider", modelID: "model" },
+          project,
+        },
+      } as unknown as Parameters<typeof sendFollowupDraft>[0])
+    }
+    expect(requests[0].text).toContain("/source/api")
+    expect(requests[0].text).toContain("/source/site")
+    expect(requests[0].text).toContain("pass this context to subagents")
+    expect(requests[1].text).toContain("No project is selected")
+    expect(requests[1].text).not.toContain("/source/api")
+  })
+
   test("waits for Jev and executes its model and effort; uncertain Auto never sends", async () => {
     const { sendFollowupDraft } = await import("./submit")
-    const gate = Promise.withResolvers<{ status: "ready"; routing: "selected"; model: { providerID: string; modelID: string; variant: string }; skills: [] }>()
+    const gate = Promise.withResolvers<{
+      status: "ready"
+      routing: "selected"
+      model: { providerID: string; modelID: string; variant: string }
+      skills: []
+    }>()
     const requests: unknown[] = []
     const messages: Array<{ model: { modelID: string; variant?: string } }> = []
     const base = {
-      api: { prompt: async (input: unknown) => { requests.push(input) } },
+      api: {
+        prompt: async (input: unknown) => {
+          requests.push(input)
+        },
+      },
       serverSync: { session: { set: () => undefined } },
-      sync: { data: { command: [] }, session: { optimistic: { add: (input: { message: typeof messages[number] }) => messages.push(input.message), remove: () => undefined } } },
-      draft: { sessionID: "session-route", sessionDirectory: "/repo", prompt: [{ type: "text", content: "Review authentication", start: 0, end: 21 }], context: [], agent: "build", model: { providerID: "original", modelID: "original" }, variant: "low", jev: { auto: true, models: [{ providerID: "chosen", modelID: "astra", variant: "high" }] } },
+      sync: {
+        data: { command: [] },
+        session: {
+          optimistic: {
+            add: (input: { message: (typeof messages)[number] }) => messages.push(input.message),
+            remove: () => undefined,
+          },
+        },
+      },
+      draft: {
+        sessionID: "session-route",
+        sessionDirectory: "/repo",
+        prompt: [{ type: "text", content: "Review authentication", start: 0, end: 21 }],
+        context: [],
+        agent: "build",
+        model: { providerID: "original", modelID: "original" },
+        variant: "low",
+        jev: { auto: true, models: [{ providerID: "chosen", modelID: "astra", variant: "high" }] },
+      },
       jev: { state: { enabled: true, routing: true }, prepare: () => gate.promise },
       routingError: "Choose a model or retry",
     }
     const pending = sendFollowupDraft(base as unknown as Parameters<typeof sendFollowupDraft>[0])
     await Bun.sleep(0)
     expect(requests).toHaveLength(0)
-    gate.resolve({ status: "ready", routing: "selected", model: { providerID: "chosen", modelID: "astra", variant: "high" }, skills: [] })
+    gate.resolve({
+      status: "ready",
+      routing: "selected",
+      model: { providerID: "chosen", modelID: "astra", variant: "high" },
+      skills: [],
+    })
     expect(await pending).toBe(true)
     expect(requests).toMatchObject([{ model: { providerID: "chosen", modelID: "astra" }, variant: "high" }])
     expect(messages[0].model.modelID).toBe("")
     expect(messages[1].model).toMatchObject({ modelID: "astra", variant: "high" })
     expect(messages[1]).not.toBe(messages[0])
-    const uncertain = { ...base, jev: { state: base.jev.state, prepare: async () => ({ status: "ready", routing: "uncertain", skills: [] }) } }
-    await expect(sendFollowupDraft(uncertain as unknown as Parameters<typeof sendFollowupDraft>[0])).rejects.toThrow("Choose a model or retry")
+    const uncertain = {
+      ...base,
+      jev: { state: base.jev.state, prepare: async () => ({ status: "ready", routing: "uncertain", skills: [] }) },
+    }
+    await expect(sendFollowupDraft(uncertain as unknown as Parameters<typeof sendFollowupDraft>[0])).rejects.toThrow(
+      "Choose a model or retry",
+    )
     expect(requests).toHaveLength(1)
   })
 
@@ -464,18 +616,48 @@ describe("prompt submit worktree selection", () => {
     let sent = false
     const sending = sendFollowupDraft({
       scope: "local",
-      api: { prompt: async () => { sent = true } },
+      api: {
+        prompt: async () => {
+          sent = true
+        },
+      },
       serverSync: { session: { set() {} } },
       sync: { data: { command: [] }, session: { optimistic: { add() {}, remove() {} } } },
-      draft: { sessionID: params.id, sessionDirectory: "/repo/main", prompt: promptValue, context: [], agent: "build", model: { providerID: "provider", modelID: "model" } },
-      jev: { state: { enabled: true }, prepare: (_: unknown, __: string, signal: AbortSignal) => { started.resolve(signal); return decision.promise } },
-      onCancel: () => { restored = true },
+      draft: {
+        sessionID: params.id,
+        sessionDirectory: "/repo/main",
+        prompt: promptValue,
+        context: [],
+        agent: "build",
+        model: { providerID: "provider", modelID: "model" },
+      },
+      jev: {
+        state: { enabled: true },
+        prepare: (_: unknown, __: string, signal: AbortSignal) => {
+          started.resolve(signal)
+          return decision.promise
+        },
+      },
+      onCancel: () => {
+        restored = true
+      },
     } as unknown as Parameters<typeof sendFollowupDraft>[0])
     const signal = await started.promise
     const submit = createPromptSubmit({
-      prompt, info: () => ({ id: "session-cancel" }), imageAttachments: () => [], commentCount: () => 0,
-      autoAccept: () => false, mode: () => "normal", working: () => true, editor: () => undefined,
-      queueScroll() {}, promptLength: () => 2, addToHistory() {}, resetHistoryNavigation() {}, setMode() {}, setPopover() {},
+      prompt,
+      info: () => ({ id: "session-cancel" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll() {},
+      promptLength: () => 2,
+      addToHistory() {},
+      resetHistoryNavigation() {},
+      setMode() {},
+      setPopover() {},
     })
     await submit.abort()
     expect(signal.aborted).toBe(true)
@@ -707,12 +889,33 @@ describe("prompt submit worktree selection", () => {
       agents: [],
     })
     expect((promptInputs[0] as { id?: string }).id).toStartWith("msg_")
-    expect((promptInputs[0] as { legacyParts?: { id: string; type: string; text?: string; synthetic?: boolean; metadata?: Record<string, string> }[] }).legacyParts).toEqual([
+    expect(
+      (
+        promptInputs[0] as {
+          legacyParts?: {
+            id: string
+            type: string
+            text?: string
+            synthetic?: boolean
+            metadata?: Record<string, unknown>
+          }[]
+        }
+      ).legacyParts,
+    ).toEqual([
       { id: expect.stringMatching(/^prt_/), type: "text", text: "ls" },
       {
-        id: expect.stringMatching(/^prt_/), type: "text", synthetic: true,
+        id: expect.stringMatching(/^prt_/),
+        type: "text",
+        synthetic: true,
         text: expect.stringContaining("Do not ask the user to choose manual or automatic."),
         metadata: { browserVerification: "manual" },
+      },
+      {
+        id: expect.stringMatching(/^prt_/),
+        type: "text",
+        synthetic: true,
+        text: expect.stringContaining("No project is selected for this chat."),
+        metadata: { projectContext: true },
       },
     ])
   })
@@ -758,10 +961,18 @@ describe("prompt submit worktree selection", () => {
         arguments: argumentsText,
         agent: "agent",
         model: { id: "model", providerID: "provider", variant: "high" },
-        files: [{
-          name: "browser-verification.txt",
-          uri: expect.stringContaining(encodeURIComponent("Browser verification preference selected by the user: AUTOMATIC.")),
-        }],
+        files: [
+          {
+            name: "browser-verification.txt",
+            uri: expect.stringContaining(
+              encodeURIComponent("Browser verification preference selected by the user: AUTOMATIC."),
+            ),
+          },
+          {
+            name: "project-context.txt",
+            uri: expect.stringContaining(encodeURIComponent("No project is selected for this chat.")),
+          },
+        ],
       },
     ])
     expect(serverSessionSyncs).toBe(0)

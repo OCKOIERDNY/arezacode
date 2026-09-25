@@ -4,7 +4,6 @@ import { useNavigate, useSearchParams } from "@solidjs/router"
 import { type Accessor, createMemo } from "solid-js"
 import type { PromptInputControls } from "@/components/prompt-input/contracts"
 import type { PromptProjectControls } from "@/components/prompt-project-selector"
-import { useDirectoryPicker } from "@/components/directory-picker"
 import { useGlobal } from "@/context/global"
 import { useLayout } from "@/context/layout"
 import { useLocal, type ModelSelection } from "@/context/local"
@@ -16,6 +15,8 @@ import { useSync } from "@/context/sync"
 import { useTabs } from "@/context/tabs"
 import { useProviders } from "@/hooks/use-providers"
 import { pathKey } from "@/utils/path-key"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { createComponent } from "solid-js"
 
 export function createPromptInputController(input: {
   sessionKey: Accessor<string>
@@ -68,7 +69,7 @@ export function createPromptProjectControls() {
   const sdk = useSDK()
   const tabs = useTabs()
   const global = useGlobal()
-  const pickDirectory = useDirectoryPicker()
+  const dialog = useDialog()
   const [search] = useSearchParams<{ draftId?: string }>()
   const projectServer = () => serverSDK().server
   const projectServerCtx = createMemo(() => global.ensureServerCtx(projectServer()))
@@ -91,7 +92,7 @@ export function createPromptProjectControls() {
       const target = global.ensureServerCtx(conn)
       target.projects.open(worktree)
       target.projects.touch(worktree)
-      tabs.updateDraft(search.draftId, { server: ServerConnection.key(conn), directory: worktree })
+      tabs.updateDraft(search.draftId, { server: ServerConnection.key(conn), directory: worktree, project: worktree })
       return
     }
 
@@ -113,13 +114,13 @@ export function createPromptProjectControls() {
   const addProject = (title: string, serverKey?: string) => {
     const conn = serverKey ? server.list.find((conn) => ServerConnection.key(conn) === serverKey) : projectServer()
     if (!conn) return
-    pickDirectory({
-      server: conn,
-      title,
-      onSelect: (result) => {
-        const directory = Array.isArray(result) ? result[0] : result
-        if (directory) selectProject(directory, serverKey)
-      },
+    void import("@/components/dialog-edit-project-v2").then(({ DialogCreateProjectV2 }) => {
+      dialog.show(() =>
+        createComponent(DialogCreateProjectV2, {
+          server: conn,
+          onSelect: (directory) => selectProject(directory, serverKey),
+        }),
+      )
     })
   }
 

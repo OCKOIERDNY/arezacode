@@ -3,6 +3,18 @@
   max-width: 100%;
 }
 
+[data-component="overflow-text"][data-fade][data-overflow] {
+  mask-image: linear-gradient(to right, black, black calc(100% - 20px), transparent);
+}
+
+[data-component="overflow-text"][data-fade] > span {
+  text-overflow: clip;
+}
+
+[data-component="overflow-text"][data-fade][data-overflow]:hover {
+  mask-image: linear-gradient(to right, transparent, black 10px, black calc(100% - 20px), transparent);
+}
+
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   [data-component="overflow-text"]:hover > span {
     overflow: visible;

@@ -8,6 +8,10 @@ import { ProjectAvatar, PROJECT_AVATAR_VARIANTS } from "@opencode-ai/ui/v2/proje
 import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { For, Show } from "solid-js"
+import { createStore } from "solid-js/store"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useDirectoryPicker } from "./directory-picker"
+import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { getProjectAvatarVariant, type LocalProject } from "@/context/layout"
 import { ServerConnection } from "@/context/server"
@@ -25,7 +29,11 @@ export function DialogEditProjectV2(props: { project: LocalProject; server: Serv
           <DialogTitle>{language.t("dialog.project.edit.title")}</DialogTitle>
         </DialogHeader>
         <DividerV2 />
-        <ScrollView data-slot="dialog-body" class="max-h-[min(560px,calc(100vh-160px))] w-full" viewportClass="flex flex-col gap-6 px-4 pt-4 pb-1">
+        <ScrollView
+          data-slot="dialog-body"
+          class="max-h-[min(560px,calc(100vh-160px))] w-full"
+          viewportClass="flex flex-col gap-6 px-4 pt-4 pb-1"
+        >
           <Field>
             <Field.Label>{language.t("dialog.project.edit.name")}</Field.Label>
             <TextInputV2
@@ -37,6 +45,12 @@ export function DialogEditProjectV2(props: { project: LocalProject; server: Serv
               onInput={(event) => model.setStore("name", event.currentTarget.value)}
             />
           </Field>
+
+          <ProjectFoldersField
+            server={props.server}
+            folders={model.store.folders}
+            onChange={(folders) => model.setStore("folders", folders)}
+          />
 
           <div class="flex w-full flex-col gap-2">
             <div class="select-none text-[13px] font-[530] leading-none tracking-[-0.04px] text-v2-text-text-base">
@@ -153,5 +167,112 @@ export function DialogEditProjectV2(props: { project: LocalProject; server: Serv
         </DialogFooter>
       </form>
     </Dialog>
+  )
+}
+
+export function DialogCreateProjectV2(props: { server: ServerConnection.Any; onSelect: (directory: string) => void }) {
+  const language = useLanguage()
+  const dialog = useDialog()
+  const global = useGlobal()
+  const [state, setState] = createStore({ name: "", folders: [] as string[] })
+  return (
+    <Dialog fit>
+      <form
+        class="contents"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (!state.name.trim() || !state.folders.length) return
+          const directory = state.folders[0]
+          global.ensureServerCtx(props.server).projects.save({
+            worktree: directory,
+            name: state.name.trim(),
+            folders: [...state.folders],
+            expanded: true,
+          })
+          dialog.close()
+          props.onSelect(directory)
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{language.t("project.create.title")}</DialogTitle>
+        </DialogHeader>
+        <div class="flex min-w-[min(480px,80vw)] flex-col gap-6 p-4">
+          <Field>
+            <Field.Label>{language.t("dialog.project.edit.name")}</Field.Label>
+            <TextInputV2
+              autofocus
+              value={state.name}
+              class="!w-full"
+              placeholder={language.t("project.create.name")}
+              onInput={(event) => setState("name", event.currentTarget.value)}
+            />
+          </Field>
+          <ProjectFoldersField
+            server={props.server}
+            folders={state.folders}
+            onChange={(folders) => setState("folders", folders)}
+          />
+        </div>
+        <DialogFooter>
+          <ButtonV2 type="button" variant="neutral" onClick={dialog.close}>
+            {language.t("common.cancel")}
+          </ButtonV2>
+          <ButtonV2 type="submit" variant="contrast" disabled={!state.name.trim() || !state.folders.length}>
+            {language.t("project.create.title")}
+          </ButtonV2>
+        </DialogFooter>
+      </form>
+    </Dialog>
+  )
+}
+
+function ProjectFoldersField(props: {
+  server: ServerConnection.Any
+  folders: string[]
+  onChange: (folders: string[]) => void
+}) {
+  const language = useLanguage()
+  const pick = useDirectoryPicker()
+  return (
+    <Field>
+      <Field.Label>{language.t("project.folders")}</Field.Label>
+      <div class="flex w-full flex-col gap-2 rounded-lg border border-v2-border-border-base p-3">
+        <For each={props.folders}>
+          {(folder) => (
+            <div class="flex items-center gap-2">
+              <span class="min-w-0 flex-1 truncate" title={folder}>
+                {folder}
+              </span>
+              <ButtonV2
+                type="button"
+                variant="ghost-muted"
+                aria-label={language.t("project.folder.remove", { folder })}
+                onClick={() => props.onChange(props.folders.filter((item) => item !== folder))}
+              >
+                <Icon name="close" />
+              </ButtonV2>
+            </div>
+          )}
+        </For>
+        <ButtonV2
+          type="button"
+          variant="neutral"
+          onClick={() =>
+            pick({
+              server: props.server,
+              title: language.t("project.folder.add"),
+              multiple: true,
+              nested: true,
+              onSelect: (value) =>
+                props.onChange([
+                  ...new Set([...props.folders, ...(Array.isArray(value) ? value : value ? [value] : [])]),
+                ]),
+            })
+          }
+        >
+          {language.t("project.folder.add")}
+        </ButtonV2>
+      </div>
+    </Field>
   )
 }

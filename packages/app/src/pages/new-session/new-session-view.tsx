@@ -8,11 +8,7 @@ import { Portal } from "solid-js/web"
 import createPresence from "solid-presence"
 import { PromptInputV2Composer } from "@/components/prompt-input-v2"
 import { PromptGitStatus, PromptWorkspaceSelector } from "@/components/prompt-workspace-selector"
-import {
-  PromptProjectAddButton,
-  PromptProjectSelector,
-  type PromptProjectController,
-} from "@/components/prompt-project-selector"
+import { PromptProjectSelector, type PromptProjectController } from "@/components/prompt-project-selector"
 import { StatusPopoverV2 } from "@/components/status-popover"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
@@ -41,12 +37,9 @@ export function NewSessionView(props: {
             <WordmarkV2 class="h-auto w-full text-v2-background-bg-inverse" />
             <div class="mt-8 flex flex-col gap-8">
               <PromptInputV2Composer controller={props.input} />
-              <Show when={props.project.empty()}>
-                <PromptProjectAddButton controller={props.project} />
-              </Show>
-              <Show when={props.project.selected()}>
-                <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-0 text-v2-text-text-faint sm:flex-row">
-                  <PromptProjectSelector controller={props.project} placement="bottom" />
+              <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-0 text-v2-text-text-faint sm:flex-row">
+                <PromptProjectSelector controller={props.project} placement="bottom" />
+                <Show when={props.project.selected()}>
                   <Show
                     when={props.workspace.bar.visible()}
                     fallback={
@@ -62,8 +55,8 @@ export function NewSessionView(props: {
                       onDone={props.input.restoreFocus}
                     />
                   </Show>
-                </div>
-              </Show>
+                </Show>
+              </div>
             </div>
           </div>
         </div>

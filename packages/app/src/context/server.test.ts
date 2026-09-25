@@ -126,6 +126,25 @@ test("active server removal falls back across built-in and persisted servers", (
 })
 
 describe("createServerProjects", () => {
+  test("persists named source folders and chat assignments independently for each server", () => {
+    createRoot((dispose) => {
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {} })
+      const scope = () => ServerScope.local
+      const projects = createServerProjects({ scope, store, setStore })
+      projects.save({ worktree: "/first", name: "My project", folders: ["/first", "/second"], expanded: true })
+      projects.assign("chat", "/first", "/state/chats")
+      const restored = createServerProjects({ scope, store, setStore })
+      expect(restored.list()[0]).toMatchObject({ name: "My project", folders: ["/first", "/second"] })
+      expect(restored.assignedDirectories("/first")).toEqual(["/state/chats"])
+      expect(restored.assignment("chat")).toEqual({ project: "/first", directory: "/state/chats" })
+      const remote = createServerProjects({ scope: () => "https://other.example" as ServerScope, store, setStore })
+      expect(remote.assignment("chat")).toBeUndefined()
+      restored.assign("chat", "", "/state/chats")
+      expect(restored.assignedDirectories("/first")).toEqual([])
+      expect(restored.assignedDirectories("")).toEqual(["/state/chats"])
+      dispose()
+    })
+  })
   test("keeps active and explicit server buckets in one reactive store", () => {
     createRoot((dispose) => {
       const [scope] = createSignal(ServerScope.local)

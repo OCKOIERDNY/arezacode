@@ -5,12 +5,13 @@ import { Persist, persisted } from "@/utils/persist"
 import { pathKey, relocatePath } from "@/utils/path-key"
 import { ServerScope } from "@/utils/server-scope"
 
-type StoredProject = { worktree: string; expanded: boolean }
+export type StoredProject = { worktree: string; expanded: boolean; name?: string; folders?: string[] }
 type StoredServer = string | ServerConnection.HttpBase | ServerConnection.Http
 type ServerProjectState = {
   projects: Record<string, StoredProject[]>
   lastProject: Record<string, string>
   recentlyClosed: Record<string, string[]>
+  chatProjects?: Record<string, Record<string, { project: string; directory: string }>>
 }
 const HEALTH_POLL_INTERVAL_MS = 10_000
 // The store retains more history than is displayed. Consumers filter recently closed entries
@@ -93,6 +94,25 @@ export function createServerProjects<T extends ServerProjectState>(input: {
   }
   return {
     list: current,
+    save(project: StoredProject) {
+      const existing = current().findIndex((item) => pathKey(item.worktree) === pathKey(project.worktree))
+      if (existing === -1) setStore("projects", input.scope(), [project, ...current()])
+      else setStore("projects", input.scope(), existing, project)
+    },
+    assignment(sessionID: string) {
+      return input.store.chatProjects?.[input.scope()]?.[sessionID]
+    },
+    assignedDirectories(project: string) {
+      return Object.values(input.store.chatProjects?.[input.scope()] ?? {})
+        .filter((item) => item.project === project)
+        .map((item) => item.directory)
+    },
+    assign(sessionID: string, project: string, directory: string) {
+      setStore("chatProjects", {
+        ...input.store.chatProjects,
+        [input.scope()]: { ...input.store.chatProjects?.[input.scope()], [sessionID]: { project, directory } },
+      })
+    },
     recentlyClosed: currentClosed,
     remove,
     relocate(from: string, to: string) {
@@ -100,8 +120,24 @@ export function createServerProjects<T extends ServerProjectState>(input: {
       const projects = current().map((project) => ({
         ...project,
         worktree: relocatePath(project.worktree, from, to),
+        ...(project.folders ? { folders: project.folders.map((folder) => relocatePath(folder, from, to)) } : {}),
       }))
       batch(() => {
+        const assigned = input.store.chatProjects?.[scope]
+        if (assigned)
+          setStore(
+            "chatProjects",
+            scope,
+            Object.fromEntries(
+              Object.entries(assigned).map(([id, item]) => [
+                id,
+                {
+                  project: item.project ? relocatePath(item.project, from, to) : "",
+                  directory: relocatePath(item.directory, from, to),
+                },
+              ]),
+            ),
+          )
         setStore(
           "projects",
           scope,
@@ -292,6 +328,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         projects: {} as Record<string, StoredProject[]>,
         lastProject: {} as Record<string, string>,
         recentlyClosed: {} as Record<string, string[]>,
+        chatProjects: {} as NonNullable<ServerProjectState["chatProjects"]>,
       }),
     )
 

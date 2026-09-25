@@ -1,9 +1,23 @@
-import type { JSX } from "solid-js"
+import { createEffect, onCleanup, type JSX } from "solid-js"
 import "./overflow-text.css"
 
-export function OverflowText(props: { children: JSX.Element }) {
+export function OverflowText(props: { children: JSX.Element; fade?: boolean }) {
+  let root: HTMLSpanElement | undefined
+  createEffect(() => {
+    props.children
+    if (!props.fade || !root) return
+    const element = root
+    const update = () =>
+      element.toggleAttribute("data-overflow", (element.firstElementChild?.scrollWidth ?? 0) > element.clientWidth)
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    update()
+    onCleanup(() => observer.disconnect())
+  })
   return (
     <span
+      ref={root}
+      data-fade={props.fade || undefined}
       data-component="overflow-text"
       class="min-w-0 flex-1 overflow-hidden"
       onPointerEnter={(event) => {

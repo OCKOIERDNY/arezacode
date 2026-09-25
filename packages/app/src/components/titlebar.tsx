@@ -266,54 +266,16 @@ export function Titlebar(props: {
             })
 
             const openNewTab = () => {
-              const route = layout.route()
-              const activeSession = session()
-              if (route.type === "session" && activeSession) {
-                const sessionTab = {
-                  type: "session" as const,
-                  server: route.server ?? server.key,
-                  sessionId: activeSession.id,
-                }
-                const model = tabs.stateValue<PromptSession>(sessionTab, "prompt")?.model.current()
-                tabs.newDraft({ server: sessionTab.server, directory: activeSession.directory }, "", model)
-                return
-              }
-
-              const activeTab = currentTab()
-              if (activeTab?.type === "draft") {
-                const model = tabs.stateValue<PromptSession>(activeTab, "prompt")?.model.current()
-                tabs.newDraft({ server: activeTab.server, directory: activeTab.directory }, "", model)
-                return
-              }
-
-              if (route.type === "home") {
-                const selection = layout.home.selection()
-                const conn = global.servers.list().find((item) => ServerConnection.key(item) === selection.server)
-                const project = conn
-                  ? global
-                      .ensureServerCtx(conn)
-                      .projects.list()
-                      .find((item) => item.worktree === selection.directory)
-                  : undefined
-                if (conn && project) {
-                  tabs.newDraft({ server: ServerConnection.key(conn), directory: project.worktree }, "")
-                  return
-                }
-              }
-
-              const current = layout.projects.list()[0]
-              if (current) {
-                tabs.newDraft({ server: server.key, directory: current.worktree }, "")
-                return
-              }
-
-              const fallback = global.servers.list().flatMap((conn) => {
-                const project = global.ensureServerCtx(conn).projects.list()[0]
-                return project ? [{ server: ServerConnection.key(conn), project }] : []
-              })[0]
-              if (!fallback) return
-
-              tabs.newDraft({ server: fallback.server, directory: fallback.project.worktree }, "")
+              const conn =
+                global.servers.list().find((item) => ServerConnection.key(item) === server.key) ??
+                global.servers.list()[0]
+              if (!conn) return
+              const state = global.ensureServerCtx(conn).sync.data.path.state
+              if (!state) return
+              void tabs.newDraft(
+                { server: ServerConnection.key(conn), directory: state.replace(/[\\/]$/, "") + "/chats", project: "" },
+                "",
+              )
             }
             const toggleHome = () =>
               props.sidebar

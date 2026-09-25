@@ -40,6 +40,7 @@ await Promise.all([
   fs.mkdir(Path.data, { recursive: true }),
   fs.mkdir(Path.config, { recursive: true }),
   fs.mkdir(Path.state, { recursive: true }),
+  fs.mkdir(path.join(Path.state, "chats"), { recursive: true }),
   fs.mkdir(Path.tmp, { recursive: true }),
   fs.mkdir(Path.log, { recursive: true }),
   fs.mkdir(Path.bin, { recursive: true }),

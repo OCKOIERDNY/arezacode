@@ -22,6 +22,7 @@ import { pathKey } from "@/utils/path-key"
 import { showToast } from "@/utils/toast"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { archiveHomeSession } from "../home-session-archive"
+import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from "@/utils/session-export"
 import type { HomeController } from "./home-controller"
 
 export type HomeSessionRecord = {
@@ -46,14 +47,18 @@ export function createHomeSessionsController(
   const tabs = useTabs()
   const language = useLanguage()
   const server = () => scope?.server ?? home.server.focused()
-  const context = () => scope ? home.server.context(scope.server) : home.server.focusedContext()
-  const projects = () => scope ? home.project.forServer(scope.server) : home.project.list()
-  const selectedProject = () => scope ? scope.project() : home.project.selected()
-  const serverKey = () => scope ? ServerConnection.key(scope.server) : home.selection.value().server
+  const context = () => (scope ? home.server.context(scope.server) : home.server.focusedContext())
+  const projects = () => (scope ? [...home.project.forServer(scope.server), scope.project()] : home.project.list())
+  const selectedProject = () => (scope ? scope.project() : home.project.selected())
+  const serverKey = () => (scope ? ServerConnection.key(scope.server) : home.selection.value().server)
   const projectDirectories = createMemo(() => {
     const project = selectedProject()
     if (!project) return projects().flatMap(directories)
-    return directories(project)
+    const assigned =
+      context()?.projects.assignedDirectories(
+        project.worktree === home.project.chatDirectory(server()!) ? "" : project.worktree,
+      ) ?? []
+    return [...directories(project), ...assigned]
   })
   const projectByID = createMemo(
     () => new Map(projects().flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
@@ -130,15 +135,32 @@ export function createHomeSessionsController(
       projectDirectories,
       projects,
       projectByID,
+      fallback: selectedProject,
     }),
   )
-  const records = createMemo(() => allRecords().slice(0, limit))
-  const searchRecords = createMemo(() => !search.value ? allRecords() : buildHomeSessionRecords({
-    sessions: () => homeSessions().sessions(searchLoad.data, sessionEventLoad.data),
-    projectDirectories,
-    projects,
-    projectByID,
-  }))
+  const inProject = (record: HomeSessionRecord) => {
+    if (!scope) return true
+    const assigned = context()?.projects.assignment(record.session.id)
+    if (!assigned)
+      return directories(scope.project()).some((directory) => pathKey(directory) === pathKey(record.session.directory))
+    return (
+      assigned.project ===
+      (scope.project().worktree === home.project.chatDirectory(scope.server) ? "" : scope.project().worktree)
+    )
+  }
+  const records = createMemo(() => allRecords().filter(inProject).slice(0, limit))
+  const searchRecords = createMemo(() =>
+    (!search.value
+      ? allRecords()
+      : buildHomeSessionRecords({
+          sessions: () => homeSessions().sessions(searchLoad.data, sessionEventLoad.data),
+          projectDirectories,
+          projects,
+          projectByID,
+          fallback: selectedProject,
+        })
+    ).filter(inProject),
+  )
   const groups = createMemo(() => groupSessions(records(), language))
   const prefetched = new Set<string>()
 
@@ -191,6 +213,37 @@ export function createHomeSessionsController(
       searchLoading: () => searchLoad.isFetching,
     },
     session: {
+      assign: (session: Session, project: string) => {
+        context()?.projects.assign(session.id, project, session.directory)
+        if (project) context()?.projects.expand(project)
+      },
+      rename: async (session: Session, title: string) => {
+        const ctx = context()
+        if (!ctx || !title.trim()) return
+        await ctx.sdk.api.session.rename({ sessionID: session.id, title: title.trim() })
+        await queryClient().invalidateQueries({ queryKey: homeSessions().indexKey })
+      },
+      share: async (session: Session) => {
+        const ctx = context()
+        if (!ctx) return
+        const response = await ctx.sdk.client.session.share({ sessionID: session.id, directory: session.directory })
+        if (!response.data?.share?.url) throw new Error(language.t("toast.session.share.failed.title"))
+        await navigator.clipboard.writeText(response.data.share.url)
+        showToast({ title: language.t("session.share.copy.copied") })
+      },
+      export: async (session: Session) => {
+        const ctx = context()
+        if (!ctx) return
+        const data = await fetchSessionExport({ sessionID: session.id, client: ctx.sdk.client })
+        downloadSessionExport(sessionExportFilename(data.info), data)
+      },
+      delete: async (session: Session) => {
+        const ctx = context()
+        if (!ctx) return
+        await ctx.sdk.client.session.delete({ sessionID: session.id, directory: session.directory })
+        homeSessions().remove(session.id)
+        tabs.removeSessions({ server: serverKey(), directory: session.directory, sessionIDs: [session.id] })
+      },
       search: (value: string) => setSearch("value", value),
       showProjectName: () => !selectedProject(),
       server: serverKey,
@@ -199,23 +252,22 @@ export function createHomeSessionsController(
       open: (session: Session, options?: OpenSessionOptions) => {
         const directoryKey = pathKey(session.directory)
         const project =
-          projects()
-            .find(
-              (item) =>
-                pathKey(item.worktree) === directoryKey ||
-                item.sandboxes?.some((sandbox) => pathKey(sandbox) === directoryKey),
-            ) ?? projectForSession(session, projects(), projectByID())
+          projects().find(
+            (item) =>
+              pathKey(item.worktree) === directoryKey ||
+              item.sandboxes?.some((sandbox) => pathKey(sandbox) === directoryKey),
+          ) ?? projectForSession(session, projects(), projectByID())
         const conn = server()
         if (!conn) return
-        const directory = project?.worktree ?? session.directory
         const ctx = context()
         if (!ctx) return
-        ctx.projects.open(directory)
+        const directory = ctx.projects.assignment(session.id)?.project ?? project?.worktree ?? session.directory
+        if (directory && directory !== home.project.chatDirectory(conn)) ctx.projects.open(directory)
         if (options?.background) {
           tabs.addSessionTab({ server: ServerConnection.key(conn), sessionId: session.id })
           return
         }
-        ctx.projects.touch(directory)
+        if (directory) ctx.projects.touch(directory)
         void startTransition(() => {
           const tab = tabs.addSessionTab({ server: ServerConnection.key(conn), sessionId: session.id })
           tabs.select(tab)
@@ -254,8 +306,7 @@ export function createHomeSessionsController(
       },
     },
     tab: {
-      isOpen: (record: HomeSessionRecord) =>
-        sessionHasOpenTab(tabs.store, serverKey(), record.session),
+      isOpen: (record: HomeSessionRecord) => sessionHasOpenTab(tabs.store, serverKey(), record.session),
     },
   }
 }
@@ -299,7 +350,7 @@ export function registerHomeCommandPalette(home: HomeController) {
 }
 
 function directories(project: LocalProject) {
-  return [project.worktree, ...(project.sandboxes ?? [])]
+  return [project.worktree, ...(project.folders ?? []), ...(project.sandboxes ?? [])]
 }
 
 function buildHomeSessionRecords(input: {
@@ -307,6 +358,7 @@ function buildHomeSessionRecords(input: {
   projectDirectories: () => string[]
   projects: () => LocalProject[]
   projectByID: () => Map<string, LocalProject>
+  fallback: () => LocalProject | undefined
 }) {
   const directories = new Set(input.projectDirectories().map(pathKey))
   const sessions = input.sessions().filter((session) => directories.has(pathKey(session.directory)))
@@ -319,8 +371,12 @@ function buildHomeSessionRecords(input: {
           .projects()
           .find(
             (item) =>
-              pathKey(item.worktree) === directory || item.sandboxes?.some((sandbox) => pathKey(sandbox) === directory),
-          ) ?? projectForSession(session, input.projects(), input.projectByID())
+              pathKey(item.worktree) === directory ||
+              item.folders?.some((folder) => pathKey(folder) === directory) ||
+              item.sandboxes?.some((sandbox) => pathKey(sandbox) === directory),
+          ) ??
+        projectForSession(session, input.projects(), input.projectByID()) ??
+        input.fallback()
       if (!project) return []
       return { session, project, projectName: displayName(project) }
     })

@@ -88,12 +88,7 @@ export function createHomeProjectsController(home: HomeController) {
       },
       choose: (conn: ServerConnection.Any) => {
         if (home.server.health(conn)?.healthy === false) return
-        pickDirectory({
-          server: conn,
-          title: language.t("command.project.open"),
-          multiple: true,
-          onSelect: (result) => home.project.add(conn, homeProjectDirectories(result)),
-        })
+        home.project.openChat(conn)
       },
       close: (conn: ServerConnection.Any, directory: string) => {
         const next = closeHomeProject(

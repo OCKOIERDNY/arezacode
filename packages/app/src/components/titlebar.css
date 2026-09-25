@@ -135,7 +135,9 @@
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 220ms cubic-bezier(0.23, 1, 0.32, 1), visibility 220ms;
+  transition:
+    opacity 220ms cubic-bezier(0.23, 1, 0.32, 1),
+    visibility 220ms;
 }
 
 [data-component="home-project-actions"] > button {
@@ -184,18 +186,26 @@
 [data-component="project-accordion"] {
   display: grid;
   grid-template-rows: 0fr;
+  opacity: 0;
   overflow-anchor: none;
-  transition: grid-template-rows var(--sidebar-duration) var(--sidebar-easing);
+  transition:
+    grid-template-rows 180ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 [data-component="project-sidebar"] [data-slot="home-projects-scroll"] .scroll-view__viewport {
   overscroll-behavior: contain;
   padding-block: 8px;
-  mask-image: linear-gradient(transparent, #000 8px, #000 calc(100% - 12px), transparent);
 }
 
 [data-component="project-accordion"][data-expanded="true"] {
   grid-template-rows: 1fr;
+  opacity: 1;
+  transition-duration: 200ms, 180ms;
+}
+
+[data-component="project-accordion"][data-keyboard="true"] {
+  transition: none;
 }
 
 [data-action="home-project-collapse"] svg,
@@ -244,8 +254,10 @@
 }
 
 [data-component="session-chat-panel"][data-snap="true"],
-body:has([data-component="resize-handle"][data-dragging="true"]) [data-component="session-panel-row"]:not([data-chat-resize-snap="true"]),
-body:has([data-component="resize-handle"][data-dragging="true"]) [data-component="session-chat-panel"]:not([data-resize-snap="true"]),
+body:has([data-component="resize-handle"][data-dragging="true"])
+  [data-component="session-panel-row"]:not([data-chat-resize-snap="true"]),
+body:has([data-component="resize-handle"][data-dragging="true"])
+  [data-component="session-chat-panel"]:not([data-resize-snap="true"]),
 body:has([data-component="resize-handle"][data-dragging="true"])
   [data-component="project-sidebar-slot"][data-collapsing="false"] {
   transition: none;
@@ -269,13 +281,17 @@ body:has([data-component="resize-handle"][data-dragging="true"])
 }
 
 [data-component="session-chat-panel"] > [data-slot="session-chat-content"] {
-  transition: opacity 160ms var(--sidebar-easing), visibility 0s;
+  transition:
+    opacity 160ms var(--sidebar-easing),
+    visibility 0s;
 }
 
 [data-component="session-chat-panel"][data-collapsed="true"] > [data-slot="session-chat-content"] {
   opacity: 0;
   visibility: hidden;
-  transition: opacity 160ms var(--sidebar-easing), visibility 0s linear var(--sidebar-duration);
+  transition:
+    opacity 160ms var(--sidebar-easing),
+    visibility 0s linear var(--sidebar-duration);
 }
 
 @media (prefers-reduced-motion: reduce) {

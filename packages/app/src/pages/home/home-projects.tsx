@@ -3,6 +3,7 @@ import { HomeProjectsView, type HomeProjectsViewProps } from "./home-projects-vi
 import type { HomeScrollController } from "./home-scroll-controller"
 
 export function HomeProjects(props: {
+  chats?: HomeProjectsViewProps["chats"]
   projects: HomeProjectsController
   scroll?: HomeScrollController
   renderSessions?: HomeProjectsViewProps["renderSessions"]
@@ -10,6 +11,7 @@ export function HomeProjects(props: {
 }) {
   return (
     <HomeProjectsView
+      chats={props.chats}
       renderSessions={props.renderSessions}
       projectActive={props.projectActive}
       language={props.projects.copy.language}

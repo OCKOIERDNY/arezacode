@@ -18,7 +18,7 @@ import {
   takeClosedTab,
   type ClosedTab,
 } from "./closed-tabs"
-import { createDraftPromptSession, type PromptModel } from "./prompt-state"
+import { createDraftPromptSession, hasPromptContent, type PromptModel } from "./prompt-state"
 import { migrateTabs } from "./tab-migration"
 
 export type SessionTab = {
@@ -33,6 +33,7 @@ export type DraftTab = {
   server: ServerConnection.Key
   directory: string
   worktree?: string
+  project?: string
 }
 
 export type Tab = SessionTab | DraftTab
@@ -79,6 +80,9 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
     const navigate = useNavigate()
     const location = useLocation()
     const memory = createTabMemory(getOwner())
+    const draftRequests = new Map<string, Promise<DraftTab>>()
+    const draftState = (tab: DraftTab) =>
+      memory.ensure(tabKey(tab), "prompt", () => createDraftPromptSession(tab.draftID))
 
     const closing = new Set<string>()
     let recentWrite = 0
@@ -156,7 +160,7 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
     const navigateTab = (tab: Tab) => {
       const href = tabHref(tab)
       setRecentKey(tabKey(tab))
-      navigate(href)
+      void startTransition(() => navigate(href))
     }
 
     const removeTab = (index: number) => {
@@ -213,27 +217,45 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
         if (!tab || tab.type !== "draft") throw new Error(`Draft not found: ${draftID}`)
         return tab
       },
-      async newDraft(draft: Omit<DraftTab, "type" | "draftID">, prompt?: string, model?: PromptModel) {
-        if (!ready()) await ready.promise
-        const existing = prompt ? undefined : store.find((tab) =>
-          tab.type === "draft" && tab.server === draft.server && tab.directory === draft.directory,
-        )
-        if (existing?.type === "draft") {
-          navigateTab(existing)
-          return existing
-        }
-        const draftID = uuid()
-        const tab = { type: "draft" as const, draftID, ...draft }
-        memory.ensure(tabKey(tab), "prompt", () => createDraftPromptSession(draftID, { prompt, model }))
-        await startTransition(() => {
-          setStore(
-            produce((tabs) => {
-              tabs.push(tab)
-            }),
+      draftHasContent(tab: DraftTab) {
+        const state = draftState(tab)
+        return state.ready() && hasPromptContent({ prompt: state.current(), context: { items: state.context.items() } })
+      },
+      newDraft(draft: Omit<DraftTab, "type" | "draftID">, prompt?: string, model?: PromptModel): Promise<DraftTab> {
+        const key = `${draft.server}\0${draft.directory}`
+        const pending = !prompt && draftRequests.get(key)
+        if (pending) return pending
+        const create = async () => {
+          if (!ready()) await ready.promise
+          const candidates = store.filter(
+            (tab): tab is DraftTab =>
+              tab.type === "draft" && tab.server === draft.server && tab.directory === draft.directory,
           )
-          navigate(draftHref(draftID))
-        })
-        return tab
+          await Promise.all(candidates.map((tab) => draftState(tab).ready.promise))
+          const existing = prompt ? undefined : candidates.find((tab) => !actions.draftHasContent(tab))
+          if (existing?.type === "draft") {
+            navigateTab(existing)
+            return existing
+          }
+          const draftID = uuid()
+          const tab = { type: "draft" as const, draftID, ...draft }
+          memory.ensure(tabKey(tab), "prompt", () => createDraftPromptSession(draftID, { prompt, model }))
+          await startTransition(() => {
+            setStore(
+              produce((tabs) => {
+                tabs.push(tab)
+              }),
+            )
+            navigate(draftHref(draftID))
+          })
+          return tab
+        }
+        const result = create()
+        if (!prompt) {
+          draftRequests.set(key, result)
+          void result.finally(() => draftRequests.delete(key)).catch(() => {})
+        }
+        return result
       },
       updateDraft(draftID: string, draft: Partial<Omit<DraftTab, "type" | "draftID">>) {
         void startTransition(() => {
@@ -244,6 +266,11 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
         })
       },
       promoteDraft(draftID: string, session: Omit<SessionTab, "type">) {
+        const draft = store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === draftID)
+        if (draft)
+          server.projects
+            .forServer(session.server)
+            .assign(session.sessionId, draft.project ?? draft.directory, draft.directory)
         // Keep the replacement and navigation atomic so /new-session never renders
         // after its backing draft tab has been removed from the store.
         const active = location.pathname === "/new-session" && location.query.draftId === draftID

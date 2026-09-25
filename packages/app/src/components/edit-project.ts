@@ -16,6 +16,7 @@ export function createEditProjectModel(props: { project: LocalProject; server: S
   const defaultName = createMemo(() => props.project.name || folderName())
   const [store, setStore] = createStore({
     name: defaultName(),
+    folders: props.project.folders ?? [props.project.worktree],
     color: props.project.icon?.color,
     iconOverride: props.project.icon?.override,
     startup: props.project.commands?.start ?? "",
@@ -66,6 +67,13 @@ export function createEditProjectModel(props: { project: LocalProject; server: S
   }
 
   const save = useMutation(() => ({
+    onSuccess: () =>
+      serverCtx().projects.save({
+        worktree: props.project.worktree,
+        expanded: props.project.expanded,
+        name: store.name.trim(),
+        folders: [...store.folders],
+      }),
     mutationFn: async () => {
       const name = store.name.trim() === folderName() ? "" : store.name.trim()
       const start = store.startup.trim()

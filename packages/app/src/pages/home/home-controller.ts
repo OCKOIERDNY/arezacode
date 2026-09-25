@@ -50,7 +50,18 @@ export function createHomeController() {
     const ctx = global.ensureServerCtx(conn)
     ctx.projects.open(directory)
     ctx.projects.touch(directory)
-    void tabs.newDraft({ server: ServerConnection.key(conn), directory })
+    void tabs.newDraft({ server: ServerConnection.key(conn), directory, project: directory })
+  }
+
+  function chatDirectory(conn: ServerConnection.Any) {
+    const state = global.ensureServerCtx(conn).sync.data.path.state
+    return state ? `${state.replace(/[\\/]$/, "")}/chats` : ""
+  }
+
+  function openChat(conn = focusedServer()) {
+    if (!conn) return
+    const directory = chatDirectory(conn)
+    if (directory) void tabs.newDraft({ server: ServerConnection.key(conn), directory, project: "" })
   }
 
   return {
@@ -68,6 +79,8 @@ export function createHomeController() {
       focusedSync,
     },
     project: {
+      chatDirectory,
+      openChat,
       list: projects,
       recentlyClosed,
       homedir,

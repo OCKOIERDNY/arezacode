@@ -76,6 +76,13 @@ export type PromptStore = {
   }
 }
 
+export function hasPromptContent(value: Pick<PromptStore, "prompt" | "context">) {
+  return (
+    value.context.items.length > 0 ||
+    value.prompt.some((part) => part.type !== "text" || part.content.trim().length > 0)
+  )
+}
+
 type InitialPrompt = {
   prompt?: string
   model?: PromptModel

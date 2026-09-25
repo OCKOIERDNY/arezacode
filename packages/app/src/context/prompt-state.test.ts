@@ -1,6 +1,19 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
-import { createPromptState, DEFAULT_PROMPT } from "./prompt-state"
+import { createPromptState, DEFAULT_PROMPT, hasPromptContent } from "./prompt-state"
+
+test("empty drafts exclude whitespace but preserve text and attached context", () => {
+  const empty = { prompt: DEFAULT_PROMPT, context: { items: [] } }
+  expect(hasPromptContent(empty)).toBe(false)
+  expect(hasPromptContent({ ...empty, prompt: [{ type: "text", content: "  ", start: 0, end: 2 }] })).toBe(false)
+  expect(hasPromptContent({ ...empty, prompt: [{ type: "text", content: "Keep me", start: 0, end: 7 }] })).toBe(true)
+  expect(
+    hasPromptContent({ ...empty, prompt: [{ type: "file", path: "file.ts", content: "", start: 0, end: 0 }] }),
+  ).toBe(true)
+  expect(hasPromptContent({ ...empty, context: { items: [{ type: "file", path: "file.ts", key: "file.ts" }] } })).toBe(
+    true,
+  )
+})
 
 describe("prompt state initialization", () => {
   test("initializes prompt text, cursor, and model together", () => {

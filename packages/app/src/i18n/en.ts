@@ -1,6 +1,15 @@
 import { DESKTOP_NATIVE_ENGLISH } from "./desktop-native"
 
 export const dict = {
+  "sidebar.chats": "Chats",
+  "sidebar.newChat": "New chat",
+  "project.create.title": "Create project",
+  "project.create.name": "Project name",
+  "project.folders": "Source folders",
+  "project.folder.add": "Add a folder",
+  "project.folder.remove": "Remove {{folder}}",
+  "session.project.assign": "Move to project...",
+  "session.project.none": "No project",
   "session.file.preview": "Preview",
   "session.file.code": "Code",
   "session.message.elapsed": "Elapsed {{duration}}",
@@ -18,7 +27,8 @@ export const dict = {
   "session.servers.stopError": "Could not stop this service. It may have changed; refresh and try again.",
   "session.servers.processUnavailable": "Process discovery requires lsof on macOS or Linux.",
   "session.servers.dockerUnavailable": "Docker is unavailable. Start Docker to see this project's containers.",
-  "session.servers.dockerRemote": "The selected Docker connection is remote. Select a local Docker connection to manage containers here.",
+  "session.servers.dockerRemote":
+    "The selected Docker connection is remote. Select a local Docker connection to manage containers here.",
   "session.servers.container": "Docker container",
   "session.servers.process": "Local process",
   "session.servers.pid": "PID {{pid}}",
@@ -63,7 +73,8 @@ export const dict = {
   "session.browser.invalid": "Enter an HTTP or HTTPS URL without credentials.",
   "session.browser.empty": "Open a link from chat or enter a URL above.",
   "session.browser.empty.title": "Open a website",
-  "session.browser.desktop": "Embedded browsing is available in the desktop app. URLs open in your default browser here.",
+  "session.browser.desktop":
+    "Embedded browsing is available in the desktop app. URLs open in your default browser here.",
   "session.browser.error": "This page could not be loaded. Reload or open it in your default browser.",
   "session.browser.error.title": "Page unavailable",
   "context.accounting.title": "Usage and cost — complete session",
@@ -71,18 +82,21 @@ export const dict = {
   "context.accounting.responseID": "Provider response ID",
   "context.accounting.actualModel": "Served model",
   "context.accounting.actualProvider": "Upstream provider",
-  "context.accounting.note": "Provider totals count each saved request once, including earlier prompts sent again as history and auxiliary Jev requests. Input includes cache reads and writes; output includes reasoning. Missing values are unavailable, not zero. Costs exclude unreported charges. Context estimates are not billing or subscription limits.",
+  "context.accounting.note":
+    "Provider totals count each saved request once, including earlier prompts sent again as history and auxiliary Jev requests. Input includes cache reads and writes; output includes reasoning. Missing values are unavailable, not zero. Costs exclude unreported charges. Context estimates are not billing or subscription limits.",
   "context.accounting.error": "Usage could not be loaded. No zero-cost claim is made.",
   "context.accounting.partial": "{{value}} · {{count}} unavailable",
   "context.accounting.requests": "Provider attempts",
   "context.accounting.input": "Input · includes cached tokens",
   "context.accounting.uncachedInput": "Uncached input · includes cache writes",
-  "context.accounting.cacheNote": "Uncached input = input minus cache reads. Cache writes create new cache entries; cache reads reuse earlier input. Session totals include repeated history across requests, not unique conversation tokens. Providers do not identify which cached tokens came from conversation, system instructions, or tools.",
+  "context.accounting.cacheNote":
+    "Uncached input = input minus cache reads. Cache writes create new cache entries; cache reads reuse earlier input. Session totals include repeated history across requests, not unique conversation tokens. Providers do not identify which cached tokens came from conversation, system instructions, or tools.",
   "context.accounting.latest": "Latest recorded request",
   "context.health.state": "Context health",
   "context.health.healthy": "Healthy",
   "context.health.near": "Near limit",
-  "context.health.nearMessage": "Approaching the context limit. This chat has used at least 90% of its working input capacity.",
+  "context.health.nearMessage":
+    "Approaching the context limit. This chat has used at least 90% of its working input capacity.",
   "context.health.finishing": "Finishing",
   "context.health.locked": "Locked",
   "context.health.inputLocked": "Context limit reached · Input locked",
@@ -119,8 +133,10 @@ export const dict = {
   "context.accounting.upstream": "Upstream cost · included, not added",
   "context.accounting.finish": "Outcome",
   "context.accounting.version": "Accounting version",
-  "context.accounting.prices": "Saved USD per million tokens: input {{input}}, output {{output}}, cache read {{read}}, cache write {{write}}.",
-  "context.accounting.characters": "Canonical request characters before provider formatting (not tokens): system {{system}}, messages {{messages}}, tool definitions {{tools}}. Source-level token attribution is estimated separately.",
+  "context.accounting.prices":
+    "Saved USD per million tokens: input {{input}}, output {{output}}, cache read {{read}}, cache write {{write}}.",
+  "context.accounting.characters":
+    "Canonical request characters before provider formatting (not tokens): system {{system}}, messages {{messages}}, tool definitions {{tools}}. Source-level token attribution is estimated separately.",
   "approval.title": "Approval mode",
   "approval.default": "Project defaults",
   "approval.default.description": "Use the project and agent permission rules.",
@@ -131,15 +147,18 @@ export const dict = {
   "approval.full": "Full access",
   "approval.full.description": "Approve tool actions automatically. Explicit agent restrictions still apply.",
   "jev.model": "TypeSafe: Jev Latest",
-  "jev.modelDescription": "Decision model connected through OpenRouter. Use the Jev toggle for automation and Auto for routing; Jev does not generate chat replies.",
+  "jev.modelDescription":
+    "Decision model connected through OpenRouter. Use the Jev toggle for automation and Auto for routing; Jev does not generate chat replies.",
   "jev.name": "Jev",
   "prompt.browser.automatic": "Automatic browser checks. Click to use manual tests instead.",
   "prompt.browser.manual": "Manual tests only. Click to allow automatic browser checks.",
   "prompt.independent.label": "Independent tasks",
-  "prompt.independent.on": "Each message starts fresh model context. Earlier tasks stay visible. Click to continue the latest task instead.",
+  "prompt.independent.on":
+    "Each message starts fresh model context. Earlier tasks stay visible. Click to continue the latest task instead.",
   "prompt.independent.off": "Messages share the latest task's context. Click to isolate each new task.",
   "jev.auto": "Auto",
-  "jev.routingUnavailable": "Jev could not confidently select an enabled model. Retry or choose a model manually. Your message has not been sent.",
+  "jev.routingUnavailable":
+    "Jev could not confidently select an enabled model. Retry or choose a model manually. Your message has not been sent.",
   "context.activity.title": "Tools and model activity",
   "context.dashboard.title": "Context and usage",
   "context.dashboard.sessionTotals": "Session totals",
@@ -152,19 +171,25 @@ export const dict = {
   "context.dashboard.uncached": "Uncached input",
   "context.dashboard.cacheRead": "Cache read",
   "context.dashboard.cacheWrite": "Cache write",
-  "context.dashboard.workingNote": "Current input usage against this chat's working limit. Session totals below count usage across recorded requests and are not the amount currently held in context.",
-  "context.dashboard.scope": "Entire session and all descendant subagents, including read-only work. Totals include recorded model, compaction, and Jev usage.",
-  "context.dashboard.definitions": "Calls count provider turns, not tasks or transport retries. Input includes cached tokens; output includes reasoning. Cache-hit rate uses only calls with both input and cache-read counts. Missing usage and billing remain unknown.",
-  "context.dashboard.averages": "Average tokens per call with recorded data, grouped by model and role. Effort counts appear below each model; percentages are shares of all execution calls.",
+  "context.dashboard.workingNote":
+    "Current input usage against this chat's working limit. Session totals below count usage across recorded requests and are not the amount currently held in context.",
+  "context.dashboard.scope":
+    "Entire session and all descendant subagents, including read-only work. Totals include recorded model, compaction, and Jev usage.",
+  "context.dashboard.definitions":
+    "Calls count provider turns, not tasks or transport retries. Input includes cached tokens; output includes reasoning. Cache-hit rate uses only calls with both input and cache-read counts. Missing usage and billing remain unknown.",
+  "context.dashboard.averages":
+    "Average tokens per call with recorded data, grouped by model and role. Effort counts appear below each model; percentages are shares of all execution calls.",
   "context.dashboard.cacheRate": "Cache-hit rate",
   "context.dashboard.missingCost": "Calls with unavailable cost",
   "context.dashboard.compactions": "Compaction calls",
   "context.dashboard.mostUsed": "Most-used model",
   "context.dashboard.calls": "Calls / share",
   "context.dashboard.unspecified": "Unspecified effort",
-  "context.dashboard.routingNote": "Selections are Jev decisions, not executed calls. Model rows above show actual execution separately, including subagents. Repeated decisions may belong to the same task.",
+  "context.dashboard.routingNote":
+    "Selections are Jev decisions, not executed calls. Model rows above show actual execution separately, including subagents. Repeated decisions may belong to the same task.",
   "context.dashboard.transport": "Latest recorded transport timing",
-  "context.dashboard.transportNote": "Native HTTP timing measures response headers, not the first output token. Other transports and historical timing may be unavailable.",
+  "context.dashboard.transportNote":
+    "Native HTTP timing measures response headers, not the first output token. Other transports and historical timing may be unavailable.",
   "context.dashboard.dispatch": "Preparation to dispatch",
   "context.dashboard.firstResponse": "Dispatch to first response headers",
   "context.dashboard.retries": "Retries / backoff",
@@ -201,12 +226,14 @@ export const dict = {
   "context.timing.checks": "Project checks",
   "context.timing.wait": "Question wait",
   "context.timing.other": "Other / unmeasured",
-  "context.timing.note": "Recorded intervals, counted once when overlapping. Model/request includes provider overhead; unrecorded queue and permission waits cannot be separated from other time.",
+  "context.timing.note":
+    "Recorded intervals, counted once when overlapping. Model/request includes provider overhead; unrecorded queue and permission waits cannot be separated from other time.",
   "jev.enable": "Enable all configured Jev features",
   "jev.disable": "Disable all Jev features",
   "jev.title": "Jev automation",
   "tools.title": "Tools",
-  "tools.description": "Manage local engines. Downloads run only when you install an engine. Optional engine failures do not stop your chat.",
+  "tools.description":
+    "Manage local engines. Downloads run only when you install an engine. Optional engine failures do not stop your chat.",
   "tools.markitdown": "MarkItDown",
   "tools.headroom": "Headroom",
   "tools.semgrep": "Semgrep",
@@ -226,19 +253,24 @@ export const dict = {
   "tools.failed": "The engine operation failed. Check its status and try again.",
   "tools.unavailable": "Tools are unavailable on this server.",
   "tools.cancelled": "Operation cancelled.",
-  "jev.description": "Automatically select skills, prioritize context and findings, and choose models when Auto is selected. Selected task text, model and skill descriptions, and tool output are sent through OpenRouter to TypeSafe. Usage is billed by OpenRouter.",
+  "jev.description":
+    "Automatically select skills, prioritize context and findings, and choose models when Auto is selected. Selected task text, model and skill descriptions, and tool output are sent through OpenRouter to TypeSafe. Usage is billed by OpenRouter.",
   "jev.provider": "OpenRouter connection",
   "jev.missingKey": "Connect OpenRouter in Providers. Until then, your selected model and normal workflow are used.",
   "jev.configured": "Uses your OpenRouter connection from Providers",
   "jev.unavailable": "Jev is unavailable on this server. Your normal workflow will continue.",
   "jev.skills": "Automatic skill selection",
-  "jev.skillsDescription": "Load permitted personal and system skills automatically. Explicitly requested skills take priority.",
+  "jev.skillsDescription":
+    "Load permitted personal and system skills automatically. Explicitly requested skills take priority.",
   "jev.context": "Relevant context selection",
-  "jev.contextDescription": "Rank search results and converted attachments by relevance. Full originals remain accessible.",
+  "jev.contextDescription":
+    "Rank search results and converted attachments by relevance. Full originals remain accessible.",
   "jev.findings": "Prioritize findings",
-  "jev.findingsDescription": "Rank Semgrep findings and test failures. Every finding and the full test output remain available.",
+  "jev.findingsDescription":
+    "Rank Semgrep findings and test failures. Every finding and the full test output remain available.",
   "jev.routing": "Automatic model selection",
-  "jev.routingDescription": "When Auto is selected, choose from enabled, connected models. Manual choices always take priority.",
+  "jev.routingDescription":
+    "When Auto is selected, choose from enabled, connected models. Manual choices always take priority.",
   "settings.general.row.sidebarPosition.title": "Chats sidebar position",
   "settings.general.row.sidebarPosition.description": "Place chats on either side, with files on the opposite side.",
   "settings.general.row.sidebarPosition.left": "Left",
@@ -997,7 +1029,8 @@ export const dict = {
   "session.header.search.placeholder": "Search {{project}}",
   "session.header.searchFiles": "Search files",
   "session.instructions.title": "Custom instructions",
-  "session.instructions.description": "Instructions for this chat. Changes apply from the next model turn. Clear the field to remove them.",
+  "session.instructions.description":
+    "Instructions for this chat. Changes apply from the next model turn. Clear the field to remove them.",
   "session.header.openIn": "Open in",
   "session.header.open.action": "Open {{app}}",
   "session.header.open.ariaLabel": "Open in {{app}}",

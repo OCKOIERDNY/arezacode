@@ -191,15 +191,14 @@ function DraftRoute() {
     <Show when={tabs.ready()}>
       <Show
         when={tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === search.draftId)}
-        keyed
         fallback={<Navigate href="/" />}
       >
         {(draft) => (
           <Show
             when={settings.general.newLayoutDesigns()}
-            fallback={<Navigate href={`/${base64Encode(draft.directory)}/session`} />}
+            fallback={<Navigate href={`/${base64Encode(draft().directory)}/session`} />}
           >
-            <ResolvedDraftRoute draft={draft} />
+            <ResolvedDraftRoute draft={draft()} />
           </Show>
         )}
       </Show>

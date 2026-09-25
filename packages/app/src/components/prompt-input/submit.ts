@@ -9,6 +9,7 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { ServerConnection, useServer } from "@/context/server"
 import { useLocal, type ModelSelection } from "@/context/local"
 import { usePermission } from "@/context/permission"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, type usePrompt } from "@/context/prompt"
@@ -44,6 +45,7 @@ export type FollowupDraft = {
   variant?: string
   browserVerification?: boolean
   independent?: boolean
+  project?: { name: string; folders: string[] } | null
   jev?: { auto: boolean; models: { providerID: string; modelID: string; variant?: string }[] }
 }
 
@@ -68,13 +70,21 @@ const draftImages = (prompt: Prompt) => prompt.filter((part): part is ImageAttac
 export function sendFollowupDraft(input: FollowupSendInput) {
   const key = input.draft.independent && input.scope ? ScopedKey.from(input.scope, input.draft.sessionID) : undefined
   if (key) independentSubmissions.add(key)
-  return sendDraft(input).finally(() => { if (key) independentSubmissions.delete(key) })
+  return sendDraft(input).finally(() => {
+    if (key) independentSubmissions.delete(key)
+  })
 }
 
 async function sendDraft(input: FollowupSendInput) {
   const browserVerification = input.draft.browserVerification
     ? "Browser verification preference selected by the user: AUTOMATIC. Browser checks are already approved for this request; perform relevant checks without asking the user to choose manual or automatic. Keep checks focused. Apply this preference to subagents. Other tool permissions still apply."
     : "Browser verification preference selected by the user: MANUAL. Do not run browser checks, shell-driven browser automation, or delegated browser checks. Do not ask the user to choose manual or automatic. Provide a brief manual test checklist with expected results, marked unverified. Apply this preference to subagents."
+  const projectContext =
+    input.draft.project === undefined
+      ? undefined
+      : input.draft.project
+        ? `The user selected project ${JSON.stringify(input.draft.project.name)}. Its source folders are ${JSON.stringify(input.draft.project.folders)}. Use these folders as project context, use explicit paths when working across them, and pass this context to subagents. Existing tool permissions still apply.`
+        : "No project is selected for this chat. Do not assume that a project selected in an earlier turn is still attached. Existing tool permissions still apply."
   const text = draftText(input.draft.prompt)
   const images = draftImages(input.draft.prompt)
   const setBusy = () => {
@@ -93,24 +103,43 @@ async function sendDraft(input: FollowupSendInput) {
     if (ok === false) return false
     const abort = new AbortController()
     const key = input.scope ? ScopedKey.from(input.scope, input.draft.sessionID) : undefined
-    const entry = { abort, cleanup: () => { cleanup(); input.onCancel?.() } }
+    const entry = {
+      abort,
+      cleanup: () => {
+        cleanup()
+        input.onCancel?.()
+      },
+    }
     if (key) pending.set(key, entry)
     const cancelled = Promise.withResolvers<undefined>()
     const cancel = () => cancelled.resolve(undefined)
     abort.signal.addEventListener("abort", cancel, { once: true })
     try {
-      decision.result = await Promise.race([input.jev?.prepare({
-        sessionID: input.draft.sessionID,
-        promptID,
-        text,
-        agent: input.draft.agent,
-        auto: input.draft.jev?.auto ?? false,
-        independent: input.draft.independent,
-        images: images.length > 0,
-        models: input.draft.jev?.models ?? [],
-      }, input.draft.sessionDirectory, abort.signal), cancelled.promise])
+      decision.result = await Promise.race([
+        input.jev?.prepare(
+          {
+            sessionID: input.draft.sessionID,
+            promptID,
+            text,
+            agent: input.draft.agent,
+            auto: input.draft.jev?.auto ?? false,
+            independent: input.draft.independent,
+            images: images.length > 0,
+            models: input.draft.jev?.models ?? [],
+          },
+          input.draft.sessionDirectory,
+          abort.signal,
+        ),
+        cancelled.promise,
+      ])
       if (!input.jev?.state.enabled) decision.result = undefined
-      if (!abort.signal.aborted && input.draft.jev?.auto && input.jev?.state.enabled && input.jev.state.routing && !decision.result?.model)
+      if (
+        !abort.signal.aborted &&
+        input.draft.jev?.auto &&
+        input.jev?.state.enabled &&
+        input.jev.state.routing &&
+        !decision.result?.model
+      )
         throw new Error(input.routingError ?? "jev.routingUnavailable")
       return !abort.signal.aborted
     } finally {
@@ -145,15 +174,30 @@ async function sendDraft(input: FollowupSendInput) {
           providerID: decision.result?.model?.providerID ?? input.draft.model.providerID,
           variant: decision.result?.model ? decision.result.model.variant : input.draft.variant,
         },
-        files: [{ uri: `data:text/plain;charset=utf-8,${encodeURIComponent(browserVerification)}`, name: "browser-verification.txt" }, ...await Promise.all(
-          images.map(async (attachment) => ({
-            uri: await blobDataUrl(attachment.blob, attachment.mime),
-            name: attachment.filename,
+        files: [
+          {
+            uri: `data:text/plain;charset=utf-8,${encodeURIComponent(browserVerification)}`,
+            name: "browser-verification.txt",
+          },
+          ...(projectContext
+            ? [
+                {
+                  uri: `data:text/plain;charset=utf-8,${encodeURIComponent(projectContext)}`,
+                  name: "project-context.txt",
+                },
+              ]
+            : []),
+          ...(await Promise.all(
+            images.map(async (attachment) => ({
+              uri: await blobDataUrl(attachment.blob, attachment.mime),
+              name: attachment.filename,
+            })),
+          )),
+          ...(decision.result?.skills ?? []).map((skill) => ({
+            uri: `data:text/plain;charset=utf-8,${encodeURIComponent(skill.content)}`,
+            name: `${skill.name}.txt`,
           })),
-        ), ...(decision.result?.skills ?? []).map((skill) => ({
-          uri: `data:text/plain;charset=utf-8,${encodeURIComponent(skill.content)}`,
-          name: `${skill.name}.txt`,
-        }))],
+        ],
       })
       return true
     } catch (err) {
@@ -185,7 +229,12 @@ async function sendDraft(input: FollowupSendInput) {
     role: "user",
     time: { created: Date.now() },
     agent: input.draft.agent,
-    model: { ...input.draft.model, modelID: input.draft.jev?.auto && input.jev?.state.enabled && input.jev.state.routing ? "" : input.draft.model.modelID, variant: input.draft.variant },
+    model: {
+      ...input.draft.model,
+      modelID:
+        input.draft.jev?.auto && input.jev?.state.enabled && input.jev.state.routing ? "" : input.draft.model.modelID,
+      variant: input.draft.variant,
+    },
   }
 
   const add = (model = message.model) =>
@@ -209,7 +258,12 @@ async function sendDraft(input: FollowupSendInput) {
   })
 
   try {
-    if (!(await wait(() => { setIdle(); remove() }, messageID))) {
+    if (
+      !(await wait(() => {
+        setIdle()
+        remove()
+      }, messageID))
+    ) {
       batch(() => {
         setIdle()
         remove()
@@ -223,17 +277,30 @@ async function sendDraft(input: FollowupSendInput) {
       add({ ...selected, variant: prepared?.model ? prepared.model.variant : input.draft.variant })
     }
     if (input.jev?.state.enabled) {
-      for (const skill of prepared?.skills ?? []) requestParts.push({
-        id: Identifier.ascending("part"), type: "text", synthetic: true,
-        text: skill.content,
-        metadata: { jevSkill: skill.name },
-      })
+      for (const skill of prepared?.skills ?? [])
+        requestParts.push({
+          id: Identifier.ascending("part"),
+          type: "text",
+          synthetic: true,
+          text: skill.content,
+          metadata: { jevSkill: skill.name },
+        })
     }
     requestParts.push({
-      id: Identifier.ascending("part"), type: "text", synthetic: true,
+      id: Identifier.ascending("part"),
+      type: "text",
+      synthetic: true,
       text: browserVerification,
       metadata: { browserVerification: input.draft.browserVerification ? "automatic" : "manual" },
     })
+    if (projectContext)
+      requestParts.push({
+        id: Identifier.ascending("part"),
+        type: "text",
+        synthetic: true,
+        text: projectContext,
+        metadata: { projectContext: true },
+      })
     await input.api.prompt({
       sessionID: input.draft.sessionID,
       id: messageID,
@@ -314,6 +381,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const serverSDK = useServerSDK()
   const prompt = input.prompt
   const layout = useLayout()
+  const server = useServer()
   const language = useLanguage()
   const params = useParams()
   const [search] = useSearchParams<{ draftId?: string }>()
@@ -422,7 +490,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         showToast({ title: language.t("context.health.lockedMessage") })
         return
       }
-      if (params.id !== sessionID || sdk() !== origin || !submission.current(prompt.capture()) || target.current() !== currentPrompt) return
+      if (
+        params.id !== sessionID ||
+        sdk() !== origin ||
+        !submission.current(prompt.capture()) ||
+        target.current() !== currentPrompt
+      )
+        return
     }
 
     const modelSelection = input.model ?? local.model
@@ -517,7 +591,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           if (shouldAutoAccept) permissionState.enableAutoAccept(session.id, sessionDirectory)
           local.session.promote(sessionDirectory, session.id, {
             agent: currentAgent.name,
-            model: { providerID: currentModel.provider.id, modelID: currentModel.id, auto: modelSelection.auto?.() ?? false },
+            model: {
+              providerID: currentModel.provider.id,
+              modelID: currentModel.id,
+              auto: modelSelection.auto?.() ?? false,
+            },
             variant: variant ?? null,
           })
           layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
@@ -541,6 +619,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       providerID: currentModel.provider.id,
     }
     const agent = currentAgent.name
+    const projects = server.projects.forServer(ServerConnection.key(serverSDK().server))
+    const assignment = projects.assignment(session.id)
+    const project = projects.list().find((item) => item.worktree === (assignment?.project ?? sessionDirectory))
     const draft: FollowupDraft = {
       sessionID: session.id,
       sessionDirectory,
@@ -551,10 +632,24 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       variant,
       browserVerification: input.browserVerification?.() ?? false,
       independent,
+      project: project
+        ? { name: project.name || project.worktree, folders: [...(project.folders ?? [project.worktree])] }
+        : null,
       jev: {
         auto: modelSelection.auto?.() ?? false,
-        models: sdk().jev?.state.enabled ? modelSelection.list().filter((item) => modelSelection.visible({ providerID: item.provider.id, modelID: item.id }))
-          .flatMap((item) => [undefined, ...Object.keys(item.variants ?? {})].map((variant) => ({ providerID: item.provider.id, modelID: item.id, variant }))).slice(0, 255) : [],
+        models: sdk().jev?.state.enabled
+          ? modelSelection
+              .list()
+              .filter((item) => modelSelection.visible({ providerID: item.provider.id, modelID: item.id }))
+              .flatMap((item) =>
+                [undefined, ...Object.keys(item.variants ?? {})].map((variant) => ({
+                  providerID: item.provider.id,
+                  modelID: item.id,
+                  variant,
+                })),
+              )
+              .slice(0, 255)
+          : [],
       },
     }
 
@@ -581,7 +676,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return true
     }
 
-    if (!isNewSession && mode === "normal" && (input.shouldQueue?.() || independentSubmissions.has(pendingKey(session.id)))) {
+    if (
+      !isNewSession &&
+      mode === "normal" &&
+      (input.shouldQueue?.() || independentSubmissions.has(pendingKey(session.id)))
+    ) {
       if (!input.onQueue) return
       input.onQueue?.(draft)
       clearContext(submission.target())
@@ -698,20 +797,22 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       onCancel: () => {
         if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
       },
-    }).then((sent) => {
-      if (!sent && restoreInput()) restoreCommentItems(submission.target(), commentItems)
-    }).catch((err) => {
-      pending.delete(pendingKey(session.id))
-      if (sessionDirectory === projectDirectory) {
-        sync().set("session_status", session.id, { type: "idle" })
-      }
-      showToast({
-        title: language.t("prompt.toast.promptSendFailed.title"),
-        description: errorMessage(err),
-      })
-      removeOptimisticMessage()
-      if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
     })
+      .then((sent) => {
+        if (!sent && restoreInput()) restoreCommentItems(submission.target(), commentItems)
+      })
+      .catch((err) => {
+        pending.delete(pendingKey(session.id))
+        if (sessionDirectory === projectDirectory) {
+          sync().set("session_status", session.id, { type: "idle" })
+        }
+        showToast({
+          title: language.t("prompt.toast.promptSendFailed.title"),
+          description: errorMessage(err),
+        })
+        removeOptimisticMessage()
+        if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
+      })
   }
 
   return {

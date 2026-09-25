@@ -67,7 +67,7 @@ export function createPromptProjectController(input: {
           (pathKey(project.worktree) === key || project.sandboxes?.some((sandbox) => pathKey(sandbox) === key)),
       )
   }
-  const selected = () => current() ?? input.controls().available[0]
+  const selected = current
   const projects = () => {
     const search = store.search.trim().toLowerCase()
     if (!search) return input.controls().available
@@ -138,7 +138,7 @@ export function createPromptProjectController(input: {
     labels: {
       add: () => language.t("session.new.project.add"),
       clear: () => language.t("common.clear"),
-      new: () => language.t("session.new.project.new"),
+      new: () => language.t("session.project.none"),
       search: () => language.t("session.new.project.search"),
     },
     add,

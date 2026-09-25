@@ -11,6 +11,12 @@ import {
 } from "./closed-tabs"
 import type { SessionTab, Tab } from "./tabs"
 import { migrateTabs } from "./tab-migration"
+
+test("restores a draft's explicit projectless selection", () => {
+  const server = "local" as ServerConnection.Key
+  const draft = { type: "draft" as const, draftID: "projectless", server, directory: "/state/chats", project: "" }
+  expect(migrateTabs([draft], server)).toEqual([draft])
+})
 import type { ServerConnection } from "./server"
 
 const server = "local\nhttp://localhost:4096" as ServerConnection.Key
