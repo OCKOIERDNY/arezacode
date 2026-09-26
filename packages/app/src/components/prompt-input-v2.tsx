@@ -5,6 +5,7 @@ import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
 import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
@@ -49,7 +50,11 @@ export type PromptInputV2ComposerProps = {
 export type PromptInputV2ControllerProps = Omit<PromptInputProps, "class" | "submission">
 export type PromptInputV2ComposerController = PromptInputV2Interaction & {
   readonly model: PromptInputProps["controls"]["model"]
-  readonly approval: { current: () => Permission.ApprovalMode; saving: () => boolean; select: (mode: Permission.ApprovalMode) => Promise<void> }
+  readonly approval: {
+    current: () => Permission.ApprovalMode
+    saving: () => boolean
+    select: (mode: Permission.ApprovalMode) => Promise<void>
+  }
 }
 
 export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
@@ -57,7 +62,12 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
   const serverSync = useServerSync()
   const jev = () => serverSDK().jev
   const settings = useSettings()
-  createEffect(on(() => serverSync().data.provider.connected.includes("openrouter"), () => void jev().refresh()))
+  createEffect(
+    on(
+      () => serverSync().data.provider.connected.includes("openrouter"),
+      () => void jev().refresh(),
+    ),
+  )
   const dialog = useDialog()
   const command = useCommand()
   const language = useLanguage()
@@ -68,7 +78,9 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
         controller={props.controller}
         borderUnderlay={props.borderUnderlay}
         class={props.class}
-        variantControlVisible={!props.controller.model.loading && !(jev().available() && props.controller.model.selection.auto())}
+        variantControlVisible={
+          !props.controller.model.loading && !(jev().available() && props.controller.model.selection.auto())
+        }
         attachKeybind={command.keybindParts("file.attach")}
         attachShortcut={command.keybind("file.attach")}
         approvalControl={
@@ -76,7 +88,11 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
             appearance="inline"
             data-action="prompt-approval"
             classList={{ "prompt-approval-full": props.controller.approval.current() === "full" }}
-            icon={<Show when={props.controller.approval.current() === "full"}><Icon name="shield" /></Show>}
+            icon={
+              <Show when={props.controller.approval.current() === "full"}>
+                <Icon name="shield" />
+              </Show>
+            }
             aria-label={language.t("approval.title")}
             options={["default", "ask", "auto", "full"] as Permission.ApprovalMode[]}
             current={props.controller.approval.current()}
@@ -85,17 +101,25 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
             label={(mode) => language.t(`approval.${mode}`)}
             onSelect={(mode) => mode && void props.controller.approval.select(mode)}
           >
-            {(mode) => <span data-slot="approval-mode-option" class="flex flex-col gap-1 leading-4">
-              <span class="flex items-center gap-2" classList={{ "text-[var(--v2-state-fg-warning)]": mode === "full" }}>
-                <Show when={mode === "full"}><Icon name="shield" /></Show>
-                {language.t(`approval.${mode}`)}
+            {(mode) => (
+              <span data-slot="approval-mode-option" class="flex flex-col gap-1 leading-4">
+                <span
+                  class="flex items-center gap-2"
+                  classList={{ "text-[var(--v2-state-fg-warning)]": mode === "full" }}
+                >
+                  <Show when={mode === "full"}>
+                    <Icon name="shield" />
+                  </Show>
+                  {language.t(`approval.${mode}`)}
+                </span>
+                <span class="text-12 text-text-weak whitespace-normal max-w-72">
+                  {language.t(`approval.${mode}.description`)}
+                </span>
               </span>
-              <span class="text-12 text-text-weak whitespace-normal max-w-72">{language.t(`approval.${mode}.description`)}</span>
-            </span>}
+            )}
           </SelectV2>
         }
         modelControl={
-          <div class="flex min-w-0 items-center gap-1">
           <PromptInputV2ModelControl
             loading={props.controller.model.loading}
             paid={props.controller.model.paid || props.controller.model.selection.list().length > 0}
@@ -103,35 +127,68 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
             keybind={command.keybindParts("model.choose")}
             model={props.controller.model.selection}
             providerID={props.controller.model.selection.current()?.provider?.id}
-            modelName={jev().available() && props.controller.model.selection.auto() ? language.t("jev.auto") : props.controller.model.selection.current()?.name ?? language.t("dialog.model.select.title")}
+            modelName={
+              jev().available() && props.controller.model.selection.auto()
+                ? language.t("jev.auto")
+                : (props.controller.model.selection.current()?.name ?? language.t("dialog.model.select.title"))
+            }
             onClose={props.controller.restoreFocus}
             onUnpaidClick={() =>
               dialog.show(() => <DialogSelectModelUnpaidV2 model={props.controller.model.selection} />)
             }
           />
-          <Show when={jev().available()}>
-          <TooltipV2 value={language.t(jev().state.enabled ? "jev.disable" : "jev.enable")}>
-            <ButtonV2 type="button" variant={jev().state.enabled ? "neutral" : "ghost-muted"} size="small" data-action="prompt-jev"
-              aria-pressed={jev().state.enabled} disabled={!jev().state.loaded || jev().state.saving || jev().state.error}
-              onClick={() => void jev().update({ enabled: !jev().state.enabled })}>
-              {language.t("jev.name")}
-            </ButtonV2>
-          </TooltipV2>
-          </Show>
-          <TooltipV2 value={language.t(settings.general.browserVerification() ? "prompt.browser.automatic" : "prompt.browser.manual")}>
-            <ButtonV2 type="button" variant={settings.general.browserVerification() ? "neutral" : "ghost-muted"} size="small" data-action="prompt-browser"
-              aria-pressed={settings.general.browserVerification()} disabled={!settings.ready()}
-              onClick={() => settings.general.setBrowserVerification(!settings.general.browserVerification())}>
-              {language.t("session.panel.browser")}
-            </ButtonV2>
-          </TooltipV2>
-          <TooltipV2 value={language.t(settings.general.independentTasks() ? "prompt.independent.on" : "prompt.independent.off")}>
-            <ButtonV2 type="button" variant={settings.general.independentTasks() ? "neutral" : "ghost-muted"} size="small" data-action="prompt-independent"
-              aria-pressed={settings.general.independentTasks()} disabled={!settings.ready()}
-              onClick={() => settings.general.setIndependentTasks(!settings.general.independentTasks())}>
-              {language.t("prompt.independent.label")}
-            </ButtonV2>
-          </TooltipV2>
+        }
+        toolsControl={
+          <div class="flex shrink-0 items-center gap-1">
+            <Show when={jev().available()}>
+              <TooltipV2 value={language.t(jev().state.enabled ? "jev.disable" : "jev.enable")}>
+                <IconButtonV2
+                  type="button"
+                  variant={jev().state.enabled ? "neutral" : "ghost-muted"}
+                  size="normal"
+                  data-action="prompt-jev"
+                  icon={<Icon name="settings-gear" />}
+                  aria-label={language.t("jev.name")}
+                  aria-pressed={jev().state.enabled}
+                  disabled={!jev().state.loaded || jev().state.saving || jev().state.error}
+                  onClick={() => void jev().update({ enabled: !jev().state.enabled })}
+                />
+              </TooltipV2>
+            </Show>
+            <TooltipV2
+              value={language.t(
+                settings.general.browserVerification() ? "prompt.browser.automatic" : "prompt.browser.manual",
+              )}
+            >
+              <IconButtonV2
+                type="button"
+                variant={settings.general.browserVerification() ? "neutral" : "ghost-muted"}
+                size="normal"
+                data-action="prompt-browser"
+                icon={<Icon name="monitor" />}
+                aria-label={language.t("session.panel.browser")}
+                aria-pressed={settings.general.browserVerification()}
+                disabled={!settings.ready()}
+                onClick={() => settings.general.setBrowserVerification(!settings.general.browserVerification())}
+              />
+            </TooltipV2>
+            <TooltipV2
+              value={language.t(
+                settings.general.independentTasks() ? "prompt.independent.on" : "prompt.independent.off",
+              )}
+            >
+              <IconButtonV2
+                type="button"
+                variant={settings.general.independentTasks() ? "neutral" : "ghost-muted"}
+                size="normal"
+                data-action="prompt-independent"
+                icon={<Icon name="workspace-isolated" />}
+                aria-label={language.t("prompt.independent.label")}
+                aria-pressed={settings.general.independentTasks()}
+                disabled={!settings.ready()}
+                onClick={() => settings.general.setIndependentTasks(!settings.general.independentTasks())}
+              />
+            </TooltipV2>
           </div>
         }
       />
@@ -175,24 +232,38 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     }, [])
   })
   const info = createMemo(() => (props.controls.session.id ? sync().session.get(props.controls.session.id) : undefined))
-  const [approval, setApproval] = createStore<{ mode: Permission.ApprovalMode; saving: boolean }>({ mode: "default", saving: false })
+  const [approval, setApproval] = createStore<{ mode: Permission.ApprovalMode; saving: boolean }>({
+    mode: "default",
+    saving: false,
+  })
   const [savedApproval] = createResource(
-    () => props.controls.session.id ? { id: props.controls.session.id, server: serverSDK() } : undefined,
+    () => (props.controls.session.id ? { id: props.controls.session.id, server: serverSDK() } : undefined),
     (source) => source.server.approval.get(source.id).catch(() => undefined),
   )
-  createEffect(on(() => [props.controls.session.id, savedApproval()] as const, ([, mode]) => {
-    setApproval("mode", mode ?? "default")
-  }))
+  createEffect(
+    on(
+      () => [props.controls.session.id, savedApproval()] as const,
+      ([, mode]) => {
+        setApproval("mode", mode ?? "default")
+      },
+    ),
+  )
   const selectApproval = async (mode: Permission.ApprovalMode) => {
     const id = props.controls.session.id
-    if (!id) { setApproval("mode", mode); return }
+    if (!id) {
+      setApproval("mode", mode)
+      return
+    }
     const context = sdk()
     const permissions = permission.currentServerState()
     setApproval("saving", true)
-    await serverSDK().approval.set(id, mode).then(() => {
-      permissions.disableAutoAccept(id, context.directory)
-      if (props.controls.session.id === id && sdk().scope === context.scope) setApproval("mode", mode)
-    }).catch((error) => showToast({ title: language.t("common.requestFailed"), description: String(error) }))
+    await serverSDK()
+      .approval.set(id, mode)
+      .then(() => {
+        permissions.disableAutoAccept(id, context.directory)
+        if (props.controls.session.id === id && sdk().scope === context.scope) setApproval("mode", mode)
+      })
+      .catch((error) => showToast({ title: language.t("common.requestFailed"), description: String(error) }))
       .finally(() => setApproval("saving", false))
   }
   const working = createMemo(() => sync().data.session_working(props.controls.session.id ?? ""))
@@ -375,13 +446,17 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
       mention: { type: "file" as const, path, content: `@${path}`, start: 0, end: 0 },
     })),
   ])
-  const [skills] = createResource(sdk, async (context) => {
-    const result = await (async () => {
-      if ((await context.protocol) === "v1") return (await context.client.app.skills()).data ?? []
-      return (await context.api.skill.list({ location: { directory: context.directory } })).data
-    })().catch(() => [])
-    return Array.isArray(result) ? result : []
-  }, { initialValue: [] })
+  const [skills] = createResource(
+    sdk,
+    async (context) => {
+      const result = await (async () => {
+        if ((await context.protocol) === "v1") return (await context.client.app.skills()).data ?? []
+        return (await context.api.skill.list({ location: { directory: context.directory } })).data
+      })().catch(() => [])
+      return Array.isArray(result) ? result : []
+    },
+    { initialValue: [] },
+  )
   const slashCommands = createMemo(() => [
     ...sync().data.command.map((item) => ({
       id: `custom.${item.name}`,
@@ -409,7 +484,10 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
   ])
   const commands = createMemo<PromptInputV2Suggestion[]>(() =>
     slashCommands().map((item) => {
-      const skill = item.source === "skill" && !skills.loading ? skills.latest.find((skill) => skill.name === item.trigger) : undefined
+      const skill =
+        item.source === "skill" && !skills.loading
+          ? skills.latest.find((skill) => skill.name === item.trigger)
+          : undefined
       const location = skill?.location.replaceAll("\\", "/")
       const directory = sdk().directory.replaceAll("\\", "/").replace(/\/$/, "")
       const home = sync().data.path.home.replaceAll("\\", "/").replace(/\/$/, "")
@@ -533,7 +611,14 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
       },
     },
   })
-  Object.defineProperty(controller, "approval", { value: { current: () => approval.mode, saving: () => approval.saving || (!!props.controls.session.id && (savedApproval.loading || savedApproval() === undefined)), select: selectApproval } })
+  Object.defineProperty(controller, "approval", {
+    value: {
+      current: () => approval.mode,
+      saving: () =>
+        approval.saving || (!!props.controls.session.id && (savedApproval.loading || savedApproval() === undefined)),
+      select: selectApproval,
+    },
+  })
   Object.defineProperty(controller, "model", { get: () => props.controls.model })
 
   command.register("prompt-input", () => [

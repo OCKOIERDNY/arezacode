@@ -44,6 +44,7 @@ export type PromptInputV2Props = {
   borderUnderlay?: boolean
   class?: string
   modelControl?: JSX.Element
+  toolsControl?: JSX.Element
   approvalControl?: JSX.Element
   variantControlVisible?: boolean
   attachKeybind?: string[]
@@ -228,6 +229,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
                   title={i18n.t("ui.promptInput.chooseAgent")}
                   keybind={["Mod", "."]}
                   control={control}
+                  iconOnly
                 />
               )}
             </Show>
@@ -259,6 +261,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
                 </Show>
               )}
             </Show>
+            {props.toolsControl}
           </div>
           <PromptInputV2SubmitButton
             mode={state.mode}
@@ -385,7 +388,8 @@ export function PromptInputV2Attachments(props: {
       <div data-component="prompt-input-v2-attachments" data-slot="prompt-attachments" class="relative">
         <ScrollView
           data-slot="prompt-attachments-scroll"
-          orientation="horizontal" viewportClass="flex flex-nowrap gap-2 px-2 pt-2 pb-1"
+          orientation="horizontal"
+          viewportClass="flex flex-nowrap gap-2 px-2 pt-2 pb-1"
         >
           <For each={props.comments ?? []}>
             {(comment) => (
@@ -523,6 +527,7 @@ function PromptInputV2ConfiguredSelect(props: {
   keybind?: string[]
   control: PromptInputV2SelectControl
   model?: boolean
+  iconOnly?: boolean
 }) {
   const current = () => props.control.current()
   const providerID = () => props.control.options().find((option) => option.id === current())?.providerID
@@ -532,9 +537,17 @@ function PromptInputV2ConfiguredSelect(props: {
       keybind={props.control.keybind?.() ?? props.keybind}
       options={props.control.options()}
       current={current()}
+      iconOnly={props.iconOnly}
       currentIcon={
-        <Show when={props.model && providerID()}>
-          <ProviderIcon id={providerID()!} class="size-4 shrink-0 opacity-60" />
+        <Show
+          when={props.iconOnly}
+          fallback={
+            <Show when={props.model && providerID()}>
+              <ProviderIcon id={providerID()!} class="size-4 shrink-0 opacity-60" />
+            </Show>
+          }
+        >
+          <Icon name={current() === "build" ? "code" : current() === "plan" ? "checklist" : "brain"} size="small" />
         </Show>
       }
       onSelect={props.control.onSelect}
@@ -548,6 +561,7 @@ export function PromptInputV2Select(props: {
   options: PromptInputV2Option[]
   current: string
   currentIcon?: JSX.Element
+  iconOnly?: boolean
   class?: string
   onOpenChange?: (open: boolean) => void
   onSelect: (id: string) => void
@@ -557,7 +571,9 @@ export function PromptInputV2Select(props: {
       placement="top"
       value={
         <>
-          {props.title}
+          {props.iconOnly
+            ? (props.options.find((option) => option.id === props.current)?.label ?? props.current)
+            : props.title}
           <KeybindV2 keys={props.keybind ?? []} variant="neutral" />
         </>
       }
@@ -568,15 +584,18 @@ export function PromptInputV2Select(props: {
           variant="ghost-muted"
           size="normal"
           class={`max-w-[220px] justify-start ![font-weight:440] ${props.class ?? ""}`}
+          classList={{ "!size-7 !p-0": props.iconOnly }}
           aria-label={props.title}
         >
           {props.currentIcon}
-          <span class="truncate capitalize leading-5">
-            {props.options.find((option) => option.id === props.current)?.label ?? props.current}
-          </span>
-          <span class="-ms-0.5 -me-1 flex shrink-0">
-            <IconV2 name="chevron-down" />
-          </span>
+          <Show when={!props.iconOnly}>
+            <span class="truncate capitalize leading-5">
+              {props.options.find((option) => option.id === props.current)?.label ?? props.current}
+            </span>
+            <span class="-ms-0.5 -me-1 flex shrink-0">
+              <IconV2 name="chevron-down" />
+            </span>
+          </Show>
         </MenuV2.Trigger>
         <MenuV2.Portal>
           <MenuV2.Content>
